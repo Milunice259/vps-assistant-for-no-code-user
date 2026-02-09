@@ -182,28 +182,13 @@ check_for_updates() {
         return 0
     fi
 
-    print_info "Updates available. Merging..."
+    print_info "Updates available. Resetting to remote version..."
 
-    # Stash local changes if any
-    STASHED=false
-    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-        print_info "Stashing local changes..."
-        git stash push -m "Auto-stash before deploy $(date +%Y-%m-%d_%H:%M:%S)"
-        STASHED=true
-    fi
+    # On a deploy server, always match remote exactly
+    git reset --hard origin/main 2>/dev/null
+    chmod +x deploy.sh 2>/dev/null || true
 
-    if git merge @{u} 2>/dev/null; then
-        print_success "Code updated successfully."
-        chmod +x deploy.sh 2>/dev/null || true
-        if [ "$STASHED" = true ]; then
-            print_info "Local changes were stashed. Restore with: git stash pop"
-        fi
-    else
-        print_warning "Merge failed (possible conflicts). Using current code."
-        if [ "$STASHED" = true ]; then
-            git stash pop 2>/dev/null || true
-        fi
-    fi
+    print_success "Code updated to latest version."
 }
 
 # --- Helper Functions ---

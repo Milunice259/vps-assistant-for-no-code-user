@@ -17,9 +17,14 @@ export interface SSHConnectionConfig {
   privateKey?: string;
 }
 
+/** Default timeouts (milliseconds) */
+const SSH_READY_TIMEOUT = 10_000;
+const SSH_COMMAND_TIMEOUT = 15_000;
+
 /**
  * Create and connect an SSH session.
  * Host keys are auto-accepted (no interactive verification).
+ * Keepalive is enabled so the connection doesn't drop on slow servers.
  */
 export async function createSSHConnection(
   config: SSHConnectionConfig
@@ -28,8 +33,10 @@ export async function createSSHConnection(
     host: config.host,
     port: config.port || 22,
     username: config.username,
-    // Timeout after 10 seconds
-    readyTimeout: 10000,
+    readyTimeout: SSH_READY_TIMEOUT,
+    // Send keepalive every 10 s — prevents premature timeouts on slow hosts
+    keepaliveInterval: 10_000,
+    keepaliveCountMax: 3,
     // Supported host key algorithms (broad compatibility)
     algorithms: {
       serverHostKey: [
@@ -58,14 +65,38 @@ export async function createSSHConnection(
 }
 
 /**
+ * Safely close an SSH connection (ignores errors).
+ */
+export async function closeSSH(
+  ssh: SSH2Promise | null | undefined
+): Promise<void> {
+  if (!ssh) return;
+  try {
+    await ssh.close();
+  } catch {
+    // Ignore close errors — connection may already be dead
+  }
+}
+
+/**
  * Execute a command on a remote server and return stdout.
+ * Includes a per-command timeout to prevent hangs.
  */
 export async function executeCommand(
   ssh: SSH2Promise,
-  command: string
+  command: string,
+  timeoutMs: number = SSH_COMMAND_TIMEOUT
 ): Promise<string> {
   try {
-    const result = await ssh.exec(command);
+    const result = await Promise.race([
+      ssh.exec(command),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`SSH command timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        )
+      ),
+    ]);
     return result.toString().trim();
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -75,6 +106,7 @@ export async function executeCommand(
 
 /**
  * Fetch system stats from a remote VPS via SSH.
+ * All 6 commands run in parallel for minimal latency.
  */
 export async function getRemoteStats(ssh: SSH2Promise) {
   const [cpuRaw, memRaw, diskRaw, uptimeRaw, hostnameRaw, osRaw] =

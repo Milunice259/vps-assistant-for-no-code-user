@@ -1,6 +1,10 @@
 /**
  * Host system stats using Node.js os module.
  * Used for both snapshot API and SSE streaming.
+ *
+ * CPU usage is calculated via a single background sampler so that
+ * concurrent SSE clients all read from one consistent value instead
+ * of racing on a shared mutable variable.
  */
 
 import os from "os";
@@ -29,10 +33,18 @@ export interface SystemStats {
   };
 }
 
-// Store previous CPU times for delta calculation
-let prevCpuTimes = os.cpus().map((cpu) => ({ ...cpu.times }));
+// ─── CPU sampler (single background timer) ───
+// One interval samples CPU ticks every 2 s and writes to a shared
+// read-only value.  Multiple SSE streams read `latestCpuPercent`
+// without any race condition because JS is single-threaded and
+// the sampler writes atomically between event-loop ticks.
 
-function getCpuUsage(): number {
+let latestCpuPercent = 0;
+let prevCpuTimes = os.cpus().map((cpu) => ({ ...cpu.times }));
+let samplerTimer: ReturnType<typeof setInterval> | null = null;
+let subscriberCount = 0;
+
+function sampleCpu(): void {
   const currentTimes = os.cpus().map((cpu) => ({ ...cpu.times }));
 
   let totalIdle = 0;
@@ -57,20 +69,61 @@ function getCpuUsage(): number {
   }
 
   prevCpuTimes = currentTimes;
-
-  return totalTick > 0
-    ? Math.round(((totalTick - totalIdle) / totalTick) * 10000) / 100
-    : 0;
+  latestCpuPercent =
+    totalTick > 0
+      ? Math.round(((totalTick - totalIdle) / totalTick) * 10000) / 100
+      : 0;
 }
 
+/**
+ * Register a subscriber for system stats.
+ * Starts the CPU sampler on the first subscriber; stops it when the
+ * last subscriber unregisters — so the timer never runs when no one
+ * is listening.
+ */
+export function subscribeStats(): () => void {
+  subscriberCount++;
+  if (subscriberCount === 1 && !samplerTimer) {
+    // Take an initial sample immediately so the first read is non-zero
+    sampleCpu();
+    samplerTimer = setInterval(sampleCpu, 2000);
+    // Prevent the timer from keeping the process alive on shutdown
+    if (samplerTimer && typeof samplerTimer === "object" && "unref" in samplerTimer) {
+      samplerTimer.unref();
+    }
+  }
+  return () => {
+    subscriberCount = Math.max(0, subscriberCount - 1);
+    if (subscriberCount === 0 && samplerTimer) {
+      clearInterval(samplerTimer);
+      samplerTimer = null;
+    }
+  };
+}
+
+// ─── Disk stats (cached for 5 s to avoid spawning df too often) ───
+
+let cachedDisk: SystemStats["disk"] = {
+  total: 0,
+  used: 0,
+  available: 0,
+  usagePercent: 0,
+};
+let diskCacheExpiry = 0;
+const DISK_CACHE_MS = 5000;
+
 function getDiskStats(): SystemStats["disk"] {
+  const now = Date.now();
+  if (now < diskCacheExpiry) return cachedDisk;
+
   try {
-    const output = execSync("df -B1 / | awk 'NR==2{print $2,$3,$4}'")
-      .toString()
-      .trim();
+    const output = execSync("df -B1 / | awk 'NR==2{print $2,$3,$4}'", {
+      encoding: "utf-8",
+      timeout: 5000,
+    }).trim();
     const [total, used, available] = output.split(" ").map(Number);
 
-    return {
+    cachedDisk = {
       total: total || 0,
       used: used || 0,
       available: available || 0,
@@ -80,12 +133,17 @@ function getDiskStats(): SystemStats["disk"] {
     };
   } catch {
     // Fallback for non-Linux (e.g. development on Windows/Mac)
-    return { total: 0, used: 0, available: 0, usagePercent: 0 };
+    cachedDisk = { total: 0, used: 0, available: 0, usagePercent: 0 };
   }
+
+  diskCacheExpiry = now + DISK_CACHE_MS;
+  return cachedDisk;
 }
 
 /**
  * Collect a snapshot of the host machine's system stats.
+ * CPU percentage comes from the background sampler; memory and disk
+ * are read on demand (disk is cached for 5 s).
  */
 export function getHostStats(): SystemStats {
   const totalMem = os.totalmem();
@@ -99,7 +157,7 @@ export function getHostStats(): SystemStats {
     cpu: {
       model: os.cpus()[0]?.model || "Unknown",
       cores: os.cpus().length,
-      usagePercent: getCpuUsage(),
+      usagePercent: latestCpuPercent,
     },
     memory: {
       total: totalMem,

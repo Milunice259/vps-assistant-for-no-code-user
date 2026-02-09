@@ -1,47 +1,104 @@
 import { NextRequest } from "next/server";
-import { getHostStats } from "@/lib/stats";
+import { getHostStats, subscribeStats } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
+
+// ─── Shared broadcaster ───
+// Instead of N independent setInterval timers (one per client),
+// we use a single broadcaster that collects stats once every 2 s
+// and fans out the JSON payload to all connected clients.
+
+type Client = {
+  controller: ReadableStreamDefaultController;
+  encoder: TextEncoder;
+};
+
+const clients = new Set<Client>();
+let broadcastTimer: ReturnType<typeof setInterval> | null = null;
+let unsubscribeStats: (() => void) | null = null;
+
+function broadcast(): void {
+  if (clients.size === 0) return;
+
+  try {
+    const stats = getHostStats();
+    const payload = `data: ${JSON.stringify(stats)}\n\n`;
+
+    for (const client of clients) {
+      try {
+        client.controller.enqueue(client.encoder.encode(payload));
+      } catch {
+        // Client probably disconnected — will be cleaned up by abort handler
+        clients.delete(client);
+      }
+    }
+  } catch {
+    // Stats collection failed — send error event to all
+    const errorPayload = `event: error\ndata: {"error":"Failed to collect stats"}\n\n`;
+    for (const client of clients) {
+      try {
+        client.controller.enqueue(client.encoder.encode(errorPayload));
+      } catch {
+        clients.delete(client);
+      }
+    }
+  }
+}
+
+function startBroadcaster(): void {
+  if (broadcastTimer) return;
+  // Register with the CPU sampler so it starts collecting
+  unsubscribeStats = subscribeStats();
+  broadcastTimer = setInterval(broadcast, 2000);
+  if (broadcastTimer && typeof broadcastTimer === "object" && "unref" in broadcastTimer) {
+    broadcastTimer.unref();
+  }
+}
+
+function stopBroadcasterIfEmpty(): void {
+  if (clients.size > 0) return;
+  if (broadcastTimer) {
+    clearInterval(broadcastTimer);
+    broadcastTimer = null;
+  }
+  if (unsubscribeStats) {
+    unsubscribeStats();
+    unsubscribeStats = null;
+  }
+}
+
+// ─── Route handler ───
 
 export async function GET(request: NextRequest): Promise<Response> {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send an initial snapshot immediately
-      const initial = getHostStats();
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify(initial)}\n\n`)
-      );
+      const client: Client = { controller, encoder };
 
-      // Push stats every 2 seconds
-      const interval = setInterval(() => {
-        // Stop if client disconnected
-        if (request.signal.aborted) {
-          clearInterval(interval);
-          controller.close();
-          return;
-        }
+      // Send initial snapshot immediately
+      try {
+        const initial = getHostStats();
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(initial)}\n\n`)
+        );
+      } catch {
+        // Non-critical — the next broadcast will send data
+      }
 
-        try {
-          const stats = getHostStats();
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(stats)}\n\n`)
-          );
-        } catch {
-          // If stats collection fails, send an error event and continue
-          controller.enqueue(
-            encoder.encode(
-              `event: error\ndata: {"error":"Failed to collect stats"}\n\n`
-            )
-          );
-        }
-      }, 2000);
+      // Register this client
+      clients.add(client);
+      startBroadcaster();
 
       // Clean up when the client disconnects
       request.signal.addEventListener("abort", () => {
-        clearInterval(interval);
-        controller.close();
+        clients.delete(client);
+        stopBroadcasterIfEmpty();
+        try {
+          controller.close();
+        } catch {
+          // Already closed
+        }
       });
     },
   });

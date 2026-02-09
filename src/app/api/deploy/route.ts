@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { prepareDeployment } from "@/lib/deployer";
+import {
+  prepareDeployment,
+  cleanupDeployDir,
+  pruneOldDeployments,
+} from "@/lib/deployer";
 import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +50,7 @@ export async function POST(
   request: NextRequest
 ): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
   let logId: string | null = null;
+  let projectDir: string | null = null;
 
   try {
     const body = (await request.json()) as DeployInput;
@@ -73,6 +78,7 @@ export async function POST(
 
     // Clone repo and detect stack
     const result = prepareDeployment(repoUrl, branch);
+    projectDir = result.projectDir;
 
     // Update log with results
     const updated = await prisma.deploymentLog.update({
@@ -123,5 +129,12 @@ export async function POST(
       { success: false, error: message },
       { status: 500 }
     );
+  } finally {
+    // Clean up the cloned directory (detection is done, no need to keep it)
+    if (projectDir) {
+      cleanupDeployDir(projectDir);
+    }
+    // Prune any leftover old deployment dirs
+    pruneOldDeployments();
   }
 }

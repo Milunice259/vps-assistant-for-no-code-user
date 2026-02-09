@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createSSHConnection, getRemoteStats } from "@/lib/ssh";
+import { createSSHConnection, closeSSH, getRemoteStats } from "@/lib/ssh";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -63,13 +63,6 @@ export async function GET(
       { status: 500 }
     );
   } finally {
-    // Always close the SSH connection
-    if (ssh) {
-      try {
-        await ssh.close();
-      } catch {
-        // Ignore close errors
-      }
-    }
+    await closeSSH(ssh);
   }
 }

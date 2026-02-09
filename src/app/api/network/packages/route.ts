@@ -30,6 +30,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<PackageInfo[]>>> {
     const raw = execSync("apt list --installed 2>/dev/null | tail -n +2", {
       encoding: "utf-8",
       timeout: 30_000,
+      maxBuffer: 10 * 1024 * 1024, // 10 MB — large servers can have many packages
     });
 
     const lines = raw.trim().split("\n").filter(Boolean);
@@ -133,6 +134,7 @@ export async function POST(
     const output = execSync(command, {
       encoding: "utf-8",
       timeout: 300_000, // 5 minute timeout for upgrades
+      maxBuffer: 50 * 1024 * 1024, // 50 MB — apt upgrade can be verbose
     });
 
     return NextResponse.json({

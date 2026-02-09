@@ -30,6 +30,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<PortInfo[]>>> {
     const raw = execSync("ss -tulnp 2>/dev/null", {
       encoding: "utf-8",
       timeout: 10_000,
+      maxBuffer: 5 * 1024 * 1024, // 5 MB — more than enough for port listings
     });
 
     const lines = raw.trim().split("\n");

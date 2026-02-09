@@ -3,7 +3,7 @@
  */
 
 import { execSync } from "child_process";
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, rmSync, mkdirSync } from "fs";
 import path from "path";
 
 export type DetectedStack =
@@ -25,6 +25,8 @@ export interface DeployResult {
 }
 
 const DEPLOY_DIR = "/tmp/vps-deployments";
+/** Keep at most this many deployment dirs before pruning old ones */
+const MAX_DEPLOY_DIRS = 5;
 
 /**
  * Clone a GitHub repository to a temporary directory.
@@ -37,13 +39,53 @@ export function cloneRepository(
     repoUrl.split("/").pop()?.replace(".git", "") || "app";
   const targetDir = path.join(DEPLOY_DIR, `${repoName}-${Date.now()}`);
 
-  execSync(`mkdir -p ${DEPLOY_DIR}`);
+  mkdirSync(DEPLOY_DIR, { recursive: true });
   execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} ${targetDir}`, {
     timeout: 120_000,
     stdio: "pipe",
   });
 
   return targetDir;
+}
+
+/**
+ * Remove a deployment directory safely.
+ */
+export function cleanupDeployDir(dirPath: string): void {
+  try {
+    if (dirPath.startsWith(DEPLOY_DIR) && existsSync(dirPath)) {
+      rmSync(dirPath, { recursive: true, force: true });
+    }
+  } catch {
+    // Best-effort cleanup — don't crash if removal fails
+  }
+}
+
+/**
+ * Prune old deployment directories, keeping only the most recent ones.
+ * Prevents /tmp from filling up over time.
+ */
+export function pruneOldDeployments(keep: number = MAX_DEPLOY_DIRS): void {
+  try {
+    if (!existsSync(DEPLOY_DIR)) return;
+
+    const entries = readdirSync(DEPLOY_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => ({
+        name: e.name,
+        path: path.join(DEPLOY_DIR, e.name),
+        // Extract timestamp from dir name (repoName-timestamp)
+        ts: parseInt(e.name.split("-").pop() || "0", 10),
+      }))
+      .sort((a, b) => b.ts - a.ts); // newest first
+
+    // Remove everything beyond the keep limit
+    for (const entry of entries.slice(keep)) {
+      rmSync(entry.path, { recursive: true, force: true });
+    }
+  } catch {
+    // Best-effort pruning
+  }
 }
 
 /**

@@ -1,0 +1,71 @@
+// ═══════════════════════════════════════════════════
+//  VPS Control App - Prisma Schema
+//  Sensitive fields (SSH keys, passwords) are encrypted
+//  at the application layer using AES-256-GCM.
+// ═══════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Admin users ───
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ─── Remote VPS connections ───
+model Server {
+  id            String     @id @default(cuid())
+  name          String
+  host          String
+  port          Int        @default(22)
+  username      String
+  authMethod    AuthMethod @default(PASSWORD) @map("auth_method")
+  encryptedKey  String?    @map("encrypted_key")  // AES-256-GCM encrypted SSH private key
+  encryptedPass String?    @map("encrypted_pass") // AES-256-GCM encrypted SSH password
+  isActive      Boolean    @default(true) @map("is_active")
+  lastConnected DateTime?  @map("last_connected")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  @@map("servers")
+}
+
+// ─── Deployment history ───
+model DeploymentLog {
+  id            String       @id @default(cuid())
+  repoUrl       String       @map("repo_url")
+  branch        String       @default("main")
+  detectedStack String       @map("detected_stack")
+  status        DeployStatus @default(PENDING)
+  logs          String       @db.Text
+  domain        String?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  @@map("deployment_logs")
+}
+
+enum AuthMethod {
+  PASSWORD
+  KEY
+}
+
+enum DeployStatus {
+  PENDING
+  CLONING
+  BUILDING
+  RUNNING
+  FAILED
+}

@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700 rounded-full hover:bg-gray-600;
+  }
+
+  /* Selection color */
+  ::selection {
+    @apply bg-brand-600/30 text-white;
+  }
+}
+
+@layer components {
+  /* Reusable table styles */
+  .table-dark {
+    @apply w-full text-sm text-left;
+  }
+
+  .table-dark thead {
+    @apply text-xs uppercase text-gray-400 border-b border-gray-700;
+  }
+
+  .table-dark th {
+    @apply px-4 py-3 font-medium;
+  }
+
+  .table-dark td {
+    @apply px-4 py-3 text-gray-300;
+  }
+
+  .table-dark tbody tr {
+    @apply border-b border-gray-800 hover:bg-gray-800/50 transition-colors;
+  }
+}

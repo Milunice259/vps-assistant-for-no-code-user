@@ -15,29 +15,29 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "latest",
+    "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.0",
+    "jose": "^5.0.0",
+    "lucide-react": "^0.500.0",
     "next": "latest",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@prisma/client": "latest",
-    "ssh2-promise": "^1.0.3",
-    "bcryptjs": "^2.4.3",
-    "jose": "^5.0.0",
     "recharts": "^2.15.0",
-    "lucide-react": "^0.500.0",
-    "clsx": "^2.1.0"
+    "ssh2-promise": "^1.0.3"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/bcryptjs": "^2.4.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/bcryptjs": "^2.4.0",
-    "prisma": "latest",
-    "tsx": "^4.0.0",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.4.0",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "latest"
+    "eslint-config-next": "latest",
+    "postcss": "^8.4.0",
+    "prisma": "latest",
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
   }
 }

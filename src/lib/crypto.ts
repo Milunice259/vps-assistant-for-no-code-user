@@ -52,7 +52,7 @@ export function decrypt(ciphertext: string): string {
   const key = getKey();
   const combined = Buffer.from(ciphertext, "base64");
 
-  if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH + 1) {
+  if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH) {
     throw new Error("Invalid ciphertext: too short");
   }
 

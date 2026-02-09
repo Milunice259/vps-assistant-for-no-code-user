@@ -629,6 +629,10 @@ deploy_application() {
     export DOCKER_CLIENT_TIMEOUT=300
     export COMPOSE_HTTP_TIMEOUT=300
 
+    # Stop and remove old containers
+    print_info "Stopping old containers..."
+    $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+
     print_info "Pulling base images..."
     $COMPOSE_CMD pull --ignore-buildable 2>&1 | grep -v "Pulling" || true
 
@@ -637,6 +641,10 @@ deploy_application() {
 
     print_info "Starting containers..."
     $COMPOSE_CMD up -d
+
+    # Clean up old images and build cache
+    print_info "Cleaning up old Docker images..."
+    docker image prune -f 2>/dev/null || true
 
     print_success "Containers started"
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Monitor } from "lucide-react";
 import type { PortInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -10,13 +10,22 @@ export function PortTable() {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [platformError, setPlatformError] = useState<string | null>(null);
 
   const fetchPorts = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setPlatformError(null);
     try {
       const res = await fetch("/api/network/ports");
       const json = await res.json();
+
+      // Handle platform-specific error with friendly message
+      if (json.error === "UNSUPPORTED_PLATFORM") {
+        setPlatformError(json.message);
+        return;
+      }
+
       if (!res.ok) throw new Error(json.error || "Failed to load ports");
       setPorts(json.data ?? []);
     } catch (err) {
@@ -54,12 +63,29 @@ export function PortTable() {
         </Button>
       </div>
 
-      {error && (
+      {/* Friendly platform warning */}
+      {platformError && (
+        <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-4">
+          <Monitor className="mt-0.5 h-5 w-5 flex-shrink-0 text-yellow-400" />
+          <div>
+            <p className="font-medium text-yellow-300">
+              Linux Server Required
+            </p>
+            <p className="mt-1 text-sm text-yellow-200/70">
+              {platformError}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Regular errors */}
+      {error && !platformError && (
         <p className="rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
           {error}
         </p>
       )}
 
+      {!platformError && (
       <div className="overflow-x-auto rounded-xl border border-gray-700">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-gray-700 bg-gray-800/50 text-xs uppercase text-gray-400">
@@ -113,6 +139,7 @@ export function PortTable() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

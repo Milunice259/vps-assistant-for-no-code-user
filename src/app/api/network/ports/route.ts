@@ -1,14 +1,32 @@
 import { NextResponse } from "next/server";
 import { execSync } from "child_process";
+import os from "os";
 import type { ApiResponse, PortInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/network/ports - List listening ports on the host using `ss`.
+ * Only works on Linux servers.
  */
 export async function GET(): Promise<NextResponse<ApiResponse<PortInfo[]>>> {
   try {
+    // ── Environment check ──
+    if (os.platform() !== "linux") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "UNSUPPORTED_PLATFORM",
+          message:
+            "This feature requires a Linux server. " +
+            "You are currently running on " +
+            os.platform().toUpperCase() +
+            ". Port scanning will work automatically when deployed to your Linux VPS.",
+        },
+        { status: 422 }
+      );
+    }
+
     const raw = execSync("ss -tulnp 2>/dev/null", {
       encoding: "utf-8",
       timeout: 10_000,
@@ -43,7 +61,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<PortInfo[]>>> {
 
         // Extract process name from e.g. users:(("sshd",pid=1234,fd=3))
         const procMatch = processInfo.match(/\("([^"]+)"/);
-        const processName = procMatch?.[1] ?? processInfo || "-";
+        const processName = procMatch?.[1] ?? (processInfo || "-");
 
         return {
           protocol,

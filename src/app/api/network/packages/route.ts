@@ -1,14 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
+import os from "os";
 import type { ApiResponse, PackageInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/network/packages - List installed packages via `apt`.
+ * Only works on Linux servers with apt package manager.
  */
 export async function GET(): Promise<NextResponse<ApiResponse<PackageInfo[]>>> {
   try {
+    // ── Environment check ──
+    if (os.platform() !== "linux") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "UNSUPPORTED_PLATFORM",
+          message:
+            "This feature requires a Linux server with APT package manager. " +
+            "You are currently running on " +
+            os.platform().toUpperCase() +
+            ". Package management will work automatically when deployed to your Linux VPS.",
+        },
+        { status: 422 }
+      );
+    }
+
     const raw = execSync("apt list --installed 2>/dev/null | tail -n +2", {
       encoding: "utf-8",
       timeout: 30_000,
@@ -63,6 +81,22 @@ export async function POST(
     };
 
     const { action, packages } = body;
+
+    // ── Environment check ──
+    if (os.platform() !== "linux") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "UNSUPPORTED_PLATFORM",
+          message:
+            "Package operations require a Linux server with APT. " +
+            "You are running on " +
+            os.platform().toUpperCase() +
+            ".",
+        },
+        { status: 422 }
+      );
+    }
 
     if (!action || !["update", "upgrade"].includes(action)) {
       return NextResponse.json(

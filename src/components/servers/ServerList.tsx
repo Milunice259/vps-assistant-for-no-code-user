@@ -6,7 +6,7 @@ import { Plus, RefreshCw, Server } from "lucide-react";
 import type { ServerInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import ServerForm from "./ServerForm";
+import { ServerForm } from "./ServerForm";
 
 export function ServerList() {
   const [servers, setServers] = useState<ServerInfo[]>([]);

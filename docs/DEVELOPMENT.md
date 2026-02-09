@@ -201,7 +201,7 @@ git checkout -b fix/bug-name
 ### Checklist
 
 1. [ ] Determine: new model? API? UI?
-2. [ ] Update Prisma schema → `npm run db:migrate`
+2. [ ] Update Prisma schema → `npm run db:push`
 3. [ ] Create API route in `src/app/api/`
 4. [ ] Create component(s) in `src/components/`
 5. [ ] Create page in `src/app/(panel)/`

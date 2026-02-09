@@ -17,7 +17,7 @@
 | Framework  | Next.js 16 (App Router, standalone) |
 | UI         | React 19.2, Tailwind CSS 3.4       |
 | Language   | TypeScript 5.7+ (strict)           |
-| Database   | PostgreSQL 16 (Alpine Docker)      |
+| Database   | SQLite (embedded, file-based)      |
 | ORM        | Prisma                              |
 | Auth       | JWT (jose HS256) + bcryptjs        |
 | SSH        | ssh2-promise                        |
@@ -48,27 +48,17 @@
                   ┌─────────────────┐
                   │  Next.js App    │  ← Container: vps-control-app
                   │  Port 3000      │     Serves both Frontend + API
-                  │  (standalone)   │
-                  └────────┬────────┘
-                           │
-                   internal (private bridge network)
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │   PostgreSQL    │  ← Container: vps-control-db
-                  │   Port 5432     │     NOT exposed to the internet
-                  │   (encrypted)   │     Only the app can reach it
+                  │  (standalone)   │     SQLite DB embedded inside
                   └─────────────────┘
 ```
 
-### Docker Networks
+### Docker Network
 
 | Network           | Type     | Purpose                                               |
 | ----------------- | -------- | ----------------------------------------------------- |
 | `traefik_network` | External | Connects the app to Traefik for internet-facing traffic |
-| `internal`        | Bridge   | Private link between the app and PostgreSQL            |
 
-**Key:** PostgreSQL lives only on the `internal` network. Only the Next.js app can access it.
+**Single container** — SQLite database is a file stored in a Docker volume (`app_data`).
 
 ### Request Flow
 
@@ -93,7 +83,7 @@ Next.js App ──┬── Server Components (SSR HTML)
 
 | Decision | Why |
 | --- | --- |
-| **Monolith in Docker** | Simple deployment (2 containers), low complexity, right-sized for a VPS tool |
+| **Monolith in Docker** | Single container with embedded SQLite, low complexity, right-sized for a VPS tool |
 | **App Router** | Route groups: `(auth)` for login, `(panel)` for main panel with sidebar |
 | **SSE over WebSocket** | Unidirectional server→client, no separate socket server, auto-reconnect |
 | **AES-256-GCM** | Authenticated encryption for SSH credentials; format: `base64(IV + ciphertext + authTag)` |
@@ -149,31 +139,22 @@ cd vps-assistant-for-no-code-user
 # 2. Install dependencies (auto-runs prisma generate)
 npm install
 
-# 3. Start PostgreSQL
-docker run -d --name vps-dev-db \
-  -e POSTGRES_USER=vpsadmin \
-  -e POSTGRES_PASSWORD=devpassword123 \
-  -e POSTGRES_DB=vpscontrol \
-  -p 5432:5432 postgres:16-alpine
-
-# 4. Create .env
+# 3. Create .env
 cat > .env << 'EOF'
-DATABASE_URL="postgresql://vpsadmin:devpassword123@localhost:5432/vpscontrol"
-DB_HOST=localhost
-DB_PORT=5432
+DATABASE_URL="file:./prisma/dev.db"
 JWT_SECRET=dev-jwt-secret-change-in-production-must-be-64-hex-chars-long-ok
 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 EOF
 
-# 5. Run migrations
-npm run db:migrate
+# 4. Initialize database
+npm run db:push
 
-# 6. Seed admin account
+# 5. Seed admin account
 npm run db:seed
 
-# 7. Start dev server
+# 6. Start dev server
 npm run dev
 # → http://localhost:3000
 ```
@@ -185,8 +166,7 @@ npm run dev
 | `npm run dev`        | Start dev server (hot reload)           |
 | `npm run build`      | Production build                        |
 | `npm run lint`       | ESLint check                            |
-| `npm run db:migrate` | Create & apply migration                |
-| `npm run db:push`    | Push schema directly (dev only)         |
+| `npm run db:push`    | Create/update database from schema      |
 | `npm run db:seed`    | Seed initial data                       |
 | `npm run db:studio`  | Prisma Studio GUI (localhost:5555)      |
 
@@ -206,7 +186,7 @@ npm run dev
 | Problem | Fix |
 | --- | --- |
 | `Cannot find module '@prisma/client'` | Run `npm run db:generate` |
-| Database connection errors | Check `docker ps` and `DATABASE_URL` in `.env` |
+| Database connection errors | Check `DATABASE_URL` in `.env` (should be `file:./prisma/dev.db`) |
 | `ENCRYPTION_KEY must be 64 hex chars` | Generate with `openssl rand -hex 32` |
 | Port 3000 in use | `PORT=3001 npm run dev` |
 | Network page errors on Windows | Expected — `ss` and `apt` are Linux-only commands |
@@ -241,33 +221,26 @@ chmod +x deploy.sh
 2. Installs Docker, Docker Compose, UFW firewall
 3. Sets up Traefik reverse proxy (detects existing or creates new)
 4. Prompts for domain, admin credentials
-5. Generates cryptographic secrets (`DB_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_KEY`)
-6. Builds and deploys the app + PostgreSQL
+5. Generates cryptographic secrets (`JWT_SECRET`, `ENCRYPTION_KEY`)
+6. Builds and deploys the app (single container with SQLite)
 7. Verifies deployment health
 
 ### Manual Deploy
 
 ```bash
 # Generate secrets
-DB_PASSWORD=$(openssl rand -hex 24)
 JWT_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # Create .env (edit values as needed)
 cat > .env << EOF
-NODE_ENV=production
 DOMAIN=panel.example.com
-POSTGRES_USER=vpsadmin
-POSTGRES_PASSWORD=$DB_PASSWORD
-POSTGRES_DB=vpscontrol
-DATABASE_URL=postgresql://vpsadmin:$DB_PASSWORD@db:5432/vpscontrol
-DB_HOST=db
-DB_PORT=5432
+DATABASE_URL=file:/app/data/vpscontrol.db
 JWT_SECRET=$JWT_SECRET
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-secure-password
-TRAEFIK_NETWORK=traefik_network
+TRAEFIK_NETWORK=traefik
 CERT_RESOLVER=letsencrypt
 EOF
 
@@ -294,8 +267,8 @@ labels:
 
 ```
 docker-entrypoint.sh
-    ├─ 1. Wait for DB (wait-for-db.js × 30 retries, 2s apart)
-    ├─ 2. Run Prisma migrations (prisma migrate deploy)
+    ├─ 1. Initialize SQLite database (prisma db push)
+    ├─ 2. Seed admin user (if ADMIN_PASSWORD set)
     └─ 3. Start Next.js (node server.js)
 ```
 
@@ -306,13 +279,13 @@ docker-entrypoint.sh
 git pull origin main && docker compose up -d --build
 
 # Backup DB
-docker compose exec db pg_dump -U vpsadmin vpscontrol > backup_$(date +%Y%m%d).sql
+docker cp vps-control-app:/app/data/vpscontrol.db ./backup_$(date +%Y%m%d).db
 
 # Restore DB
-docker compose exec -T db psql -U vpsadmin vpscontrol < backup.sql
+docker cp ./backup.db vps-control-app:/app/data/vpscontrol.db
 
 # Monitor
-docker stats vps-control-app vps-control-db
+docker stats vps-control-app
 docker compose logs -f --tail=100 app
 ```
 

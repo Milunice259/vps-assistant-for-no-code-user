@@ -1,11 +1,10 @@
 ## ═══════════════════════════════════════════════════
 ##  VPS Control App - Docker Compose
+##  Single container with embedded SQLite database.
 ##  Joins external Traefik network for HTTPS ingress.
-##  DB is isolated on a private bridge network.
 ## ═══════════════════════════════════════════════════
 
 services:
-  # ─── Next.js Application ───
   app:
     build:
       context: .
@@ -14,11 +13,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-    depends_on:
-      db:
-        condition: service_healthy
+      - DATABASE_URL=file:/app/data/vpscontrol.db
+    volumes:
+      - app_data:/app/data
     labels:
       # --- Enable Traefik discovery ---
       - "traefik.enable=true"
@@ -40,36 +37,12 @@ services:
       - "traefik.http.middlewares.vps-https-redirect.redirectscheme.permanent=true"
     networks:
       - traefik_network
-      - internal
-
-  # ─── PostgreSQL Database ───
-  db:
-    image: postgres:16-alpine
-    container_name: vps-control-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-vpscontrol}
-      POSTGRES_USER: ${DB_USER:-vpscontrol}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vpscontrol} -d ${DB_NAME:-vpscontrol}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    networks:
-      - internal
-    # No Traefik labels — DB must NEVER be exposed to the internet
 
 volumes:
-  pgdata:
+  app_data:
     driver: local
 
 networks:
   traefik_network:
     external: true
     name: ${TRAEFIK_NETWORK:-traefik}
-  internal:
-    driver: bridge

@@ -56,15 +56,15 @@ vitest.config.*
 examples/
 .examples/
 
-# ─── Prisma ───
-prisma/migrations/**/migration_lock.toml
+# ─── Prisma / SQLite ───
+*.db
+*.db-journal
 
 # ─── Deployment Artifacts ───
 /tmp/vps-deployments/
 
 # ─── Docker (local dev volumes) ───
 docker-data/
-pgdata/
 
 # ─── Misc ───
 *.tgz

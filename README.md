@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Next.js-black?style=flat-square&logo=next.js" alt="Next.js" />
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Traefik-24A1C1?style=flat-square&logo=traefikproxy&logoColor=white" alt="Traefik" />
 </p>
@@ -50,20 +50,14 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
                        ▼
               ┌─────────────────┐
               │  Next.js App    │  ← Port 3000 (internal)
-              │  (App + API)    │
-              └────────┬────────┘
-                       │ internal network (private bridge)
-                       ▼
-              ┌─────────────────┐
-              │   PostgreSQL    │  ← Never exposed to internet
-              │   (Encrypted)   │
+              │  (App + API)    │     SQLite DB embedded
+              │  + SQLite DB    │     inside Docker volume
               └─────────────────┘
 ```
 
 **Key design decisions:**
 
-- The app joins **two Docker networks**: Traefik's external network for ingress, and a private bridge network for database access.
-- PostgreSQL has **no Traefik labels** and lives only on the private network.
+- **Single container** with embedded SQLite — no separate database container needed.
 - Sensitive data (SSH keys, passwords) is encrypted at the application layer with AES-256-GCM before being stored.
 - Host keys are **auto-accepted** for SSH connections to enable fully automated VPS management.
 
@@ -74,7 +68,7 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 | Framework | Next.js (App Router, Server Components) |
 | Frontend | React 19, Tailwind CSS, Recharts, Lucide Icons |
 | Backend | Next.js API Routes, Server-Sent Events |
-| Database | PostgreSQL 16 (Alpine) via Prisma ORM |
+| Database | SQLite (embedded) via Prisma ORM |
 | Auth | bcrypt + JWT (jose) in HttpOnly cookies |
 | SSH | ssh2-promise (auto-accept host keys) |
 | Encryption | AES-256-GCM (Node.js crypto) |
@@ -103,8 +97,8 @@ The script will automatically:
 2. **Install** Docker, Docker Compose, and firewall rules
 3. **Setup** Traefik reverse proxy (detects existing or creates new)
 4. **Ask** for your domain, admin credentials
-5. **Generate** all cryptographic secrets (DB password, JWT secret, AES-256 key)
-6. **Build and deploy** the app + PostgreSQL
+5. **Generate** cryptographic secrets (JWT secret, AES-256 key)
+6. **Build and deploy** the app (single container with SQLite)
 7. **Verify** everything is running
 
 After deployment, visit `https://your-domain.com` and log in with the admin credentials you provided.
@@ -115,19 +109,17 @@ After deployment, visit `https://your-domain.com` and log in with the admin cred
 # Install dependencies
 npm install
 
-# Start a local PostgreSQL
-docker run -d --name vps-pg \
-  -e POSTGRES_PASSWORD=dev \
-  -e POSTGRES_DB=vpscontrol \
-  -e POSTGRES_USER=vpscontrol \
-  -p 5432:5432 \
-  postgres:16-alpine
+# Create .env
+cat > .env << 'EOF'
+DATABASE_URL="file:./prisma/dev.db"
+JWT_SECRET=dev-jwt-secret-change-in-production-must-be-64-hex-chars-long-ok
+ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+EOF
 
-# Create .env with required variables (see Environment Variables section)
-# Or run deploy.sh which generates it automatically
-
-# Run migrations and seed the admin user
-npx prisma migrate dev
+# Initialize database and seed admin
+npm run db:push
 npm run db:seed
 
 # Start dev server
@@ -141,14 +133,13 @@ Open [http://localhost:3000](http://localhost:3000).
 ```
 .
 ├── deploy.sh                  # One-click production deploy script
-├── docker-compose.yml         # App + DB + Traefik labels
-├── docker-entrypoint.sh       # Waits for DB, runs migrations, starts app
+├── docker-compose.yml         # Single container + Traefik labels
+├── docker-entrypoint.sh       # Init SQLite, seed admin, start app
 ├── Dockerfile                 # Multi-stage: deps → build → runner
 ├── prisma/
 │   └── schema.prisma          # User, Server, DeploymentLog models
 ├── scripts/
-│   ├── seed.ts                # Creates default admin user
-│   └── wait-for-db.js         # TCP probe for DB readiness
+│   └── seed.ts                # Creates default admin user
 └── src/
     ├── middleware.ts           # Auth guard for protected routes
     ├── app/
@@ -183,7 +174,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `DOMAIN` | Your domain pointing to the server | `vps.example.com` |
 | `CERT_RESOLVER` | Traefik certificate resolver name | `letsencrypt` |
 | `TRAEFIK_NETWORK` | Name of your Traefik Docker network | `traefik` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@db:5432/vpscontrol` |
+| `DATABASE_URL` | SQLite file path | `file:/app/data/vpscontrol.db` |
 | `JWT_SECRET` | 64-char hex string for signing tokens | *(generated by deploy.sh)* |
 | `ENCRYPTION_KEY` | 64-char hex string for AES-256-GCM | *(generated by deploy.sh)* |
 | `ADMIN_USERNAME` | Default admin username | `admin` |
@@ -196,9 +187,8 @@ Open [http://localhost:3000](http://localhost:3000).
 - **Encryption at rest:** SSH passwords and private keys are encrypted with AES-256-GCM before database storage.
 - **No plaintext secrets:** JWT secret and encryption key are generated with `openssl rand -hex 32`.
 - **HttpOnly cookies:** Session tokens are stored in secure, HttpOnly cookies — not accessible to JavaScript.
-- **Network isolation:** PostgreSQL is on a private Docker bridge network with no external exposure.
 - **Non-root container:** The production image runs as a dedicated `nextjs` user (UID 1001).
-- **DB readiness gate:** The entrypoint waits for PostgreSQL before running Prisma migrations, preventing race conditions.
+- **Embedded database:** SQLite runs inside the app container — no external database port to attack.
 
 ## Useful Commands
 
@@ -209,11 +199,11 @@ docker compose logs -f
 # View only app logs
 docker compose logs -f app
 
-# Access the database
-docker compose exec db psql -U vpscontrol vpscontrol
-
 # Backup the database
-docker compose exec db pg_dump -U vpscontrol vpscontrol > backup.sql
+docker cp vps-control-app:/app/data/vpscontrol.db ./backup.db
+
+# Restore from backup
+docker cp ./backup.db vps-control-app:/app/data/vpscontrol.db
 
 # Restart after code changes
 docker compose up -d --build

@@ -415,11 +415,9 @@ configure_application() {
 
     # Generate secrets
     print_info "Generating cryptographic secrets..."
-    DB_PASSWORD=$(openssl rand -hex 24)
     JWT_SECRET=$(openssl rand -hex 32)
     ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-    print_success "Database password generated (48 hex chars)"
     print_success "JWT secret generated (64 hex chars)"
     print_success "AES-256-GCM encryption key generated (64 hex chars)"
 
@@ -437,13 +435,8 @@ DOMAIN=${DOMAIN}
 CERT_RESOLVER=${CERT_RESOLVER}
 TRAEFIK_NETWORK=${TRAEFIK_NETWORK}
 
-# ─── Database ───
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=vpscontrol
-DB_USER=vpscontrol
-DB_PASSWORD=${DB_PASSWORD}
-DATABASE_URL=postgresql://vpscontrol:${DB_PASSWORD}@db:5432/vpscontrol?schema=public
+# ─── Database (SQLite, stored in Docker volume) ───
+DATABASE_URL=file:/app/data/vpscontrol.db
 
 # ─── Security ───
 JWT_SECRET=${JWT_SECRET}
@@ -499,13 +492,6 @@ verify_deployment() {
         $COMPOSE_CMD logs --tail=20 app 2>/dev/null || true
     fi
 
-    # Check PostgreSQL
-    if $COMPOSE_CMD ps 2>/dev/null | grep -q "db.*healthy\|db.*Up"; then
-        print_success "PostgreSQL database is healthy"
-    else
-        print_warning "PostgreSQL health check pending (may still be initializing)"
-    fi
-
     # Check Traefik
     if docker ps | grep -q traefik; then
         print_success "Traefik is running"
@@ -541,7 +527,7 @@ show_completion_message() {
     echo "    Restart:       cd $APP_DIR && $COMPOSE_CMD restart"
     echo "    Stop:          cd $APP_DIR && $COMPOSE_CMD down"
     echo "    Update:        cd $APP_DIR && git pull && $COMPOSE_CMD up -d --build"
-    echo "    Backup DB:     $COMPOSE_CMD exec db pg_dump -U vpscontrol vpscontrol > backup.sql"
+    echo "    Backup DB:     docker cp vps-control-app:/app/data/vpscontrol.db ./backup.db"
     echo ""
 }
 

@@ -398,8 +398,8 @@ configure_application() {
         read_input "Enter domain (e.g. panel.example.com)" "" "DOMAIN" "false"
     done
 
-    # Cert resolver
-    read_input "Traefik cert resolver name" "letsencrypt" "CERT_RESOLVER" "false"
+    # Cert resolver — always "letsencrypt" (matches Traefik config generated in setup_traefik)
+    CERT_RESOLVER="letsencrypt"
 
     # Admin credentials
     read_input "Admin username" "admin" "ADMIN_USERNAME" "false"

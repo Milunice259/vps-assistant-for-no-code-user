@@ -223,6 +223,21 @@ docker compose down
 docker compose down -v
 ```
 
+## Documentation
+
+Full documentation is available in the [`docs/`](./docs/) directory:
+
+| Document | Description |
+|---|---|
+| [Architecture](./docs/ARCHITECTURE.md) | System design, data flow, and technical decisions |
+| [Getting Started](./docs/GETTING-STARTED.md) | Local development setup |
+| [API Reference](./docs/API-REFERENCE.md) | All endpoints with request/response formats |
+| [Database](./docs/DATABASE.md) | Schema, migrations, and encryption |
+| [Deployment](./docs/DEPLOYMENT.md) | Production deployment with Docker & Traefik |
+| [Security](./docs/SECURITY.md) | Auth, encryption, and security model |
+| [Components](./docs/COMPONENTS.md) | UI components, hooks, and patterns |
+| [Contributing](./docs/CONTRIBUTING.md) | Code conventions and workflow |
+
 ## License
 
 MIT

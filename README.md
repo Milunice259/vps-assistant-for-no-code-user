@@ -85,25 +85,27 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 
 ### One-Click Deploy (Production)
 
-> **Prerequisites:** A Linux VPS with Docker, Docker Compose V2, and Traefik already running.
+> **Prerequisites:** A Linux VPS (Ubuntu/Debian recommended) with root access. The script installs everything else automatically.
 
 ```bash
 # Clone the repo
-git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git
-cd vps-assistant-for-no-code-user
+git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git /opt/vps-panel
+cd /opt/vps-panel
 
 # Run the deploy script
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-The script will interactively:
+The script will automatically:
 
-1. **Detect** your Traefik network automatically
-2. **Ask** for your domain and cert resolver
-3. **Generate** all cryptographic secrets (DB password, JWT secret, AES-256 key)
-4. **Write** the `.env` file
-5. **Build and start** everything with `docker compose up -d --build`
+1. **Check** system requirements (RAM, disk, internet)
+2. **Install** Docker, Docker Compose, and firewall rules
+3. **Setup** Traefik reverse proxy (detects existing or creates new)
+4. **Ask** for your domain, admin credentials
+5. **Generate** all cryptographic secrets (DB password, JWT secret, AES-256 key)
+6. **Build and deploy** the app + PostgreSQL
+7. **Verify** everything is running
 
 After deployment, visit `https://your-domain.com` and log in with the admin credentials you provided.
 

@@ -219,28 +219,31 @@ npm run dev
 
 | Requirement    | Details                                  |
 | -------------- | ---------------------------------------- |
-| OS             | Ubuntu 20.04+ (or any Linux with Docker) |
-| Docker         | 24.x+                                   |
-| Docker Compose | v2+                                      |
-| Traefik        | Already running on the host             |
-| Domain         | A record pointing to the server IP      |
-| RAM            | 1 GB minimum (2 GB recommended)         |
+| OS             | Ubuntu 20.04+ / Debian (recommended)    |
+| Root access    | Required (the script installs Docker)    |
+| Domain         | A record pointing to the server IP       |
+| RAM            | 1 GB minimum (2 GB recommended)          |
+| Disk           | 5 GB minimum                             |
+
+> Docker, Docker Compose, Traefik, and firewall are all **installed automatically** by the deploy script.
 
 ### One-Click Deploy (Recommended)
 
 ```bash
-git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git
-cd vps-assistant-for-no-code-user
+git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git /opt/vps-panel
+cd /opt/vps-panel
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
 **The script automatically:**
-1. Checks Docker, Compose, OpenSSL are installed
-2. Detects the Traefik network
-3. Prompts for domain, cert resolver, admin credentials
-4. Generates cryptographic secrets (`DB_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_KEY`)
-5. Creates `.env` and starts containers
+1. Checks system requirements (OS, RAM, disk, internet)
+2. Installs Docker, Docker Compose, UFW firewall
+3. Sets up Traefik reverse proxy (detects existing or creates new)
+4. Prompts for domain, admin credentials
+5. Generates cryptographic secrets (`DB_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_KEY`)
+6. Builds and deploys the app + PostgreSQL
+7. Verifies deployment health
 
 ### Manual Deploy
 

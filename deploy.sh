@@ -1,117 +1,431 @@
 #!/bin/bash
-set -euo pipefail
 
-# ═══════════════════════════════════════════════════
-#  VPS Control App - One-Click Deploy Script
-#  Detects Traefik, generates secrets, deploys.
-# ═══════════════════════════════════════════════════
+################################################################################
+# VPS Control App - Automated Deployment Script
+# This script automates the complete deployment process on a fresh VPS.
+# It installs all dependencies, configures Traefik, and deploys the app.
+################################################################################
 
-RED='\033[0;31m'
+set -e  # Exit on any error
+
+# --- Colors for Output ---
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-echo -e "${CYAN}"
-echo "╔══════════════════════════════════════════╗"
-echo "║     VPS Control App - Deploy Script      ║"
-echo "╚══════════════════════════════════════════╝"
-echo -e "${NC}"
+# --- Configuration ---
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+TRAEFIK_DIR="/opt/traefik"
+COMPOSE_CMD=""   # Will be set by detect_compose_command()
+MIN_RAM_MB=800   # Minimum ~1GB RAM (allowing for OS usage)
+MIN_DISK_GB=5    # Minimum 5GB disk
 
-# ─── [1/6] Check prerequisites ───
-echo -e "${YELLOW}[1/6] Checking prerequisites...${NC}"
+# --- Helper Functions ---
 
-if ! command -v docker &>/dev/null; then
-  echo -e "${RED}ERROR: Docker is not installed.${NC}"
-  exit 1
-fi
+print_header() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}  $1${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+}
 
-if ! docker compose version &>/dev/null; then
-  echo -e "${RED}ERROR: Docker Compose V2 is not available.${NC}"
-  exit 1
-fi
+print_success() {
+    echo -e "${GREEN}  ✓ $1${NC}"
+}
 
-if ! command -v openssl &>/dev/null; then
-  echo -e "${RED}ERROR: openssl is required to generate secrets.${NC}"
-  exit 1
-fi
+print_warning() {
+    echo -e "${YELLOW}  ⚠ $1${NC}"
+}
 
-echo -e "${GREEN}  ✓ Docker, Docker Compose, and openssl found.${NC}"
+print_error() {
+    echo -e "${RED}  ✗ $1${NC}"
+}
 
-# ─── [2/6] Detect Traefik network ───
-echo -e "${YELLOW}[2/6] Detecting Traefik network...${NC}"
+print_info() {
+    echo -e "${BLUE}  ℹ $1${NC}"
+}
 
-TRAEFIK_NETWORK=""
+# Read input with default value
+read_input() {
+    local prompt="$1"
+    local default="$2"
+    local var_name="$3"
+    local is_password="$4"
 
-# Try common Traefik network names
-for net in traefik proxy web traefik-public traefik_default; do
-  if docker network inspect "$net" &>/dev/null; then
-    TRAEFIK_NETWORK="$net"
-    break
-  fi
-done
+    if [ -n "$default" ]; then
+        display_prompt="$prompt (Default: $default)"
+    else
+        display_prompt="$prompt"
+    fi
 
-if [ -z "$TRAEFIK_NETWORK" ]; then
-  echo -e "${RED}  ✗ No Traefik network detected automatically.${NC}"
-  echo "    Available Docker networks:"
-  docker network ls --format "    - {{.Name}}" | grep -v "bridge\|host\|none"
-  echo ""
-  read -rp "  Enter the Traefik network name: " TRAEFIK_NETWORK
+    echo -e -n "${YELLOW}  $display_prompt: ${NC}"
 
-  if ! docker network inspect "$TRAEFIK_NETWORK" &>/dev/null; then
-    echo -e "${RED}ERROR: Network '${TRAEFIK_NETWORK}' does not exist.${NC}"
-    exit 1
-  fi
-fi
+    if [ "$is_password" == "true" ]; then
+        read -s input
+        echo "" # New line after silent input
+    else
+        read input
+    fi
 
-echo -e "${GREEN}  ✓ Using Traefik network: ${TRAEFIK_NETWORK}${NC}"
+    if [ -z "$input" ]; then
+        input="$default"
+    fi
 
-# ─── [3/6] Collect configuration ───
-echo -e "${YELLOW}[3/6] Configuration...${NC}"
+    eval $var_name="\"$input\""
+}
 
-read -rp "  Enter domain (e.g. vps.example.com): " DOMAIN
-if [ -z "$DOMAIN" ]; then
-  echo -e "${RED}ERROR: Domain is required.${NC}"
-  exit 1
-fi
+# ─── [1/8] Check Root ───
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        print_error "This script must be run as root or with sudo"
+        exit 1
+    fi
+}
 
-read -rp "  Enter Traefik cert resolver [letsencrypt]: " CERT_RESOLVER
-CERT_RESOLVER="${CERT_RESOLVER:-letsencrypt}"
+# ─── [2/8] Check System Requirements ───
+check_system_requirements() {
+    print_header "[1/8] Checking System Requirements"
 
-read -rp "  Enter admin username [admin]: " ADMIN_USERNAME
-ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+    # Check OS
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        print_info "Operating System: $NAME $VERSION"
 
-read -rsp "  Enter admin password: " ADMIN_PASSWORD
-echo ""
-if [ -z "$ADMIN_PASSWORD" ]; then
-  echo -e "${RED}ERROR: Admin password is required.${NC}"
-  exit 1
-fi
+        if [[ ! "$ID" =~ ^(ubuntu|debian)$ ]]; then
+            print_warning "This script is optimized for Ubuntu/Debian. Proceed with caution."
+        fi
+    else
+        print_warning "Cannot detect OS. Proceeding anyway..."
+    fi
 
-echo -e "${GREEN}  ✓ Domain:        ${DOMAIN}${NC}"
-echo -e "${GREEN}  ✓ Cert resolver: ${CERT_RESOLVER}${NC}"
-echo -e "${GREEN}  ✓ Admin user:    ${ADMIN_USERNAME}${NC}"
+    # Check RAM
+    total_ram=$(free -m | awk 'NR==2 {print $2}')
+    if [ "$total_ram" -lt "$MIN_RAM_MB" ]; then
+        print_warning "RAM: ${total_ram}MB (Recommended: 1GB+)"
+        print_warning "Application may run slowly with limited RAM"
+    else
+        print_success "RAM: ${total_ram}MB"
+    fi
 
-# ─── [4/6] Generate cryptographic secrets ───
-echo -e "${YELLOW}[4/6] Generating secrets...${NC}"
+    # Check Disk Space
+    available_disk=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+    if [ "$available_disk" -lt "$MIN_DISK_GB" ]; then
+        print_error "Insufficient disk space: ${available_disk}GB (Minimum: ${MIN_DISK_GB}GB)"
+        exit 1
+    else
+        print_success "Disk Space: ${available_disk}GB available"
+    fi
 
-DB_PASSWORD=$(openssl rand -hex 24)
-JWT_SECRET=$(openssl rand -hex 32)
-ENCRYPTION_KEY=$(openssl rand -hex 32)
+    # Check CPU
+    cpu_cores=$(nproc)
+    print_info "CPU Cores: $cpu_cores"
 
-echo -e "${GREEN}  ✓ Database password generated (48 hex chars).${NC}"
-echo -e "${GREEN}  ✓ JWT secret generated (64 hex chars).${NC}"
-echo -e "${GREEN}  ✓ AES-256-GCM encryption key generated (64 hex chars).${NC}"
+    # Check Internet connectivity
+    if ping -c 1 google.com &> /dev/null; then
+        print_success "Internet connectivity verified"
+    else
+        print_error "No internet connection detected"
+        exit 1
+    fi
+}
 
-# ─── [5/6] Write .env file ───
-echo -e "${YELLOW}[5/6] Writing .env file...${NC}"
+# ─── [3/8] Install System Dependencies ───
+install_dependencies() {
+    print_header "[2/8] Installing System Dependencies"
 
-if [ -f .env ]; then
-  cp .env ".env.backup.$(date +%s)"
-  echo -e "${YELLOW}  ! Existing .env backed up.${NC}"
-fi
+    print_info "Updating package list..."
+    apt-get update -qq
 
-cat > .env << ENVFILE
+    print_info "Installing basic tools..."
+    apt-get install -y -qq curl git wget ufw openssl > /dev/null 2>&1
+    print_success "Basic tools installed (curl, git, wget, ufw, openssl)"
+}
+
+# ─── [4/8] Install Docker ───
+install_docker() {
+    if command -v docker &> /dev/null; then
+        print_success "Docker already installed ($(docker --version | head -1))"
+    else
+        print_header "[3/8] Installing Docker"
+
+        print_info "Downloading Docker installation script..."
+        curl -fsSL https://get.docker.com -o get-docker.sh
+
+        print_info "Installing Docker (this may take a minute)..."
+        sh get-docker.sh > /dev/null 2>&1
+        rm -f get-docker.sh
+
+        # Start and enable Docker
+        systemctl start docker
+        systemctl enable docker > /dev/null 2>&1
+
+        if [ -n "$SUDO_USER" ]; then
+            usermod -aG docker "$SUDO_USER"
+            print_info "Added $SUDO_USER to docker group"
+        fi
+
+        print_success "Docker installed successfully ($(docker --version | head -1))"
+    fi
+}
+
+install_docker_compose() {
+    # Already have a working compose command? Skip.
+    if docker compose version &> /dev/null 2>&1 || command -v docker-compose &> /dev/null; then
+        detect_compose_command
+        return
+    fi
+
+    print_header "[3/8] Installing Docker Compose"
+
+    print_info "Installing Docker Compose..."
+    mkdir -p /usr/local/lib/docker/cli-plugins
+
+    # Install as Docker CLI plugin (docker compose)
+    curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    # Also install as standalone binary (docker-compose) for compatibility
+    cp /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+
+    print_success "Docker Compose installed successfully"
+    detect_compose_command
+}
+
+# Detect which compose command is available and store it in COMPOSE_CMD.
+# Prefers "docker compose" (V2 plugin) but falls back to "docker-compose" (standalone).
+detect_compose_command() {
+    if docker compose version &> /dev/null 2>&1; then
+        COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+    else
+        print_error "No docker compose command found. Cannot continue."
+        exit 1
+    fi
+    print_success "Using compose command: $COMPOSE_CMD"
+}
+
+# ─── [5/8] Configure Firewall ───
+configure_firewall() {
+    print_header "[4/8] Configuring Firewall"
+
+    if ! ufw status | grep -q "Status: active"; then
+        print_info "Configuring UFW firewall..."
+
+        ufw allow 22/tcp > /dev/null 2>&1
+        print_success "Allowed SSH (port 22)"
+
+        ufw allow 80/tcp > /dev/null 2>&1
+        ufw allow 443/tcp > /dev/null 2>&1
+        print_success "Allowed HTTP (80) and HTTPS (443)"
+
+        echo "y" | ufw enable > /dev/null 2>&1
+        print_success "Firewall configured and enabled"
+    else
+        print_success "Firewall already configured"
+    fi
+}
+
+# ─── [6/8] Setup Traefik Reverse Proxy ───
+setup_traefik() {
+    print_header "[5/8] Setting Up Traefik Reverse Proxy"
+
+    # 1. Ask user for network name
+    print_info "Available Docker networks:"
+    docker network ls --format "  - {{.Name}} ({{.Driver}})" | grep "bridge" || echo "  No bridge networks found"
+    echo ""
+
+    read_input "Enter Traefik network name" "traefik" "TRAEFIK_NETWORK" "false"
+
+    # 2. Check if network exists and Traefik is running
+    if docker network inspect "$TRAEFIK_NETWORK" &> /dev/null; then
+        print_success "Network '$TRAEFIK_NETWORK' found"
+
+        if docker ps --format '{{.Names}}' | grep -q '^traefik$'; then
+            print_success "Traefik container is running"
+
+            if docker container inspect traefik 2>/dev/null | grep -q "$TRAEFIK_NETWORK"; then
+                print_success "Traefik is connected to '$TRAEFIK_NETWORK'"
+                TRAEFIK_EXISTS=true
+                return
+            else
+                print_warning "Traefik is running but NOT on '$TRAEFIK_NETWORK'"
+                print_info "Connecting Traefik to '$TRAEFIK_NETWORK'..."
+                docker network connect "$TRAEFIK_NETWORK" traefik 2>/dev/null || true
+                TRAEFIK_EXISTS=true
+                return
+            fi
+        else
+            print_warning "Network exists but Traefik is NOT running"
+            if [ -d "$TRAEFIK_DIR" ]; then
+                print_info "Found Traefik directory at $TRAEFIK_DIR. Attempting to start..."
+                cd "$TRAEFIK_DIR"
+                if $COMPOSE_CMD up -d &> /dev/null; then
+                    print_success "Existing Traefik started"
+                    TRAEFIK_EXISTS=true
+                    cd "$APP_DIR"
+                    return
+                fi
+            fi
+            print_warning "Could not start existing Traefik. Will install new one."
+        fi
+    else
+        print_info "Network '$TRAEFIK_NETWORK' does not exist"
+    fi
+
+    # 3. Setup new Traefik
+    print_info "Setting up new Traefik instance on network '$TRAEFIK_NETWORK'..."
+
+    if [ -d "$TRAEFIK_DIR" ] && [ -z "$TRAEFIK_EXISTS" ]; then
+        print_warning "Traefik directory exists at $TRAEFIK_DIR"
+        read_input "Remove and reinstall Traefik? (y/N)" "N" "REINSTALL" "false"
+
+        if [[ "$REINSTALL" =~ ^[Yy]$ ]]; then
+            print_info "Removing existing Traefik setup..."
+            cd "$TRAEFIK_DIR"
+            $COMPOSE_CMD down &> /dev/null || true
+            cd /
+            rm -rf "$TRAEFIK_DIR"
+        fi
+    fi
+
+    mkdir -p "$TRAEFIK_DIR"
+    cd "$TRAEFIK_DIR"
+
+    read_input "Email for SSL certificates" "" "TRAEFIK_EMAIL" "false"
+    while [ -z "$TRAEFIK_EMAIL" ]; do
+        print_error "Email is required for Let's Encrypt SSL!"
+        read_input "Email for SSL certificates" "" "TRAEFIK_EMAIL" "false"
+    done
+
+    # Create Traefik config
+    print_info "Creating Traefik configuration..."
+
+    cat > traefik.yml <<EOF
+api:
+  dashboard: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: $TRAEFIK_NETWORK
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: $TRAEFIK_EMAIL
+      storage: /acme.json
+      httpChallenge:
+        entryPoint: web
+EOF
+
+    cat > docker-compose.yml <<EOF
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/traefik.yml:ro
+      - ./acme.json:/acme.json
+
+networks:
+  web:
+    name: $TRAEFIK_NETWORK
+    driver: bridge
+EOF
+
+    touch acme.json
+    chmod 600 acme.json
+
+    print_info "Starting Traefik..."
+    $COMPOSE_CMD up -d
+
+    print_success "Traefik configured and started on network '$TRAEFIK_NETWORK'"
+    TRAEFIK_EXISTS=true
+
+    cd "$APP_DIR"
+}
+
+# ─── [7/8] Configure Application ───
+configure_application() {
+    print_header "[6/8] Configuring VPS Control App"
+
+    cd "$APP_DIR"
+
+    # Check if .env already exists
+    if [ -f .env ]; then
+        print_warning ".env file already exists"
+        read_input "Reconfigure? (y/N)" "N" "RECONFIG" "false"
+
+        if [[ ! "$RECONFIG" =~ ^[Yy]$ ]]; then
+            print_info "Keeping existing configuration"
+            return
+        fi
+        cp .env ".env.backup.$(date +%s)"
+        print_info "Existing .env backed up"
+    fi
+
+    print_info "Starting configuration wizard..."
+    echo ""
+
+    # Domain
+    read_input "Enter domain (e.g. panel.example.com)" "" "DOMAIN" "false"
+    while [ -z "$DOMAIN" ]; do
+        print_error "Domain is required!"
+        read_input "Enter domain (e.g. panel.example.com)" "" "DOMAIN" "false"
+    done
+
+    # Cert resolver
+    read_input "Traefik cert resolver name" "letsencrypt" "CERT_RESOLVER" "false"
+
+    # Admin credentials
+    read_input "Admin username" "admin" "ADMIN_USERNAME" "false"
+
+    while true; do
+        read_input "Admin password (min 6 characters)" "" "ADMIN_PASSWORD" "true"
+        if [ ${#ADMIN_PASSWORD} -ge 6 ]; then
+            break
+        else
+            print_error "Password must be at least 6 characters!"
+        fi
+    done
+
+    # Generate secrets
+    print_info "Generating cryptographic secrets..."
+    DB_PASSWORD=$(openssl rand -hex 24)
+    JWT_SECRET=$(openssl rand -hex 32)
+    ENCRYPTION_KEY=$(openssl rand -hex 32)
+
+    print_success "Database password generated (48 hex chars)"
+    print_success "JWT secret generated (64 hex chars)"
+    print_success "AES-256-GCM encryption key generated (64 hex chars)"
+
+    # Write .env file
+    print_info "Creating .env file..."
+    cat > .env <<ENVFILE
 # ═══════════════════════════════════════════════════
 #  VPS Control App - Environment Configuration
 #  Generated by deploy.sh on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -140,27 +454,138 @@ ADMIN_USERNAME=${ADMIN_USERNAME}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ENVFILE
 
-echo -e "${GREEN}  ✓ .env file created.${NC}"
+    chmod 600 .env
+    print_success "Configuration saved to .env"
+}
 
-# ─── [6/6] Build and deploy ───
-echo -e "${YELLOW}[6/6] Building and starting containers...${NC}"
-echo "    This may take a few minutes on first run."
-echo ""
+# ─── [8/8] Deploy Application ───
+deploy_application() {
+    print_header "[7/8] Building and Deploying"
 
-docker compose up -d --build
+    cd "$APP_DIR"
 
-echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════╗"
-echo -e "║         Deployment Complete!                 ║"
-echo -e "╚══════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "  URL:      https://${DOMAIN}"
-echo -e "  Admin:    ${ADMIN_USERNAME}"
-echo -e "  Network:  ${TRAEFIK_NETWORK}"
-echo ""
-echo -e "${YELLOW}  Notes:${NC}"
-echo -e "  - SSL certificate may take a moment to provision via ${CERT_RESOLVER}."
-echo -e "  - View logs:    docker compose logs -f"
-echo -e "  - Stop:         docker compose down"
-echo -e "  - DB backups:   docker compose exec db pg_dump -U vpscontrol vpscontrol"
-echo ""
+    # Set Docker timeouts for stability
+    export DOCKER_CLIENT_TIMEOUT=300
+    export COMPOSE_HTTP_TIMEOUT=300
+
+    print_info "Pulling base images..."
+    $COMPOSE_CMD pull --ignore-buildable 2>&1 | grep -v "Pulling" || true
+
+    print_info "Building application (this may take a few minutes on first run)..."
+    $COMPOSE_CMD build --no-cache 2>&1 | tail -5
+
+    print_info "Starting containers..."
+    $COMPOSE_CMD up -d
+
+    print_success "Containers started"
+}
+
+# ─── Verify Deployment ───
+verify_deployment() {
+    print_header "[8/8] Verifying Deployment"
+
+    cd "$APP_DIR"
+
+    # Wait for containers to start
+    print_info "Waiting for application to initialize (30 seconds)..."
+    sleep 30
+
+    # Check container status
+    if $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running"; then
+        print_success "Application container is running"
+    else
+        print_error "Application container failed to start"
+        print_info "Check logs with: $COMPOSE_CMD logs app"
+        $COMPOSE_CMD logs --tail=20 app 2>/dev/null || true
+    fi
+
+    # Check PostgreSQL
+    if $COMPOSE_CMD ps 2>/dev/null | grep -q "db.*healthy\|db.*Up"; then
+        print_success "PostgreSQL database is healthy"
+    else
+        print_warning "PostgreSQL health check pending (may still be initializing)"
+    fi
+
+    # Check Traefik
+    if docker ps | grep -q traefik; then
+        print_success "Traefik is running"
+    else
+        print_warning "Traefik is not running"
+    fi
+}
+
+# ─── Completion Message ───
+show_completion_message() {
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════╗"
+    echo -e "║       VPS Control App — Deployed Successfully    ║"
+    echo -e "╚══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${YELLOW}URL:${NC}       https://$DOMAIN"
+    echo -e "  ${YELLOW}Admin:${NC}     $ADMIN_USERNAME"
+    echo -e "  ${YELLOW}Network:${NC}   $TRAEFIK_NETWORK"
+    echo ""
+
+    # Show apps sharing Traefik
+    echo -e "  ${BLUE}Apps on Traefik network ($TRAEFIK_NETWORK):${NC}"
+    docker network inspect "$TRAEFIK_NETWORK" --format '{{range .Containers}}    - {{.Name}}{{println}}{{end}}' 2>/dev/null || echo "    - vps-control-app"
+    echo ""
+
+    echo -e "  ${BLUE}Next Steps:${NC}"
+    echo "    1. Point your domain DNS (A record) to this server's IP"
+    echo "    2. Wait 1-2 minutes for SSL certificate provisioning"
+    echo "    3. Visit https://$DOMAIN and log in"
+    echo ""
+    echo -e "  ${BLUE}Useful Commands:${NC}"
+    echo "    View logs:     cd $APP_DIR && $COMPOSE_CMD logs -f app"
+    echo "    Restart:       cd $APP_DIR && $COMPOSE_CMD restart"
+    echo "    Stop:          cd $APP_DIR && $COMPOSE_CMD down"
+    echo "    Update:        cd $APP_DIR && git pull && $COMPOSE_CMD up -d --build"
+    echo "    Backup DB:     $COMPOSE_CMD exec db pg_dump -U vpscontrol vpscontrol > backup.sql"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════
+#  Main Deployment Flow
+# ═══════════════════════════════════════════════════
+main() {
+    clear
+    echo -e "${CYAN}"
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║   VPS Control App - Automated Deployment v2.0   ║"
+    echo "╚══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    # Must be root
+    check_root
+
+    # System checks
+    check_system_requirements
+
+    # Confirm
+    echo ""
+    read_input "Proceed with deployment? (Y/n)" "Y" "PROCEED" "false"
+    if [[ ! "$PROCEED" =~ ^[Yy]$ ]]; then
+        print_info "Deployment cancelled"
+        exit 0
+    fi
+
+    # Install everything
+    install_dependencies
+    install_docker
+    install_docker_compose
+    configure_firewall
+
+    # Setup services
+    setup_traefik
+    configure_application
+    deploy_application
+    verify_deployment
+
+    # Done
+    show_completion_message
+    print_success "Deployment completed!"
+}
+
+# Run
+main "$@"

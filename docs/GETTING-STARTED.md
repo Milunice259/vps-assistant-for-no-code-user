@@ -1,39 +1,39 @@
 # Getting Started
 
-> Hướng dẫn thiết lập môi trường phát triển và chạy dự án trên máy local.
+> How to set up your local development environment and run the project.
 
 ---
 
-## Yêu cầu hệ thống
+## Prerequisites
 
-| Công cụ         | Phiên bản tối thiểu | Kiểm tra                   |
-| --------------- | -------------------- | -------------------------- |
-| Node.js         | 20.x                 | `node --version`          |
-| npm             | 10.x                 | `npm --version`           |
-| Docker          | 24.x                 | `docker --version`        |
-| Docker Compose  | 2.x                  | `docker compose version`  |
-| Git             | 2.x                  | `git --version`           |
+| Tool             | Minimum Version      | Verify                     |
+| ---------------- | -------------------- | -------------------------- |
+| Node.js          | 20.x                 | `node --version`          |
+| npm              | 10.x                 | `npm --version`           |
+| Docker           | 24.x                 | `docker --version`        |
+| Docker Compose   | 2.x                  | `docker compose version`  |
+| Git              | 2.x                  | `git --version`           |
 
-## Thiết lập lần đầu
+## First-Time Setup
 
-### 1. Clone repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git
 cd vps-assistant-for-no-code-user
 ```
 
-### 2. Cài đặt dependencies
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-Lệnh `postinstall` sẽ tự động chạy `prisma generate` để tạo Prisma Client.
+The `postinstall` script automatically runs `prisma generate` to create the Prisma Client.
 
-### 3. Khởi động PostgreSQL
+### 3. Start PostgreSQL
 
-Chạy PostgreSQL bằng Docker (chỉ database, không chạy app):
+Run PostgreSQL via Docker (database only, not the app):
 
 ```bash
 docker run -d \
@@ -45,9 +45,9 @@ docker run -d \
   postgres:16-alpine
 ```
 
-### 4. Tạo file .env
+### 4. Create the .env file
 
-Tạo file `.env` tại root dự án:
+Create a `.env` file at the project root:
 
 ```env
 # ─── Database ───
@@ -59,112 +59,112 @@ DB_PORT=5432
 JWT_SECRET=dev-jwt-secret-change-in-production-must-be-64-hex-chars-long-ok
 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
-# ─── Admin Account (dùng cho seed) ───
+# ─── Admin Account (used by seed script) ───
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ```
 
-> **Lưu ý:** Đây là giá trị cho development. KHÔNG dùng trong production. `deploy.sh` sẽ tự động sinh các secret an toàn khi deploy thật.
+> **Note:** These are development values. Do NOT use them in production. The `deploy.sh` script automatically generates secure secrets for production deployments.
 
-### 5. Chạy database migrations
+### 5. Run database migrations
 
 ```bash
 npm run db:migrate
 ```
 
-Prisma sẽ tạo các bảng `User`, `Server`, `DeploymentLog` trong PostgreSQL.
+Prisma will create the `User`, `Server`, and `DeploymentLog` tables in PostgreSQL.
 
-### 6. Seed dữ liệu ban đầu (tùy chọn)
+### 6. Seed initial data (optional)
 
 ```bash
 npm run db:seed
 ```
 
-Tạo tài khoản admin với username/password từ `.env`.
+Creates an admin account using the username/password from `.env`.
 
-### 7. Khởi động dev server
+### 7. Start the dev server
 
 ```bash
 npm run dev
 ```
 
-Truy cập: **http://localhost:3000**
+Open: **http://localhost:3000**
 
 ---
 
-## Các lệnh thường dùng
+## Common Commands
 
 ### Development
 
-| Lệnh              | Mô tả                                     |
+| Command            | Description                                |
 | ------------------ | ------------------------------------------ |
-| `npm run dev`      | Chạy Next.js dev server (hot reload)       |
-| `npm run build`    | Build production                            |
-| `npm run start`    | Chạy production build                       |
-| `npm run lint`     | Kiểm tra lỗi ESLint                        |
+| `npm run dev`      | Start Next.js dev server (hot reload)      |
+| `npm run build`    | Create production build                     |
+| `npm run start`    | Run the production build                    |
+| `npm run lint`     | Check for ESLint errors                     |
 
 ### Database
 
-| Lệnh               | Mô tả                                        |
-| ------------------- | --------------------------------------------- |
-| `npm run db:migrate` | Tạo và chạy migration mới                    |
-| `npm run db:push`    | Push schema trực tiếp (không tạo migration)  |
-| `npm run db:generate`| Tạo lại Prisma Client                        |
-| `npm run db:seed`    | Seed dữ liệu ban đầu                        |
-| `npm run db:studio`  | Mở Prisma Studio (GUI quản lý DB)           |
+| Command              | Description                                     |
+| -------------------- | ----------------------------------------------- |
+| `npm run db:migrate` | Create and apply a new migration                |
+| `npm run db:push`    | Push schema directly (skips migration files)    |
+| `npm run db:generate`| Regenerate the Prisma Client                    |
+| `npm run db:seed`    | Seed initial data                               |
+| `npm run db:studio`  | Open Prisma Studio (DB GUI at localhost:5555)   |
 
 ### Docker (Production)
 
-| Lệnh                              | Mô tả                            |
-| ---------------------------------- | --------------------------------- |
-| `docker compose up -d --build`     | Build và chạy toàn bộ stack       |
-| `docker compose down`              | Dừng tất cả containers            |
-| `docker compose logs -f app`       | Xem logs của app                  |
-| `docker compose logs -f db`        | Xem logs của database             |
-| `docker compose exec app sh`       | Shell vào container app           |
-| `docker compose exec db psql -U vpsadmin vpscontrol` | Kết nối psql  |
+| Command                                | Description                   |
+| -------------------------------------- | ----------------------------- |
+| `docker compose up -d --build`         | Build and start the full stack |
+| `docker compose down`                  | Stop all containers            |
+| `docker compose logs -f app`           | Stream app logs                |
+| `docker compose logs -f db`            | Stream database logs           |
+| `docker compose exec app sh`           | Shell into the app container   |
+| `docker compose exec db psql -U vpsadmin vpscontrol` | Connect via psql |
 
 ---
 
-## Cấu trúc URL
+## URL Structure
 
-| URL                 | Mô tả                          | Auth cần? |
-| ------------------- | ------------------------------- | --------- |
-| `/`                 | Redirect → `/dashboard`        | Có        |
-| `/login`            | Trang đăng nhập                | Không     |
-| `/dashboard`        | Dashboard real-time stats       | Có        |
-| `/servers`          | Quản lý danh sách VPS          | Có        |
-| `/servers/[id]`     | Chi tiết + stats một VPS       | Có        |
-| `/network`          | Quản lý ports + packages        | Có        |
-| `/deploy`           | GitHub deployer                 | Có        |
+| URL                 | Description                     | Auth Required? |
+| ------------------- | ------------------------------- | -------------- |
+| `/`                 | Redirects to `/dashboard`       | Yes            |
+| `/login`            | Login page                      | No             |
+| `/dashboard`        | Real-time stats dashboard       | Yes            |
+| `/servers`          | VPS server list management      | Yes            |
+| `/servers/[id]`     | Single server detail + stats    | Yes            |
+| `/network`          | Port and package management     | Yes            |
+| `/deploy`           | GitHub deployer                 | Yes            |
 
 ---
 
-## Xử lý sự cố thường gặp
+## Troubleshooting
 
-### Lỗi "Cannot find module '@prisma/client'"
+### "Cannot find module '@prisma/client'"
 
 ```bash
 npm run db:generate
 ```
 
-### Lỗi kết nối database
+### Database connection errors
 
-1. Kiểm tra PostgreSQL đang chạy: `docker ps`
-2. Kiểm tra `DATABASE_URL` trong `.env`
-3. Kiểm tra port 5432 không bị chiếm: `lsof -i :5432` (Linux/Mac)
+1. Check PostgreSQL is running: `docker ps`
+2. Verify `DATABASE_URL` in `.env`
+3. Check port 5432 is not occupied: `lsof -i :5432` (Linux/Mac)
 
-### Lỗi "ENCRYPTION_KEY must be a 64-character hex string"
+### "ENCRYPTION_KEY must be a 64-character hex string"
 
-`ENCRYPTION_KEY` phải đúng 64 ký tự hex (a-f, 0-9). Sinh bằng:
+`ENCRYPTION_KEY` must be exactly 64 hex characters (a-f, 0-9). Generate one with:
 
 ```bash
 openssl rand -hex 32
 ```
 
-### Lỗi native module (ssh2-promise)
+### Native module errors (ssh2-promise)
 
-Trên một số hệ thống cần build tools:
+Some systems need build tools for native modules:
 
 ```bash
 # macOS
@@ -177,13 +177,13 @@ sudo apt install python3 make g++
 npm install --global windows-build-tools
 ```
 
-### Port 3000 đã bị chiếm
+### Port 3000 already in use
 
 ```bash
-# Tìm process
+# Find the process
 lsof -i :3000          # Linux/Mac
 netstat -ano | find "3000"  # Windows
 
-# Hoặc đổi port
+# Or use a different port
 PORT=3001 npm run dev
 ```

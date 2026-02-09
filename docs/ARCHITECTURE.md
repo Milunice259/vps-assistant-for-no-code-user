@@ -1,18 +1,18 @@
 # Architecture Overview
 
-> Tài liệu mô tả kiến trúc tổng quan của VPS Control App, các quyết định thiết kế, và cách các thành phần kết nối với nhau.
+> A comprehensive overview of the VPS Control App system design, technical decisions, and how all components connect.
 
 ---
 
-## Sơ đồ hệ thống
+## System Diagram
 
 ```
                           Internet
                              │
                              ▼
                      ┌───────────────┐
-                     │    Traefik    │  ← Reverse proxy có sẵn trên host
-                     │  (HTTPS/TLS) │     Tự động cấp chứng chỉ Let's Encrypt
+                     │    Traefik    │  ← Pre-existing reverse proxy on host
+                     │  (HTTPS/TLS) │     Auto-provisions Let's Encrypt certs
                      └───────┬───────┘
                              │
                      traefik_network (external Docker network)
@@ -20,7 +20,7 @@
                              ▼
                     ┌─────────────────┐
                     │  Next.js App    │  ← Container: vps-control-app
-                    │  Port 3000      │     Chạy cả Frontend + API
+                    │  Port 3000      │     Serves both Frontend + API
                     │  (standalone)   │
                     └────────┬────────┘
                              │
@@ -29,117 +29,117 @@
                              ▼
                     ┌─────────────────┐
                     │   PostgreSQL    │  ← Container: vps-control-db
-                    │   Port 5432     │     KHÔNG exposed ra internet
-                    │   (encrypted)   │     Chỉ app mới truy cập được
+                    │   Port 5432     │     NOT exposed to the internet
+                    │   (encrypted)   │     Only the app can reach it
                     └─────────────────┘
 ```
 
-## Kiến trúc mạng Docker
+## Docker Network Layout
 
-Hệ thống sử dụng 2 Docker networks:
+The system uses two Docker networks to enforce isolation:
 
-| Network          | Loại     | Mục đích                                            |
-| ---------------- | -------- | --------------------------------------------------- |
-| `traefik_network` | External | Kết nối app với Traefik để nhận traffic từ internet |
-| `internal`        | Bridge   | Kết nối nội bộ giữa app và PostgreSQL              |
+| Network            | Type     | Purpose                                              |
+| ------------------ | -------- | ---------------------------------------------------- |
+| `traefik_network`  | External | Connects the app to Traefik for internet-facing traffic |
+| `internal`         | Bridge   | Private link between the app and PostgreSQL           |
 
-**Nguyên tắc:** PostgreSQL chỉ nằm trên mạng `internal`, hoàn toàn cách ly khỏi internet. Chỉ có Next.js app (nằm trên cả hai mạng) mới truy cập được database.
+**Key principle:** PostgreSQL lives only on the `internal` network, completely isolated from the internet. Only the Next.js app (which sits on both networks) can access the database.
 
-## Luồng request
+## Request Flow
 
 ```
 Client (Browser)
   │
   ▼
-Traefik (TLS termination, routing theo domain)
+Traefik (TLS termination, domain-based routing)
   │
   ▼
 Next.js App ──┬── Server Components (SSR HTML)
               ├── API Routes (/api/*)
               │     ├── Auth (JWT cookie)
-              │     ├── CRUD servers (encrypt/decrypt credentials)
+              │     ├── Server CRUD (encrypt/decrypt credentials)
               │     ├── SSH connections (ssh2-promise)
               │     ├── SSE stream (real-time stats)
-              │     └── Deploy (git clone + stack detect)
+              │     └── Deploy (git clone + stack detection)
               └── Static assets
 ```
 
-## Quyết định thiết kế chính
+## Key Design Decisions
 
-### 1. Monolith trong Docker
+### 1. Monolith in Docker
 
-Toàn bộ app (frontend + API) chạy trong một container Next.js duy nhất. Lý do:
+The entire app (frontend + API) runs inside a single Next.js container. Reasons:
 
-- **Đơn giản hóa deployment** — chỉ cần 2 container (app + db)
-- **Giảm độ phức tạp** — không cần message queue, API gateway riêng
-- **Phù hợp quy mô** — app quản lý VPS, không phải SaaS nhiều người dùng
+- **Simple deployment** — only 2 containers (app + db)
+- **Low complexity** — no message queues, no separate API gateway
+- **Right-sized** — this is a VPS management tool, not a multi-tenant SaaS
 
 ### 2. Next.js App Router
 
-Sử dụng App Router (không phải Pages Router) với cấu trúc route groups:
+Uses the App Router (not Pages Router) with route groups:
 
-- `(auth)` — Layout cho trang login (không sidebar)
-- `(panel)` — Layout chính với sidebar + header (cần đăng nhập)
+- `(auth)` — Layout for the login page (no sidebar)
+- `(panel)` — Main layout with sidebar + header (requires authentication)
 
-### 3. Server-Sent Events thay vì WebSocket
+### 3. Server-Sent Events over WebSocket
 
-Dashboard dùng SSE để stream real-time stats. Lý do:
+The dashboard uses SSE to stream real-time stats. Reasons:
 
-- **Một chiều** — server → client, phù hợp cho monitoring
-- **Đơn giản** — không cần socket server riêng, chạy trên API route
-- **Tương thích** — hoạt động qua HTTP/2, không bị firewall chặn
-- **Auto-reconnect** — `EventSource` API tự kết nối lại khi mất kết nối
+- **Unidirectional** — server → client, perfect for monitoring
+- **Simple** — no separate socket server needed, runs on an API route
+- **Compatible** — works over HTTP/2, not blocked by firewalls
+- **Auto-reconnect** — the `EventSource` API reconnects automatically on disconnect
 
-### 4. AES-256-GCM cho dữ liệu nhạy cảm
+### 4. AES-256-GCM for Sensitive Data
 
-Thay vì lưu plaintext SSH credentials vào DB, tất cả đều được mã hóa:
+Instead of storing plaintext SSH credentials in the database, everything is encrypted:
 
-- **Thuật toán:** AES-256-GCM (authenticated encryption)
+- **Algorithm:** AES-256-GCM (authenticated encryption)
 - **Format:** `base64(IV[16] + ciphertext + authTag[16])`
 - **Key:** `ENCRYPTION_KEY` environment variable (32 bytes hex)
 
-Xem chi tiết tại [SECURITY.md](./SECURITY.md) và [DATABASE.md](./DATABASE.md).
+See [SECURITY.md](./SECURITY.md) and [DATABASE.md](./DATABASE.md) for details.
 
-### 5. JWT với HttpOnly Cookie
+### 5. JWT with HttpOnly Cookie
 
-Không dùng token trong localStorage (dễ bị XSS):
+No tokens in localStorage (vulnerable to XSS):
 
-- JWT được lưu trong **HttpOnly cookie** — JavaScript không đọc được
-- Cookie có flag `Secure` trong production — chỉ gửi qua HTTPS
-- `SameSite: lax` — chống CSRF cơ bản
-- TTL: 7 ngày
+- JWT is stored in an **HttpOnly cookie** — JavaScript cannot read it
+- `Secure` flag is set in production — only sent over HTTPS
+- `SameSite: lax` — basic CSRF protection
+- TTL: 7 days
 
-### 6. Standalone Output cho Docker
+### 6. Standalone Output for Docker
 
-`next.config.ts` có `output: "standalone"` để Next.js tạo ra một folder nhỏ gọn chứa đủ mọi thứ cần thiết, không cần copy cả `node_modules`.
+`next.config.ts` uses `output: "standalone"` so Next.js produces a compact folder with everything needed to run, without copying the full `node_modules`.
 
 ### 7. SSH Host Key Auto-Accept
 
-`ssh2-promise` mặc định chấp nhận tất cả host keys nếu không cung cấp `hostVerifier`. Đây là quyết định có chủ đích cho automation — khi kết nối VPS mới, không cần confirm thủ công.
+`ssh2-promise` accepts all host keys by default when no `hostVerifier` callback is provided. This is an intentional decision for automation — when connecting to a new VPS, no manual confirmation is needed.
 
-## Cấu trúc thư mục
+## Directory Structure
 
 ```
 src/
 ├── app/                  # Next.js App Router
-│   ├── (auth)/           # Route group: trang login
-│   ├── (panel)/          # Route group: panel chính (cần auth)
+│   ├── (auth)/           # Route group: login page
+│   ├── (panel)/          # Route group: main panel (auth required)
 │   ├── api/              # API Routes (backend)
 │   ├── layout.tsx        # Root layout (dark theme)
 │   ├── globals.css       # Global styles + Tailwind
-│   └── page.tsx          # Root → redirect /dashboard
+│   └── page.tsx          # Root → redirect to /dashboard
 │
 ├── components/           # React components
-│   ├── dashboard/        # Gauge, bar, card cho stats
-│   ├── deploy/           # Form + log cho deployment
+│   ├── dashboard/        # Gauges, bars, cards for stats
+│   ├── deploy/           # Form + log for deployments
 │   ├── layout/           # Sidebar, Header
 │   ├── network/          # Port table, Package manager
-│   ├── servers/          # CRUD + stats cho servers
+│   ├── servers/          # CRUD + stats for servers
 │   └── ui/               # Primitives: Button, Card, Input, Badge
 │
 ├── hooks/                # Custom React hooks
-│   ├── useAuth.ts        # Hook quản lý authentication
-│   └── useSSE.ts         # Hook cho Server-Sent Events
+│   ├── useAuth.ts        # Authentication hook
+│   └── useSSE.ts         # Server-Sent Events hook
 │
 ├── lib/                  # Backend utilities
 │   ├── auth.ts           # JWT + bcrypt + cookie management
@@ -149,7 +149,7 @@ src/
 │   ├── ssh.ts            # SSH connection wrapper
 │   └── stats.ts          # Host system stats (os module)
 │
-├── middleware.ts          # Auth guard cho protected routes
+├── middleware.ts          # Auth guard for protected routes
 │
 └── types/                # TypeScript interfaces
     └── index.ts          # SystemStats, ServerInfo, PortInfo, etc.
@@ -157,17 +157,17 @@ src/
 
 ## Tech Stack
 
-| Layer        | Công nghệ                  | Phiên bản | Ghi chú                           |
-| ------------ | -------------------------- | --------- | --------------------------------- |
-| Framework    | Next.js                    | 16 (LTS)  | App Router, standalone output     |
-| UI           | React                      | 19.2      | Server + Client Components        |
-| Language     | TypeScript                 | 5.7+      | Strict mode                       |
-| Styling      | Tailwind CSS               | 3.4       | Dark theme, custom brand colors   |
-| Database     | PostgreSQL                 | 16        | Alpine Docker image               |
-| ORM          | Prisma                     | Latest    | Type-safe queries, migrations     |
-| Auth         | jose + bcryptjs            | 5.0 / 2.4 | JWT HS256, bcrypt 12 rounds      |
-| SSH          | ssh2-promise               | 1.0.3     | Remote VPS management             |
-| Icons        | lucide-react               | 0.500+    | Consistent icon set               |
-| Charts       | recharts                   | 2.15      | Dashboard visualizations          |
-| Proxy        | Traefik                    | External  | TLS, routing, load balancing      |
-| Container    | Docker + Compose           | —         | Multi-stage builds                |
+| Layer        | Technology               | Version   | Notes                             |
+| ------------ | ------------------------ | --------- | --------------------------------- |
+| Framework    | Next.js                  | 16 (LTS)  | App Router, standalone output     |
+| UI           | React                    | 19.2      | Server + Client Components        |
+| Language     | TypeScript               | 5.7+      | Strict mode                       |
+| Styling      | Tailwind CSS             | 3.4       | Dark theme, custom brand colors   |
+| Database     | PostgreSQL               | 16        | Alpine Docker image               |
+| ORM          | Prisma                   | Latest    | Type-safe queries, migrations     |
+| Auth         | jose + bcryptjs          | 5.0 / 2.4 | JWT HS256, bcrypt 12 rounds      |
+| SSH          | ssh2-promise             | 1.0.3     | Remote VPS management             |
+| Icons        | lucide-react             | 0.500+    | Consistent icon set               |
+| Charts       | recharts                 | 2.15      | Dashboard visualizations          |
+| Proxy        | Traefik                  | External  | TLS, routing, load balancing      |
+| Container    | Docker + Compose         | —         | Multi-stage builds                |

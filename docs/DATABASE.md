@@ -1,15 +1,15 @@
 # Database
 
-> Tài liệu mô tả schema database, cách quản lý migrations, và cơ chế mã hóa dữ liệu nhạy cảm.
+> Schema design, migration management, and the encryption layer for sensitive data.
 
 ---
 
-## Tổng quan
+## Overview
 
 - **Engine:** PostgreSQL 16 (Alpine Docker image)
 - **ORM:** Prisma
 - **Schema file:** `prisma/schema.prisma`
-- **Kết nối:** Qua internal Docker network (không exposed ra internet)
+- **Connection:** Via internal Docker network (never exposed to the internet)
 
 ## Entity Relationship Diagram
 
@@ -56,46 +56,46 @@
 └─────────────────────┘
 ```
 
-## Models chi tiết
+## Model Details
 
 ### User
 
-| Field         | Type     | Default     | Ghi chú                         |
-| ------------- | -------- | ----------- | -------------------------------- |
-| `id`          | String   | `cuid()`    | Primary key                      |
-| `username`    | String   | —           | Unique, dùng để login            |
-| `passwordHash`| String  | —           | bcrypt hash (12 rounds)          |
-| `createdAt`   | DateTime | `now()`     | Thời điểm tạo                   |
-| `updatedAt`   | DateTime | auto        | Tự cập nhật khi sửa             |
+| Field          | Type     | Default     | Notes                            |
+| -------------- | -------- | ----------- | -------------------------------- |
+| `id`           | String   | `cuid()`    | Primary key                      |
+| `username`     | String   | —           | Unique, used for login           |
+| `passwordHash` | String   | —           | bcrypt hash (12 rounds)          |
+| `createdAt`    | DateTime | `now()`     | Creation timestamp               |
+| `updatedAt`    | DateTime | auto        | Auto-updated on change           |
 
 ### Server
 
-| Field           | Type       | Default    | Ghi chú                                |
+| Field           | Type       | Default    | Notes                                   |
 | --------------- | ---------- | ---------- | --------------------------------------- |
 | `id`            | String     | `cuid()`   | Primary key                             |
-| `name`          | String     | —          | Tên hiển thị                            |
-| `host`          | String     | —          | IP hoặc hostname                        |
+| `name`          | String     | —          | Display name                            |
+| `host`          | String     | —          | IP address or hostname                  |
 | `port`          | Int        | `22`       | SSH port                                |
 | `username`      | String     | —          | SSH username                            |
-| `authMethod`    | AuthMethod | `PASSWORD` | PASSWORD hoặc KEY                       |
-| `encryptedKey`  | String?    | null       | SSH private key, đã mã hóa AES-256-GCM |
-| `encryptedPass` | String?    | null       | SSH password, đã mã hóa AES-256-GCM    |
-| `isActive`      | Boolean    | `true`     | Đánh dấu server đang hoạt động         |
-| `lastConnected` | DateTime?  | null       | Lần kết nối SSH gần nhất               |
+| `authMethod`    | AuthMethod | `PASSWORD` | PASSWORD or KEY                         |
+| `encryptedKey`  | String?    | null       | SSH private key, AES-256-GCM encrypted  |
+| `encryptedPass` | String?    | null       | SSH password, AES-256-GCM encrypted     |
+| `isActive`      | Boolean    | `true`     | Whether the server is active            |
+| `lastConnected` | DateTime?  | null       | Last successful SSH connection           |
 | `createdAt`     | DateTime   | `now()`    |                                         |
 | `updatedAt`     | DateTime   | auto       |                                         |
 
 ### DeploymentLog
 
-| Field           | Type         | Default   | Ghi chú                        |
+| Field           | Type         | Default   | Notes                           |
 | --------------- | ------------ | --------- | ------------------------------- |
 | `id`            | String       | `cuid()`  | Primary key                     |
-| `repoUrl`       | String       | —         | URL GitHub repository           |
-| `branch`        | String       | `"main"`  | Branch để clone                 |
-| `detectedStack` | String       | —         | nextjs, react, vue, python, ... |
-| `status`        | DeployStatus | `PENDING` | Trạng thái hiện tại             |
+| `repoUrl`       | String       | —         | GitHub repository URL           |
+| `branch`        | String       | `"main"`  | Branch to clone                 |
+| `detectedStack` | String       | —         | nextjs, react, vue, python, … |
+| `status`        | DeployStatus | `PENDING` | Current status                  |
 | `logs`          | String       | —         | Output logs (@db.Text)          |
-| `domain`        | String?      | null      | Domain nếu có                   |
+| `domain`        | String?      | null      | Domain if assigned              |
 | `createdAt`     | DateTime     | `now()`   |                                 |
 | `updatedAt`     | DateTime     | auto      |                                 |
 
@@ -105,8 +105,8 @@
 
 ```prisma
 enum AuthMethod {
-  PASSWORD   // Xác thực bằng password
-  KEY        // Xác thực bằng SSH private key
+  PASSWORD   // Authenticate with password
+  KEY        // Authenticate with SSH private key
 }
 ```
 
@@ -114,91 +114,91 @@ enum AuthMethod {
 
 ```prisma
 enum DeployStatus {
-  PENDING    // Chờ xử lý
-  CLONING    // Đang clone repo
-  BUILDING   // Đang build
-  RUNNING    // Đang chạy
-  FAILED     // Thất bại
+  PENDING    // Waiting to start
+  CLONING    // Cloning repository
+  BUILDING   // Building the app
+  RUNNING    // Successfully running
+  FAILED     // Failed
 }
 ```
 
-## Mã hóa dữ liệu (AES-256-GCM)
+## Data Encryption (AES-256-GCM)
 
-### Tại sao cần mã hóa?
+### Why encrypt?
 
-Các field `encryptedKey` và `encryptedPass` chứa SSH credentials. Nếu database bị xâm nhập (SQL injection, backup leak, ...), attacker không thể đọc được credentials vì chúng đã được mã hóa.
+The `encryptedKey` and `encryptedPass` fields store SSH credentials. If the database is compromised (SQL injection, backup leak, etc.), attackers cannot read the credentials because they are encrypted at rest.
 
-### Cách hoạt động
+### How it works
 
 ```
-Plaintext → encrypt() → base64(IV + ciphertext + authTag) → lưu DB
+Plaintext → encrypt() → base64(IV + ciphertext + authTag) → stored in DB
                     ↓
-Đọc DB → base64 string → decrypt() → Plaintext → dùng cho SSH
+Read from DB → base64 string → decrypt() → Plaintext → used for SSH
 ```
 
 - **Algorithm:** AES-256-GCM (authenticated encryption with associated data)
-- **IV:** 16 bytes random, sinh mới mỗi lần encrypt
-- **Auth Tag:** 16 bytes, đảm bảo dữ liệu không bị sửa đổi
-- **Key:** Lấy từ `ENCRYPTION_KEY` (biến môi trường, 32 bytes = 64 hex chars)
+- **IV:** 16 bytes random, generated fresh for every encrypt call
+- **Auth Tag:** 16 bytes, ensures the data has not been tampered with
+- **Key:** Read from the `ENCRYPTION_KEY` env var (32 bytes = 64 hex chars)
 
 ### Code location
 
-- Encrypt/Decrypt: `src/lib/crypto.ts`
-- Sử dụng: `src/app/api/servers/route.ts` (POST), `src/app/api/servers/[id]/route.ts` (PATCH), `src/app/api/servers/[id]/stats/route.ts` (GET — decrypt để SSH)
+- Encrypt/Decrypt functions: `src/lib/crypto.ts`
+- Used in: `src/app/api/servers/route.ts` (POST), `src/app/api/servers/[id]/route.ts` (PATCH), `src/app/api/servers/[id]/stats/route.ts` (GET — decrypts to SSH)
 
 ---
 
-## Quản lý Migrations
+## Managing Migrations
 
-### Tạo migration mới
+### Create a new migration
 
-Khi thay đổi `prisma/schema.prisma`:
+When you change `prisma/schema.prisma`:
 
 ```bash
 npm run db:migrate
 ```
 
-Prisma sẽ:
-1. So sánh schema hiện tại với DB
-2. Tạo file SQL migration trong `prisma/migrations/`
-3. Hỏi tên cho migration
-4. Apply migration vào DB
+Prisma will:
+1. Diff the current schema against the database
+2. Generate a SQL migration file in `prisma/migrations/`
+3. Prompt you for a migration name
+4. Apply the migration to the database
 
-### Apply migrations trong production
+### Apply migrations in production
 
-Chạy tự động bởi `docker-entrypoint.sh`:
+Handled automatically by `docker-entrypoint.sh`:
 
 ```bash
 npx prisma migrate deploy
 ```
 
-Lệnh này chỉ apply các migration chưa chạy, không tạo migration mới.
+This only applies pending migrations — it does not create new ones.
 
-### Push schema trực tiếp (dev only)
+### Push schema directly (dev only)
 
 ```bash
 npm run db:push
 ```
 
-Thay đổi DB trực tiếp theo schema mà không tạo migration file. **Chỉ dùng trong development.**
+Applies schema changes directly without creating a migration file. **Only use during development.**
 
-### Mở Prisma Studio
+### Open Prisma Studio
 
 ```bash
 npm run db:studio
 ```
 
-Mở GUI tại `http://localhost:5555` để xem/sửa dữ liệu trực tiếp.
+Opens a GUI at `http://localhost:5555` for browsing and editing data.
 
 ---
 
 ## Prisma Client Singleton
 
-File `src/lib/db.ts` đảm bảo chỉ có 1 instance Prisma Client trong toàn bộ app:
+`src/lib/db.ts` ensures only one Prisma Client instance exists across the app:
 
 ```typescript
-// Trong development, Next.js hot reload có thể tạo nhiều instances
-// globalThis trick ngăn chặn điều này
+// In development, Next.js hot reload can create multiple instances
+// The globalThis trick prevents this
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
@@ -208,25 +208,25 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 ## Seed Data
 
-File `scripts/seed.ts` tạo tài khoản admin ban đầu:
+`scripts/seed.ts` creates the initial admin account:
 
 ```bash
 npm run db:seed
 ```
 
-Sử dụng `ADMIN_USERNAME` và `ADMIN_PASSWORD` từ `.env`. Password được hash bằng bcrypt trước khi lưu.
+Uses `ADMIN_USERNAME` and `ADMIN_PASSWORD` from `.env`. The password is hashed with bcrypt before saving.
 
 ---
 
-## Kết nối Database
+## Connection Strings
 
-### Trong Docker (Production)
+### Docker (Production)
 
 ```
 DATABASE_URL=postgresql://vpsadmin:${DB_PASSWORD}@db:5432/vpscontrol
 ```
 
-- Host: `db` (tên service trong docker-compose)
+- Host: `db` (service name in docker-compose)
 - Network: `internal` (bridge)
 
 ### Local Development
@@ -236,4 +236,4 @@ DATABASE_URL=postgresql://vpsadmin:devpassword123@localhost:5432/vpscontrol
 ```
 
 - Host: `localhost`
-- Port: `5432` (mapped từ Docker container)
+- Port: `5432` (mapped from the Docker container)

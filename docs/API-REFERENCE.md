@@ -1,10 +1,10 @@
 # API Reference
 
-> Tài liệu mô tả tất cả API endpoints, request/response format, và quy tắc chung.
+> Complete documentation of all API endpoints, request/response formats, and conventions.
 
 ---
 
-## Quy tắc chung
+## General Conventions
 
 ### Base URL
 
@@ -14,21 +14,21 @@
 
 ### Response Format
 
-Tất cả API trả về cùng một cấu trúc:
+All API endpoints return a consistent structure:
 
 ```typescript
 {
   success: boolean;
-  data?: any;      // Có khi success = true
-  error?: string;  // Có khi success = false
+  data?: any;      // Present when success = true
+  error?: string;  // Present when success = false
 }
 ```
 
 ### Authentication
 
-Hầu hết API yêu cầu xác thực qua JWT cookie (`vps-session`). Cookie được set tự động khi login.
+Most endpoints require authentication via a JWT cookie (`vps-session`). The cookie is set automatically upon login.
 
-Nếu chưa đăng nhập → trả về `401 Unauthorized`.
+If not authenticated, the response will be `401 Unauthorized`.
 
 ### Headers
 
@@ -36,7 +36,7 @@ Nếu chưa đăng nhập → trả về `401 Unauthorized`.
 Content-Type: application/json
 ```
 
-Cookie `vps-session` được gửi tự động bởi browser.
+The `vps-session` cookie is sent automatically by the browser.
 
 ---
 
@@ -44,7 +44,7 @@ Cookie `vps-session` được gửi tự động bởi browser.
 
 ### POST `/api/auth/login`
 
-Đăng nhập và nhận JWT session.
+Authenticate and receive a JWT session.
 
 **Request Body:**
 ```json
@@ -73,15 +73,15 @@ Cookie `vps-session` được gửi tự động bởi browser.
 }
 ```
 
-**Side effect:** Set cookie `vps-session` (HttpOnly, 7 ngày).
+**Side effect:** Sets an HttpOnly cookie `vps-session` (7-day TTL).
 
 ---
 
 ### POST `/api/auth/logout`
 
-Xóa session cookie.
+Clear the session cookie.
 
-**Request Body:** không cần
+**Request Body:** none
 
 **Response (200):**
 ```json
@@ -94,7 +94,7 @@ Xóa session cookie.
 
 ### GET `/api/auth/me`
 
-Lấy thông tin user đang đăng nhập.
+Get the currently authenticated user's info.
 
 **Response (200):**
 ```json
@@ -107,7 +107,7 @@ Lấy thông tin user đang đăng nhập.
 }
 ```
 
-**Response (401):** Chưa đăng nhập.
+**Response (401):** Not authenticated.
 
 ---
 
@@ -115,7 +115,7 @@ Lấy thông tin user đang đăng nhập.
 
 ### GET `/api/stats`
 
-Lấy snapshot thống kê hệ thống host hiện tại.
+Get a snapshot of the host system's current stats.
 
 **Response (200):**
 ```json
@@ -144,7 +144,7 @@ Lấy snapshot thống kê hệ thống host hiện tại.
 
 ### GET `/api/stats/stream`
 
-**Server-Sent Events** — stream real-time stats mỗi 2 giây.
+**Server-Sent Events** — streams real-time host stats every 2 seconds.
 
 **Response:** `text/event-stream`
 
@@ -154,7 +154,7 @@ data: {"cpu":23.5,"memory":{"total":16384,"used":8192,"percentage":50},...}
 data: {"cpu":25.1,"memory":{"total":16384,"used":8300,"percentage":50.7},...}
 ```
 
-**Cách sử dụng ở client:**
+**Client usage:**
 ```typescript
 const eventSource = new EventSource('/api/stats/stream');
 eventSource.onmessage = (event) => {
@@ -163,7 +163,7 @@ eventSource.onmessage = (event) => {
 };
 ```
 
-Hoặc dùng hook `useSSE`:
+Or use the `useSSE` hook:
 ```typescript
 const { data, error, connected } = useSSE<SystemStats>('/api/stats/stream');
 ```
@@ -174,7 +174,7 @@ const { data, error, connected } = useSSE<SystemStats>('/api/stats/stream');
 
 ### GET `/api/servers`
 
-Liệt kê tất cả servers (không bao gồm encrypted fields).
+List all servers (encrypted fields are excluded).
 
 **Response (200):**
 ```json
@@ -200,9 +200,9 @@ Liệt kê tất cả servers (không bao gồm encrypted fields).
 
 ### POST `/api/servers`
 
-Tạo server mới. Credentials được mã hóa AES-256-GCM trước khi lưu.
+Create a new server. Credentials are encrypted with AES-256-GCM before storage.
 
-**Request Body:**
+**Request Body (password auth):**
 ```json
 {
   "name": "Production VPS",
@@ -214,7 +214,7 @@ Tạo server mới. Credentials được mã hóa AES-256-GCM trước khi lưu.
 }
 ```
 
-Hoặc dùng SSH key:
+**Request Body (key auth):**
 ```json
 {
   "name": "Production VPS",
@@ -243,17 +243,17 @@ Hoặc dùng SSH key:
 
 ### GET `/api/servers/[id]`
 
-Lấy thông tin một server.
+Get a single server by ID.
 
-**Response (200):** Tương tự item trong list.
+**Response (200):** Same shape as a list item.
 
-**Response (404):** Server không tồn tại.
+**Response (404):** Server not found.
 
 ---
 
 ### PATCH `/api/servers/[id]`
 
-Cập nhật thông tin server. Chỉ gửi các field cần thay đổi.
+Update a server. Only send the fields you want to change.
 
 **Request Body:**
 ```json
@@ -263,13 +263,13 @@ Cập nhật thông tin server. Chỉ gửi các field cần thay đổi.
 }
 ```
 
-**Response (200):** Server đã cập nhật.
+**Response (200):** Updated server object.
 
 ---
 
 ### DELETE `/api/servers/[id]`
 
-Xóa server.
+Delete a server.
 
 **Response (200):**
 ```json
@@ -282,7 +282,7 @@ Xóa server.
 
 ### GET `/api/servers/[id]/stats`
 
-Lấy live system stats từ remote server qua SSH.
+Fetch live system stats from a remote server via SSH.
 
 **Response (200):**
 ```json
@@ -299,7 +299,7 @@ Lấy live system stats từ remote server qua SSH.
 }
 ```
 
-**Response (500):** Không kết nối được SSH.
+**Response (500):** SSH connection failed.
 
 ---
 
@@ -307,7 +307,7 @@ Lấy live system stats từ remote server qua SSH.
 
 ### GET `/api/network/ports`
 
-Liệt kê các port đang mở trên host (dùng `ss -tulnp`).
+List open ports on the host (uses `ss -tulnp`).
 
 **Response (200):**
 ```json
@@ -329,7 +329,7 @@ Liệt kê các port đang mở trên host (dùng `ss -tulnp`).
 
 ### GET `/api/network/packages`
 
-Liệt kê các packages đã cài trên host.
+List installed apt packages on the host.
 
 **Response (200):**
 ```json
@@ -349,16 +349,16 @@ Liệt kê các packages đã cài trên host.
 
 ### POST `/api/network/packages`
 
-Chạy apt update hoặc upgrade.
+Run apt update or upgrade.
 
-**Request Body:**
+**Request Body (update):**
 ```json
 {
   "action": "update"
 }
 ```
 
-Hoặc upgrade cụ thể:
+**Request Body (upgrade specific packages):**
 ```json
 {
   "action": "upgrade",
@@ -382,7 +382,7 @@ Hoặc upgrade cụ thể:
 
 ### GET `/api/deploy`
 
-Lấy 20 deployment logs gần nhất.
+Get the 20 most recent deployment logs.
 
 **Response (200):**
 ```json
@@ -406,7 +406,7 @@ Lấy 20 deployment logs gần nhất.
 
 ### POST `/api/deploy`
 
-Bắt đầu deployment mới — clone repo, phát hiện tech stack.
+Start a new deployment — clones the repo and detects the tech stack.
 
 **Request Body:**
 ```json
@@ -438,12 +438,12 @@ Bắt đầu deployment mới — clone repo, phát hiện tech stack.
 
 ## HTTP Status Codes
 
-| Code | Nghĩa                    | Khi nào                              |
+| Code | Meaning                   | When                                 |
 | ---- | ------------------------- | ------------------------------------ |
-| 200  | OK                        | Request thành công                   |
-| 201  | Created                   | Tạo resource mới thành công          |
-| 400  | Bad Request               | Input không hợp lệ                   |
-| 401  | Unauthorized              | Chưa đăng nhập hoặc token hết hạn   |
-| 404  | Not Found                 | Resource không tồn tại               |
-| 405  | Method Not Allowed        | HTTP method không được hỗ trợ        |
-| 500  | Internal Server Error     | Lỗi server (SSH fail, DB error, ...) |
+| 200  | OK                        | Request succeeded                    |
+| 201  | Created                   | New resource created successfully    |
+| 400  | Bad Request               | Invalid input                        |
+| 401  | Unauthorized              | Not logged in or token expired       |
+| 404  | Not Found                 | Resource does not exist              |
+| 405  | Method Not Allowed        | HTTP method not supported            |
+| 500  | Internal Server Error     | Server error (SSH fail, DB error, …) |

@@ -1,20 +1,20 @@
 # Components & UI
 
-> Tài liệu mô tả các React components, custom hooks, design patterns, và cách mở rộng UI.
+> React components, custom hooks, design patterns, and how to extend the UI.
 
 ---
 
-## Tổng quan
+## Overview
 
-UI được xây dựng với:
+The UI is built with:
 
 - **React 19.2** — Server Components + Client Components
-- **Tailwind CSS 3.4** — Utility-first, dark theme mặc định
+- **Tailwind CSS 3.4** — Utility-first, dark theme by default
 - **lucide-react** — Icon library (consistent, tree-shakeable)
-- **recharts** — Charts cho dashboard
+- **recharts** — Charts for the dashboard
 - **clsx** — Conditional CSS classes
 
-Toàn bộ app sử dụng **dark theme** (`bg-gray-950` background, light text).
+The entire app uses a **dark theme** (`bg-gray-950` background, light text).
 
 ---
 
@@ -23,23 +23,23 @@ Toàn bộ app sử dụng **dark theme** (`bg-gray-950` background, light text)
 ```
 src/components/
 │
-├── ui/                    ← Primitives (dùng lại ở khắp nơi)
+├── ui/                    ← Primitives (reused everywhere)
 │   ├── Button.tsx
 │   ├── Card.tsx
 │   ├── Input.tsx
 │   └── Badge.tsx
 │
-├── layout/                ← Cấu trúc layout chính
+├── layout/                ← Main layout structure
 │   ├── Sidebar.tsx
 │   └── Header.tsx
 │
-├── dashboard/             ← Visualizations cho stats
+├── dashboard/             ← Stats visualizations
 │   ├── StatsCard.tsx
 │   ├── CpuGauge.tsx
 │   ├── MemoryBar.tsx
 │   └── DiskUsage.tsx
 │
-├── servers/               ← CRUD + monitoring servers
+├── servers/               ← Server CRUD + monitoring
 │   ├── ServerList.tsx
 │   ├── ServerForm.tsx
 │   └── ServerStats.tsx
@@ -57,15 +57,15 @@ src/components/
 
 ## UI Primitives (`components/ui/`)
 
-Các component cơ bản, tái sử dụng trong toàn bộ app.
+Base components reused throughout the entire app.
 
 ### Button
 
 ```typescript
 import { Button } from '@/components/ui/Button';
 
-// Variants: primary (mặc định), secondary, danger
-// Sizes: sm, md (mặc định), lg
+// Variants: primary (default), secondary, danger
+// Sizes: sm, md (default), lg
 // States: loading, disabled
 
 <Button variant="primary" size="lg" loading={isSubmitting}>
@@ -82,7 +82,7 @@ import { Button } from '@/components/ui/Button';
 ```typescript
 import { Card } from '@/components/ui/Card';
 
-// Container component với dark background và border
+// Container component with dark background and border
 
 <Card>
   <h2>Title</h2>
@@ -95,7 +95,7 @@ import { Card } from '@/components/ui/Card';
 ```typescript
 import { Input } from '@/components/ui/Input';
 
-// Hỗ trợ label, error state, tất cả HTML input attributes
+// Supports label, error state, and all HTML input attributes
 
 <Input
   label="Hostname"
@@ -122,16 +122,16 @@ import { Badge } from '@/components/ui/Badge';
 
 ### Sidebar
 
-Navigation menu bên trái. Chứa:
-- Logo/App name
+Left-side navigation menu containing:
+- Logo / App name
 - Menu items: Dashboard, Servers, Network, Deploy
-- Active state highlighting theo current route
-- Nút logout
+- Active state highlighting based on current route
+- Logout button
 
 ### Header
 
-Top bar chứa:
-- Page title (dynamic theo route)
+Top bar containing:
+- Page title (dynamic based on route)
 - User info
 
 ---
@@ -140,7 +140,7 @@ Top bar chứa:
 
 ### StatsCard
 
-Card hiển thị một metric với icon, giá trị, và mô tả.
+Displays a single metric with an icon, value, and description.
 
 ```typescript
 <StatsCard
@@ -153,18 +153,18 @@ Card hiển thị một metric với icon, giá trị, và mô tả.
 
 ### CpuGauge
 
-Circular gauge (dạng tròn) hiển thị % CPU usage. Thay đổi màu theo mức:
-- Xanh: < 60%
-- Vàng: 60-80%
-- Đỏ: > 80%
+Circular gauge displaying CPU usage percentage. Changes color by level:
+- Green: < 60%
+- Yellow: 60-80%
+- Red: > 80%
 
 ### MemoryBar
 
-Bar chart cho memory usage (used vs total).
+Bar chart showing memory usage (used vs total).
 
 ### DiskUsage
 
-Hiển thị disk usage cho từng partition.
+Displays disk usage per partition.
 
 ---
 
@@ -172,22 +172,22 @@ Hiển thị disk usage cho từng partition.
 
 ### ServerList
 
-Bảng danh sách tất cả servers:
-- Tên, host, port, trạng thái
+Table listing all servers:
+- Name, host, port, status
 - Actions: View, Edit, Delete
-- Badge cho trạng thái (active/inactive)
+- Badge for status (active/inactive)
 
 ### ServerForm
 
-Form tạo/sửa server:
+Form for creating/editing servers:
 - Fields: name, host, port, username
 - Auth method selector (Password vs SSH Key)
-- Conditional fields (password input hoặc key textarea)
+- Conditional fields (password input or key textarea)
 - Validation
 
 ### ServerStats
 
-Hiển thị live stats từ remote server:
+Displays live stats from a remote server:
 - CPU, Memory, Disk gauges
 - Uptime, hostname, OS info
 - Loading/error states
@@ -198,15 +198,15 @@ Hiển thị live stats từ remote server:
 
 ### PortTable
 
-Bảng liệt kê open ports:
+Table listing open ports:
 - Protocol, Address, Port, Process, State
 - Filterable
 
 ### PackageManager
 
-Quản lý apt packages:
-- Danh sách packages đã cài
-- Nút Update / Upgrade
+Apt package management UI:
+- Installed packages list
+- Update / Upgrade buttons
 - Log output
 
 ---
@@ -215,17 +215,17 @@ Quản lý apt packages:
 
 ### DeployForm
 
-Form deploy từ GitHub:
+GitHub deployment form:
 - Repository URL
-- Branch (mặc định: main)
-- Domain (tùy chọn)
-- Submit → call POST /api/deploy
+- Branch (default: main)
+- Domain (optional)
+- Submit → calls POST /api/deploy
 
 ### DeployLog
 
-Hiển thị deployment history:
-- Repo, branch, stack, status, time
-- Badge cho trạng thái (PENDING, CLONING, BUILDING, RUNNING, FAILED)
+Deployment history display:
+- Repo, branch, stack, status, timestamp
+- Badge for status (PENDING, CLONING, BUILDING, RUNNING, FAILED)
 - Expandable logs
 
 ---
@@ -234,7 +234,7 @@ Hiển thị deployment history:
 
 ### useSSE
 
-Hook quản lý Server-Sent Events connection.
+Manages a Server-Sent Events connection.
 
 ```typescript
 import { useSSE } from '@/hooks/useSSE';
@@ -250,14 +250,14 @@ function Dashboard() {
 ```
 
 **Features:**
-- Auto-connect khi mount
-- Auto-reconnect khi mất kết nối
-- Cleanup khi unmount
-- TypeScript generic cho data type
+- Auto-connects on mount
+- Auto-reconnects on disconnect
+- Cleans up on unmount
+- TypeScript generic for data typing
 
 ### useAuth
 
-Hook quản lý authentication state.
+Manages authentication state.
 
 ```typescript
 import { useAuth } from '@/hooks/useAuth';
@@ -277,10 +277,10 @@ function Header() {
 ```
 
 **Features:**
-- Fetch user info từ `/api/auth/me`
+- Fetches user info from `/api/auth/me`
 - Loading state
 - Logout function
-- Auto-redirect khi unauthorized
+- Auto-redirect when unauthorized
 
 ---
 
@@ -289,13 +289,13 @@ function Header() {
 ### Client vs Server Components
 
 ```
-"use client"  ← Cần khi component dùng:
+"use client"  ← Required when the component uses:
                 - useState, useEffect, hooks
                 - Event handlers (onClick, onChange)
                 - Browser APIs
                 - useSSE, useAuth
 
-Server Components (mặc định) ← Cho:
+Server Components (default) ← Used for:
                 - Static content
                 - Data fetching
                 - Layout components
@@ -303,17 +303,17 @@ Server Components (mặc định) ← Cho:
 
 ### Named Exports
 
-Tất cả components dùng **named export** (không dùng default export):
+All components use **named exports** (not default exports):
 
 ```typescript
-// ✅ Đúng
+// Correct
 export function ServerList() { ... }
 
-// ❌ Sai
+// Incorrect
 export default function ServerList() { ... }
 ```
 
-Import tương ứng:
+Corresponding imports:
 
 ```typescript
 import { ServerList } from '@/components/servers/ServerList';
@@ -321,8 +321,8 @@ import { ServerList } from '@/components/servers/ServerList';
 
 ### Styling Convention
 
-- Dùng Tailwind utility classes
-- Conditional classes với `clsx`:
+- Use Tailwind utility classes
+- Conditional classes with `clsx`:
 
 ```typescript
 import { clsx } from 'clsx';
@@ -333,7 +333,7 @@ import { clsx } from 'clsx';
 )}>
 ```
 
-- Custom brand colors defined trong `tailwind.config.ts`:
+- Custom brand colors are defined in `tailwind.config.ts`:
 
 ```typescript
 colors: {
@@ -345,10 +345,10 @@ colors: {
 }
 ```
 
-### Error Handling trong Components
+### Error Handling in Components
 
 ```typescript
-// Pattern cho data fetching components
+// Pattern for data-fetching components
 const [data, setData] = useState(null);
 const [loading, setLoading] = useState(true);
 const [error, setError] = useState('');
@@ -367,15 +367,15 @@ useEffect(() => {
 
 ---
 
-## Thêm component mới
+## Adding a New Component
 
-### 1. Tạo file
+### 1. Create the file
 
 ```
 src/components/<category>/MyComponent.tsx
 ```
 
-### 2. Thêm "use client" nếu cần
+### 2. Add "use client" if needed
 
 ```typescript
 "use client";
@@ -383,7 +383,7 @@ src/components/<category>/MyComponent.tsx
 import { useState } from 'react';
 ```
 
-### 3. Named export
+### 3. Use a named export
 
 ```typescript
 export function MyComponent({ prop1, prop2 }: Props) {
@@ -391,7 +391,7 @@ export function MyComponent({ prop1, prop2 }: Props) {
 }
 ```
 
-### 4. Import và sử dụng
+### 4. Import and use
 
 ```typescript
 import { MyComponent } from '@/components/<category>/MyComponent';

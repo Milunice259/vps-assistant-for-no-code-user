@@ -1,70 +1,70 @@
 # Deployment
 
-> Hướng dẫn deploy VPS Control App lên production server với Docker và Traefik.
+> How to deploy VPS Control App to a production server with Docker and Traefik.
 
 ---
 
-## Yêu cầu Production Server
+## Production Server Requirements
 
-| Yêu cầu           | Chi tiết                                    |
-| ------------------ | ------------------------------------------- |
-| OS                 | Ubuntu 20.04+ hoặc bất kỳ Linux với Docker |
-| Docker             | 24.x trở lên                                |
-| Docker Compose     | v2 trở lên                                  |
-| Traefik            | Đã cài và chạy trên host                   |
-| Domain             | Đã trỏ A record về IP server               |
-| RAM                | Tối thiểu 1 GB (khuyến nghị 2 GB)          |
+| Requirement        | Details                                      |
+| ------------------ | -------------------------------------------- |
+| OS                 | Ubuntu 20.04+ or any Linux with Docker       |
+| Docker             | 24.x or later                                |
+| Docker Compose     | v2 or later                                  |
+| Traefik            | Already installed and running on the host    |
+| Domain             | A record pointing to the server IP           |
+| RAM                | Minimum 1 GB (2 GB recommended)             |
 
 ---
 
-## Cách 1: One-Click Deploy (Khuyến nghị)
+## Option 1: One-Click Deploy (Recommended)
 
-### Bước 1: Clone repository
+### Step 1: Clone the repository
 
 ```bash
 git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git
 cd vps-assistant-for-no-code-user
 ```
 
-### Bước 2: Chạy deploy script
+### Step 2: Run the deploy script
 
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-### Script sẽ tự động:
+### The script automatically:
 
-1. **Kiểm tra** Docker, Docker Compose, OpenSSL đã cài chưa
-2. **Phát hiện** Traefik network (tìm các tên phổ biến: `traefik`, `traefik_network`, `proxy`, `web`)
-3. **Hỏi bạn:**
-   - Domain (ví dụ: `panel.example.com`)
-   - Cert Resolver (ví dụ: `letsencrypt`)
+1. **Checks** that Docker, Docker Compose, and OpenSSL are installed
+2. **Detects** the Traefik network (looks for common names: `traefik`, `traefik_network`, `proxy`, `web`)
+3. **Prompts you for:**
+   - Domain (e.g., `panel.example.com`)
+   - Cert Resolver (e.g., `letsencrypt`)
    - Admin username
    - Admin password
-4. **Sinh tự động** các secret an toàn:
+4. **Generates** cryptographically secure secrets:
    - `DB_PASSWORD` — 48 hex chars
    - `JWT_SECRET` — 64 hex chars
    - `ENCRYPTION_KEY` — 64 hex chars
-5. **Tạo file** `.env` với tất cả biến cấu hình
-6. **Build và khởi động** containers
+5. **Creates** the `.env` file with all configuration
+6. **Builds and starts** the containers
 
-### Bước 3: Truy cập
+### Step 3: Access the app
 
 ```
 https://your-domain.com
 ```
 
-Đăng nhập bằng username/password đã nhập ở bước 2.
+Log in with the username/password you entered in step 2.
 
 ---
 
-## Cách 2: Deploy thủ công
+## Option 2: Manual Deploy
 
-### Bước 1: Tạo .env
+### Step 1: Create the .env file
 
 ```bash
-# Sinh secrets
+# Generate secrets
 DB_PASSWORD=$(openssl rand -hex 24)
 JWT_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
@@ -96,19 +96,19 @@ CERT_RESOLVER=letsencrypt
 EOF
 ```
 
-### Bước 2: Build và chạy
+### Step 2: Build and run
 
 ```bash
 docker compose up -d --build
 ```
 
-### Bước 3: Kiểm tra
+### Step 3: Verify
 
 ```bash
-# Xem containers
+# Check containers
 docker compose ps
 
-# Xem logs
+# View logs
 docker compose logs -f app
 ```
 
@@ -116,7 +116,7 @@ docker compose logs -f app
 
 ## Traefik Labels
 
-Docker Compose tự động cấu hình các Traefik labels sau:
+Docker Compose automatically configures these Traefik labels:
 
 ```yaml
 labels:
@@ -138,15 +138,15 @@ labels:
   - "traefik.http.services.vps-control.loadbalancer.server.port=3000"
 ```
 
-### Yêu cầu Traefik
+### Traefik Prerequisites
 
-Traefik cần có:
-- **Entrypoints:** `web` (port 80) và `websecure` (port 443)
-- **Cert Resolver:** Đã cấu hình (ví dụ: `letsencrypt`)
-- **Docker Provider:** Đang bật
-- **Network:** External network mà containers có thể join
+Your Traefik instance must have:
+- **Entrypoints:** `web` (port 80) and `websecure` (port 443)
+- **Cert Resolver:** Configured (e.g., `letsencrypt`)
+- **Docker Provider:** Enabled
+- **Network:** An external network that containers can join
 
-Ví dụ cấu hình Traefik (`traefik.yml`):
+Example Traefik config (`traefik.yml`):
 
 ```yaml
 entryPoints:
@@ -173,24 +173,24 @@ providers:
 
 ## Startup Flow
 
-Khi container app khởi động:
+When the app container starts:
 
 ```
 docker-entrypoint.sh
     │
-    ├─ 1. Chờ DB sẵn sàng (wait-for-db.js × 30 lần, mỗi lần 2s)
-    │     └─ TCP probe tới db:5432
+    ├─ 1. Wait for DB (wait-for-db.js × 30 retries, 2s apart)
+    │     └─ TCP probe to db:5432
     │
-    ├─ 2. Chạy Prisma migrations
+    ├─ 2. Run Prisma migrations
     │     └─ npx prisma migrate deploy
     │
-    └─ 3. Khởi động Next.js
+    └─ 3. Start Next.js
           └─ exec node server.js
 ```
 
 ### Database Health Check
 
-Docker Compose cũng có health check riêng cho PostgreSQL:
+Docker Compose also has its own health check for PostgreSQL:
 
 ```yaml
 healthcheck:
@@ -200,22 +200,22 @@ healthcheck:
   retries: 10
 ```
 
-App service có `depends_on: db: condition: service_healthy` nên Docker sẽ không start app cho đến khi DB healthy.
+The app service uses `depends_on: db: condition: service_healthy`, so Docker won't start the app until the DB reports healthy.
 
 ---
 
-## Cập nhật / Upgrade
+## Updating / Upgrading
 
-### Pull code mới và rebuild:
+### Pull new code and rebuild:
 
 ```bash
 git pull origin main
 docker compose up -d --build
 ```
 
-Prisma migrations sẽ tự động apply qua `docker-entrypoint.sh`.
+Prisma migrations are applied automatically via `docker-entrypoint.sh`.
 
-### Nếu chỉ muốn restart:
+### Restart without rebuilding:
 
 ```bash
 docker compose restart app
@@ -223,15 +223,15 @@ docker compose restart app
 
 ---
 
-## Backup Database
+## Database Backup
 
-### Tạo backup:
+### Create a backup:
 
 ```bash
 docker compose exec db pg_dump -U vpsadmin vpscontrol > backup_$(date +%Y%m%d).sql
 ```
 
-### Restore backup:
+### Restore a backup:
 
 ```bash
 docker compose exec -T db psql -U vpsadmin vpscontrol < backup_20260209.sql
@@ -241,13 +241,13 @@ docker compose exec -T db psql -U vpsadmin vpscontrol < backup_20260209.sql
 
 ## Monitoring
 
-### Xem resource usage:
+### Check resource usage:
 
 ```bash
 docker stats vps-control-app vps-control-db
 ```
 
-### Xem logs real-time:
+### Stream logs:
 
 ```bash
 # App logs
@@ -257,7 +257,7 @@ docker compose logs -f --tail=100 app
 docker compose logs -f --tail=100 db
 ```
 
-### Kiểm tra health:
+### Check health:
 
 ```bash
 # Container status
@@ -269,33 +269,33 @@ docker compose exec db pg_isready -U vpsadmin
 
 ---
 
-## Xử lý sự cố Production
+## Production Troubleshooting
 
-### App không start
+### App won't start
 
 ```bash
-# Xem logs
+# Check logs
 docker compose logs app
 
-# Nguyên nhân phổ biến:
-# 1. DB chưa ready → entrypoint retry 30 lần
-# 2. Migration lỗi → kiểm tra schema
-# 3. Thiếu env vars → kiểm tra .env
+# Common causes:
+# 1. DB not ready → entrypoint retries up to 30 times
+# 2. Migration error → check schema
+# 3. Missing env vars → check .env
 ```
 
-### Không truy cập được qua domain
+### Can't access via domain
 
-1. Kiểm tra DNS: `dig panel.example.com`
-2. Kiểm tra Traefik logs: `docker logs traefik`
-3. Kiểm tra app có join đúng network: `docker network inspect traefik_network`
-4. Kiểm tra Traefik dashboard (nếu bật)
+1. Check DNS: `dig panel.example.com`
+2. Check Traefik logs: `docker logs traefik`
+3. Check the app joined the right network: `docker network inspect traefik_network`
+4. Check Traefik dashboard (if enabled)
 
-### Database full disk
+### Database disk full
 
 ```bash
-# Kiểm tra dung lượng
+# Check disk usage
 docker system df
 
-# Dọn dẹp Docker
+# Clean up Docker
 docker system prune -a --volumes
 ```

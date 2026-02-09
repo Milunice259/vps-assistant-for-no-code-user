@@ -1,57 +1,57 @@
 # Contributing
 
-> Hướng dẫn quy trình đóng góp code, conventions, và cách làm việc với dự án.
+> Development workflow, code conventions, and how to extend the project.
 
 ---
 
-## Quy trình làm việc
+## Workflow
 
-### 1. Tạo branch
+### 1. Create a branch
 
 ```bash
-git checkout -b feature/ten-tinh-nang
-# hoặc
-git checkout -b fix/ten-bug
+git checkout -b feature/feature-name
+# or
+git checkout -b fix/bug-name
 ```
 
 ### 2. Code & Test
 
 ```bash
-npm run dev        # Chạy dev server
-npm run lint       # Kiểm tra lỗi
-npm run build      # Kiểm tra build production
+npm run dev        # Start dev server
+npm run lint       # Check for errors
+npm run build      # Verify production build
 ```
 
 ### 3. Commit
 
-Tuân theo [Conventional Commits](https://www.conventionalcommits.org/):
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-<type>: <mô tả ngắn>
+<type>: <short description>
 
-[body tùy chọn]
+[optional body]
 ```
 
 **Types:**
 
-| Type       | Khi nào                              | Ví dụ                                    |
-| ---------- | ------------------------------------ | ----------------------------------------- |
-| `feat`     | Thêm tính năng mới                  | `feat: add server health monitoring`      |
-| `fix`      | Sửa bug                             | `fix: resolve SSH connection timeout`     |
-| `chore`    | Công việc bảo trì                   | `chore: update dependencies`              |
-| `docs`     | Thêm/sửa tài liệu                  | `docs: update API reference`              |
-| `refactor` | Refactor code (không thay đổi behavior) | `refactor: extract SSH logic to lib`  |
-| `style`    | Sửa style/formatting                | `style: fix button padding`               |
-| `perf`     | Cải thiện performance                | `perf: optimize stats query`              |
-| `test`     | Thêm/sửa tests                      | `test: add server CRUD tests`             |
+| Type       | When                                | Example                                   |
+| ---------- | ----------------------------------- | ----------------------------------------- |
+| `feat`     | Adding a new feature                | `feat: add server health monitoring`      |
+| `fix`      | Fixing a bug                        | `fix: resolve SSH connection timeout`     |
+| `chore`    | Maintenance work                    | `chore: update dependencies`              |
+| `docs`     | Adding/updating docs                | `docs: update API reference`              |
+| `refactor` | Refactoring (no behavior change)    | `refactor: extract SSH logic to lib`      |
+| `style`    | Style/formatting changes            | `style: fix button padding`               |
+| `perf`     | Performance improvements            | `perf: optimize stats query`              |
+| `test`     | Adding/updating tests               | `test: add server CRUD tests`             |
 
 ### 4. Push & PR
 
 ```bash
-git push origin feature/ten-tinh-nang
+git push origin feature/feature-name
 ```
 
-Tạo Pull Request trên GitHub.
+Create a Pull Request on GitHub.
 
 ---
 
@@ -59,27 +59,27 @@ Tạo Pull Request trên GitHub.
 
 ### TypeScript
 
-- **Strict mode** — bật trong `tsconfig.json`
-- **No `any`** — luôn type rõ ràng
-- **Interfaces** cho props, response types → đặt trong `src/types/index.ts`
+- **Strict mode** — enabled in `tsconfig.json`
+- **No `any`** — always use explicit types
+- **Interfaces** for props and response types → place in `src/types/index.ts`
 
 ```typescript
-// ✅ Đúng
+// Correct
 interface ServerFormProps {
   server?: ServerInfo;
   onSubmit: (data: CreateServerInput) => Promise<void>;
 }
 
-// ❌ Sai
+// Incorrect
 function ServerForm(props: any) { ... }
 ```
 
 ### React Components
 
-- Dùng **function components** (không class components)
-- Dùng **named exports** (không default exports)
-- `"use client"` chỉ khi cần hooks hoặc browser APIs
-- Props type inline hoặc interface riêng
+- Use **function components** (no class components)
+- Use **named exports** (no default exports)
+- Only add `"use client"` when hooks or browser APIs are needed
+- Props typing: inline or via a separate interface
 
 ```typescript
 "use client";
@@ -100,22 +100,22 @@ export function MyComponent({ title, onAction }: Props) {
 ### API Routes
 
 - File: `src/app/api/<resource>/route.ts`
-- Luôn có `export const dynamic = "force-dynamic"`
-- Response format nhất quán:
+- Always include `export const dynamic = "force-dynamic"`
+- Consistent response format:
 
 ```typescript
-// Thành công
+// Success
 return NextResponse.json({ success: true, data: result });
 
-// Lỗi
+// Error
 return NextResponse.json(
   { success: false, error: 'Message' },
   { status: 400 }
 );
 ```
 
-- Luôn wrap trong try/catch
-- Kiểm tra auth ở đầu route handler
+- Always wrap in try/catch
+- Check authentication at the top of every handler
 
 ```typescript
 export async function GET() {
@@ -142,15 +142,15 @@ export async function GET() {
 
 ### File Naming
 
-| Loại              | Convention          | Ví dụ                   |
+| Type              | Convention          | Example                 |
 | ----------------- | ------------------- | ----------------------- |
 | Components        | PascalCase          | `ServerForm.tsx`        |
 | Hooks             | camelCase, `use-`   | `useSSE.ts`             |
-| Libraries         | camelCase            | `crypto.ts`             |
-| API Routes        | `route.ts`           | `api/servers/route.ts`  |
-| Pages             | `page.tsx`           | `dashboard/page.tsx`    |
-| Layouts           | `layout.tsx`         | `(panel)/layout.tsx`    |
-| Types             | `index.ts`           | `types/index.ts`        |
+| Libraries         | camelCase           | `crypto.ts`             |
+| API Routes        | `route.ts`          | `api/servers/route.ts`  |
+| Pages             | `page.tsx`          | `dashboard/page.tsx`    |
+| Layouts           | `layout.tsx`        | `(panel)/layout.tsx`    |
+| Types             | `index.ts`          | `types/index.ts`        |
 
 ### Import Order
 
@@ -177,17 +177,17 @@ import type { ServerInfo } from '@/types';
 
 ### Path Aliases
 
-Dùng `@/` thay vì relative paths:
+Use `@/` instead of relative paths:
 
 ```typescript
-// ✅ Đúng
+// Correct
 import { prisma } from '@/lib/db';
 
-// ❌ Sai
+// Incorrect
 import { prisma } from '../../../lib/db';
 ```
 
-Cấu hình trong `tsconfig.json`:
+Configured in `tsconfig.json`:
 ```json
 {
   "compilerOptions": {
@@ -200,68 +200,68 @@ Cấu hình trong `tsconfig.json`:
 
 ---
 
-## Thêm tính năng mới
+## Adding a New Feature
 
 ### Checklist
 
-1. [ ] Xác định feature cần gì: model mới? API mới? UI mới?
-2. [ ] Cập nhật Prisma schema nếu cần → `npm run db:migrate`
-3. [ ] Tạo API route(s) trong `src/app/api/`
-4. [ ] Tạo component(s) trong `src/components/`
-5. [ ] Tạo page trong `src/app/(panel)/`
-6. [ ] Thêm link vào Sidebar nếu là page mới
-7. [ ] Cập nhật types trong `src/types/index.ts`
-8. [ ] Test trên localhost
-9. [ ] Cập nhật docs nếu cần
+1. [ ] Determine what's needed: new model? new API? new UI?
+2. [ ] Update Prisma schema if needed → `npm run db:migrate`
+3. [ ] Create API route(s) in `src/app/api/`
+4. [ ] Create component(s) in `src/components/`
+5. [ ] Create a page in `src/app/(panel)/`
+6. [ ] Add a link to the Sidebar if it's a new page
+7. [ ] Update types in `src/types/index.ts`
+8. [ ] Test on localhost
+9. [ ] Update docs if applicable
 
-### Ví dụ: Thêm trang "Logs"
+### Example: Adding a "Logs" Page
 
 ```
-1. Tạo API:     src/app/api/logs/route.ts
-2. Tạo Component: src/components/logs/LogViewer.tsx
-3. Tạo Page:    src/app/(panel)/logs/page.tsx
-4. Thêm Sidebar: src/components/layout/Sidebar.tsx → thêm menu item
-5. Thêm Types:  src/types/index.ts → interface LogEntry
+1. Create API:      src/app/api/logs/route.ts
+2. Create Component: src/components/logs/LogViewer.tsx
+3. Create Page:     src/app/(panel)/logs/page.tsx
+4. Update Sidebar:  src/components/layout/Sidebar.tsx → add menu item
+5. Add Types:       src/types/index.ts → interface LogEntry
 ```
 
 ---
 
-## Cấu trúc Database Migration
+## Database Schema Changes
 
-Khi thay đổi schema:
+When modifying the schema:
 
 ```bash
-# 1. Sửa prisma/schema.prisma
-# 2. Tạo migration
+# 1. Edit prisma/schema.prisma
+# 2. Create a migration
 npm run db:migrate
-# 3. Nhập tên migration (ví dụ: add_logs_table)
-# 4. Kiểm tra file SQL trong prisma/migrations/
-# 5. Commit cả schema + migration files
+# 3. Enter a migration name (e.g., add_logs_table)
+# 4. Review the SQL file in prisma/migrations/
+# 5. Commit both the schema and migration files
 ```
 
 ---
 
 ## Environment Variables
 
-Khi thêm biến môi trường mới:
+When adding a new environment variable:
 
-1. Thêm vào `.env` local
-2. Cập nhật `deploy.sh` nếu cần tự sinh
-3. Cập nhật `docker-compose.yml` nếu cần pass vào container
-4. Cập nhật `docs/DEPLOYMENT.md` và `docs/GETTING-STARTED.md`
-5. **KHÔNG** commit `.env`
+1. Add it to your local `.env`
+2. Update `deploy.sh` if it should be auto-generated
+3. Update `docker-compose.yml` if it needs to be passed into the container
+4. Update `docs/DEPLOYMENT.md` and `docs/GETTING-STARTED.md`
+5. **NEVER** commit `.env`
 
 ---
 
-## Tài liệu tham khảo
+## Reference Links
 
-| Chủ đề           | Link                                                |
+| Topic            | URL                                                 |
 | ---------------- | --------------------------------------------------- |
 | Next.js          | https://nextjs.org/docs                             |
-| React            | https://react.dev                                    |
-| Prisma           | https://www.prisma.io/docs                           |
-| Tailwind CSS     | https://tailwindcss.com/docs                         |
+| React            | https://react.dev                                   |
+| Prisma           | https://www.prisma.io/docs                          |
+| Tailwind CSS     | https://tailwindcss.com/docs                        |
 | ssh2-promise     | https://github.com/AkashBabu/ssh2-promise           |
-| jose (JWT)       | https://github.com/panva/jose                        |
-| Docker Compose   | https://docs.docker.com/compose                      |
-| Traefik          | https://doc.traefik.io/traefik                       |
+| jose (JWT)       | https://github.com/panva/jose                       |
+| Docker Compose   | https://docs.docker.com/compose                     |
+| Traefik          | https://doc.traefik.io/traefik                      |

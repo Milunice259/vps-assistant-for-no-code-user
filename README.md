@@ -121,9 +121,8 @@ docker run -d --name vps-pg \
   -p 5432:5432 \
   postgres:16-alpine
 
-# Copy and configure environment
-cp .env.example .env
-# Edit .env: set DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY, ADMIN_PASSWORD
+# Create .env with required variables (see Environment Variables section)
+# Or run deploy.sh which generates it automatically
 
 # Run migrations and seed the admin user
 npx prisma migrate dev

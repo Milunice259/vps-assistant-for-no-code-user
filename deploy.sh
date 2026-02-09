@@ -22,6 +22,189 @@ TRAEFIK_DIR="/opt/traefik"
 COMPOSE_CMD=""   # Will be set by detect_compose_command()
 MIN_RAM_MB=800   # Minimum ~1GB RAM (allowing for OS usage)
 MIN_DISK_GB=5    # Minimum 5GB disk
+GIT_CREDENTIAL_FILE="$APP_DIR/.git-credentials"
+REPO_NAME="Milunice259/vps-assistant-for-no-code-user"
+
+# ═══════════════════════════════════════════════════
+#  Git Credential Management & Auto-Update
+# ═══════════════════════════════════════════════════
+
+# Auto-update deploy.sh if remote has a newer version
+auto_update_script() {
+    cd "$APP_DIR" || return 1
+
+    # Only if this is a git repo with remote refs
+    [ -d .git ] || return 0
+    git rev-parse --verify origin/main >/dev/null 2>&1 || return 0
+
+    LOCAL_HASH=$(git rev-parse HEAD:deploy.sh 2>/dev/null || echo "")
+    REMOTE_HASH=$(git rev-parse origin/main:deploy.sh 2>/dev/null || echo "")
+
+    if [ -n "$LOCAL_HASH" ] && [ -n "$REMOTE_HASH" ] && [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
+        if git diff --quiet HEAD -- deploy.sh 2>/dev/null; then
+            echo -e "${BLUE}  ℹ Auto-updating deploy.sh to latest version...${NC}"
+            git checkout origin/main -- deploy.sh >/dev/null 2>&1
+            chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
+            echo -e "${GREEN}  ✓ deploy.sh updated. Restarting...${NC}"
+            exec bash "$APP_DIR/deploy.sh" "$@"
+        fi
+    fi
+}
+
+# Setup git credential store for this repo only
+setup_git_credential_helper() {
+    [ -f "$APP_DIR/.git/config" ] || return 0
+    if ! git -C "$APP_DIR" config --local credential.helper >/dev/null 2>&1; then
+        git -C "$APP_DIR" config --local credential.helper "store --file=$GIT_CREDENTIAL_FILE"
+    fi
+}
+
+# Test if stored credentials still work
+check_git_credentials() {
+    [ -f "$GIT_CREDENTIAL_FILE" ] || return 1
+    timeout 10 git -C "$APP_DIR" ls-remote --heads origin main >/dev/null 2>&1
+}
+
+# Show PAT creation guide
+show_pat_instructions() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}   How to create a GitHub Personal Access Token (PAT)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "  GitHub does NOT support password auth. You need a PAT."
+    echo ""
+    echo "  1. Visit: https://github.com/settings/tokens"
+    echo "  2. Click 'Generate new token' → 'Classic'"
+    echo "  3. Name it (e.g. 'VPS Deploy'), select scope: 'repo'"
+    echo "  4. Set expiration (90 days recommended)"
+    echo "  5. Click 'Generate token' and COPY it immediately"
+    echo ""
+    echo -e "  Token will be saved in: ${YELLOW}$GIT_CREDENTIAL_FILE${NC}"
+    echo -e "  File permissions: ${YELLOW}600${NC} (owner only)"
+    echo ""
+}
+
+# Prompt user for GitHub username + PAT, save credentials
+get_git_credentials() {
+    show_pat_instructions
+
+    echo -e -n "${YELLOW}  GitHub username: ${NC}"
+    read GIT_USERNAME
+    [ -z "$GIT_USERNAME" ] && { echo -e "${RED}  ✗ Username cannot be empty.${NC}"; return 1; }
+
+    echo -e -n "${YELLOW}  Personal Access Token (hidden): ${NC}"
+    read -s GIT_PAT
+    echo ""
+    [ -z "$GIT_PAT" ] && { echo -e "${RED}  ✗ PAT cannot be empty.${NC}"; return 1; }
+
+    # Save credentials
+    echo "https://${GIT_USERNAME}:${GIT_PAT}@github.com" > "$GIT_CREDENTIAL_FILE"
+    chmod 600 "$GIT_CREDENTIAL_FILE"
+
+    # Update remote URL to include credentials
+    git -C "$APP_DIR" remote set-url origin \
+        "https://${GIT_USERNAME}:${GIT_PAT}@github.com/${REPO_NAME}.git" 2>/dev/null || true
+
+    echo -e "${GREEN}  ✓ Credentials saved.${NC}"
+}
+
+# Ensure valid credentials exist, prompt if not
+ensure_git_credentials() {
+    setup_git_credential_helper
+
+    if check_git_credentials; then
+        echo -e "${GREEN}  ✓ Stored Git credentials are valid.${NC}"
+        return 0
+    fi
+
+    if [ -f "$GIT_CREDENTIAL_FILE" ]; then
+        echo -e "${YELLOW}  ⚠ Stored credentials expired or invalid. Re-entering...${NC}"
+        rm -f "$GIT_CREDENTIAL_FILE"
+    else
+        echo -e "${BLUE}  ℹ No stored Git credentials found.${NC}"
+    fi
+
+    get_git_credentials || return 1
+
+    if check_git_credentials; then
+        echo -e "${GREEN}  ✓ Credentials validated.${NC}"
+        return 0
+    else
+        echo -e "${RED}  ✗ Credentials invalid. Check your PAT and try again.${NC}"
+        rm -f "$GIT_CREDENTIAL_FILE"
+        return 1
+    fi
+}
+
+# Check for code updates from remote
+check_for_updates() {
+    print_header "Checking for Updates"
+
+    cd "$APP_DIR"
+
+    # Not a git repo?
+    if [ ! -d .git ]; then
+        print_warning "Not a git repository. Skipping update check."
+        return 0
+    fi
+
+    # Ensure credentials
+    if ! ensure_git_credentials; then
+        print_warning "Git credentials not available. Skipping update."
+        return 0
+    fi
+
+    # Fetch latest
+    print_info "Fetching latest changes..."
+    if ! git fetch origin 2>/dev/null; then
+        print_warning "Failed to fetch. Credentials may have expired."
+        rm -f "$GIT_CREDENTIAL_FILE"
+        print_info "Run deploy.sh again to enter new credentials."
+        return 0
+    fi
+
+    # Auto-update deploy.sh first
+    auto_update_script "$@"
+
+    # Check upstream
+    UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "")
+    if [ -z "$UPSTREAM" ]; then
+        print_info "No upstream branch. Setting origin/main..."
+        git branch --set-upstream-to=origin/main main 2>/dev/null || true
+    fi
+
+    LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
+    REMOTE=$(git rev-parse @{u} 2>/dev/null || echo "")
+
+    if [ "$LOCAL" = "$REMOTE" ]; then
+        print_success "Already up to date."
+        return 0
+    fi
+
+    print_info "Updates available. Merging..."
+
+    # Stash local changes if any
+    STASHED=false
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        print_info "Stashing local changes..."
+        git stash push -m "Auto-stash before deploy $(date +%Y-%m-%d_%H:%M:%S)"
+        STASHED=true
+    fi
+
+    if git merge @{u} 2>/dev/null; then
+        print_success "Code updated successfully."
+        chmod +x deploy.sh 2>/dev/null || true
+        if [ "$STASHED" = true ]; then
+            print_info "Local changes were stashed. Restore with: git stash pop"
+        fi
+    else
+        print_warning "Merge failed (possible conflicts). Using current code."
+        if [ "$STASHED" = true ]; then
+            git stash pop 2>/dev/null || true
+        fi
+    fi
+}
 
 # --- Helper Functions ---
 
@@ -526,7 +709,7 @@ show_completion_message() {
     echo "    View logs:     cd $APP_DIR && $COMPOSE_CMD logs -f app"
     echo "    Restart:       cd $APP_DIR && $COMPOSE_CMD restart"
     echo "    Stop:          cd $APP_DIR && $COMPOSE_CMD down"
-    echo "    Update:        cd $APP_DIR && git pull && $COMPOSE_CMD up -d --build"
+    echo "    Update:        cd $APP_DIR && ./deploy.sh  (checks git + rebuilds)"
     echo "    Backup DB:     docker cp vps-control-app:/app/data/vpscontrol.db ./backup.db"
     echo ""
 }
@@ -544,6 +727,13 @@ main() {
 
     # Must be root
     check_root
+
+    # Check for code updates (optional)
+    echo ""
+    read_input "Check for code updates from GitHub? (Y/n)" "Y" "DO_UPDATE" "false"
+    if [[ "$DO_UPDATE" =~ ^[Yy]$ ]]; then
+        check_for_updates
+    fi
 
     # System checks
     check_system_requirements

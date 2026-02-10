@@ -663,8 +663,17 @@ deploy_application() {
     print_info "Pulling base images..."
     $COMPOSE_CMD pull --ignore-buildable 2>&1 | grep -v "Pulling" || true
 
-    print_info "Building application (this may take a few minutes on first run)..."
-    $COMPOSE_CMD build --no-cache 2>&1 | tail -5
+    read_input "Build with cache? (Y = faster / n = clean build, no cache)" "Y" "USE_CACHE" "false"
+    USE_NO_CACHE=""
+    if [[ "$USE_CACHE" =~ ^[Nn]$ ]]; then
+        USE_NO_CACHE="--no-cache"
+        print_info "Clean build (no cache)..."
+    else
+        print_info "Building with cache (only changed layers rebuild)..."
+    fi
+
+    export DOCKER_BUILDKIT=1
+    $COMPOSE_CMD build $USE_NO_CACHE 2>&1 | tail -15
 
     print_info "Starting containers..."
     $COMPOSE_CMD up -d
@@ -679,30 +688,32 @@ deploy_application() {
 }
 
 # ─── Verify Deployment ───
+# Returns 0 if app is running, 1 otherwise. Caller must check and show success/failure.
 verify_deployment() {
     print_header "[8/8] Verifying Deployment"
 
     cd "$APP_DIR"
 
-    # Wait for containers to start
     print_info "Waiting for application to initialize (30 seconds)..."
     sleep 30
 
-    # Check container status
+    APP_OK=0
     if $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running"; then
         print_success "Application container is running"
     else
         print_error "Application container failed to start"
         print_info "Check logs with: $COMPOSE_CMD logs app"
-        $COMPOSE_CMD logs --tail=20 app 2>/dev/null || true
+        $COMPOSE_CMD logs --tail=30 app 2>/dev/null || true
+        APP_OK=1
     fi
 
-    # Check Traefik
     if docker ps | grep -q traefik; then
         print_success "Traefik is running"
     else
         print_warning "Traefik is not running"
     fi
+
+    return $APP_OK
 }
 
 # ─── Completion Message ───
@@ -778,11 +789,20 @@ main() {
     setup_traefik
     configure_application
     deploy_application
-    verify_deployment
-
-    # Done
-    show_completion_message
-    print_success "Deployment completed!"
+    if verify_deployment; then
+        show_completion_message
+        print_success "Deployment completed!"
+    else
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════╗"
+        echo -e "║       VPS Control App — Deployment Failed         ║"
+        echo -e "╚══════════════════════════════════════════════════╝${NC}"
+        echo ""
+        print_error "Application container did not start. Check logs above."
+        echo -e "  ${BLUE}Debug:${NC} cd $APP_DIR && $COMPOSE_CMD logs -f app"
+        echo ""
+        exit 1
+    fi
 }
 
 # Run

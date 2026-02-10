@@ -42,8 +42,10 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Install Prisma CLI 6 for entrypoint (db push). Must match package.json; Prisma 7 breaks schema.
-RUN npm install --no-save prisma@6 && chmod -R 755 node_modules/prisma
+# Copy Prisma CLI and its deps (e.g. effect) from builder so entrypoint can run `prisma db push`
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/effect ./node_modules/effect
+RUN chmod -R 755 node_modules/prisma node_modules/effect 2>/dev/null || true
 
 # Copy entrypoint
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

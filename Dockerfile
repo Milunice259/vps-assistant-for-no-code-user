@@ -37,18 +37,11 @@ RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma schema + generated client for runtime queries
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-# Copy Prisma CLI and its deps from builder so entrypoint can run `npx prisma db push`
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/effect ./node_modules/effect
-# .bin/prisma is the script that runs the CLI; without it we get "sh: prisma: not found"
-RUN mkdir -p node_modules/.bin
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
-RUN chmod -R 755 node_modules/prisma node_modules/effect node_modules/.bin/prisma 2>/dev/null || true
+# Copy Prisma schema + full node_modules from builder.
+# NOTE: do not cherry-pick Prisma deps (effect/fast-check/...) because missing transitive deps
+# can break startup in production. Full copy is more robust for this app.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 # Copy entrypoint
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

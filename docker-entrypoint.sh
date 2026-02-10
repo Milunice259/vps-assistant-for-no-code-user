@@ -9,7 +9,7 @@ set -e
 # ═══════════════════════════════════════════════════
 
 echo "[entrypoint] Initializing database..."
-npx prisma db push --skip-generate 2>&1 || {
+npx prisma db push 2>&1 || {
   echo "[entrypoint] ERROR: Failed to initialize database."
   exit 1
 }

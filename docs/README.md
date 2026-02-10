@@ -2,11 +2,12 @@
 
 > Everything you need to understand, develop, and deploy VPS Control App.
 
-| You want to...                      | Go to                                              |
-| ----------------------------------- | -------------------------------------------------- |
-| Understand architecture & get started | **This file** (sections below)                   |
-| See API endpoints, DB schema, security | [API-AND-DATABASE.md](./API-AND-DATABASE.md)     |
-| Learn code conventions & components   | [DEVELOPMENT.md](./DEVELOPMENT.md)               |
+| You want to...                        | Go to                                                    |
+| ------------------------------------- | -------------------------------------------------------- |
+| Understand architecture & get started | **This file** (sections below)                           |
+| See all implemented app capabilities  | [CAPABILITIES-SUMMARY.md](./CAPABILITIES-SUMMARY.md)    |
+| See API endpoints, DB schema, security| [API-AND-DATABASE.md](./API-AND-DATABASE.md)            |
+| Learn code conventions & components   | [DEVELOPMENT.md](./DEVELOPMENT.md)                       |
 
 ---
 

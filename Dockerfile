@@ -33,6 +33,9 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Create data directory for SQLite
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
+# Network/ports feature needs `ss` (iproute2)
+RUN apk add --no-cache iproute2
+
 # Copy Next.js standalone build (includes minimal node_modules)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

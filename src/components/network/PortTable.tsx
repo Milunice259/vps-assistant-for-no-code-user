@@ -25,8 +25,13 @@ export function PortTable() {
         setPlatformError(json.message);
         return;
       }
+      // Port listing unavailable (e.g. ss not found in container)
+      if (json.error === "COMMAND_FAILED") {
+        setPlatformError(json.message ?? "Port listing is not available in this environment.");
+        return;
+      }
 
-      if (!res.ok) throw new Error(json.error || "Failed to load ports");
+      if (!res.ok) throw new Error(json.error || json.message || "Failed to load ports");
       setPorts(json.data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");

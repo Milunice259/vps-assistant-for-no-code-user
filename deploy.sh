@@ -660,7 +660,8 @@ deploy_application() {
     print_info "Stopping old containers..."
     $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
 
-    print_info "Pulling base images..."
+    # Pull only pre-built images (e.g. from docker hub). App is built from Dockerfile, so "app skipped" is normal.
+    print_info "Pulling pre-built images (app is built locally; 'app skipped' is expected)..."
     $COMPOSE_CMD pull --ignore-buildable 2>&1 | grep -v "Pulling" || true
 
     read_input "Build with cache? (Y = faster / n = clean build, no cache)" "Y" "USE_CACHE" "false"

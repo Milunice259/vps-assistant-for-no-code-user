@@ -186,9 +186,12 @@ check_for_updates() {
 
     # On a deploy server, always match remote exactly
     git reset --hard origin/main 2>/dev/null
-    chmod +x deploy.sh 2>/dev/null || true
+    chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
 
-    print_success "Code updated to latest version."
+    print_success "Code updated. Restarting deploy with new script..."
+    echo ""
+    exec bash "$APP_DIR/deploy.sh" "$@"
+    exit 0
 }
 
 # --- Helper Functions ---
@@ -404,7 +407,10 @@ setup_traefik() {
 
     # 1. List bridge networks and let user choose
     print_info "Available Docker networks (bridge):"
-    mapfile -t NETWORK_LIST < <(docker network ls --format '{{.Name}}' --filter driver=bridge 2>/dev/null) || true
+    NETWORK_LIST=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && NETWORK_LIST+=("$line")
+    done < <(docker network ls --format '{{.Name}}' --filter driver=bridge 2>/dev/null || true)
 
     if [ "${#NETWORK_LIST[@]}" -gt 1 ]; then
         echo ""

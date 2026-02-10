@@ -570,14 +570,38 @@ configure_application() {
 
     cd "$APP_DIR"
 
+    # Helper: read KEY=value from .env safely (strip optional quotes)
+    get_env_value() {
+        local key="$1"
+        local raw
+        raw=$(grep -E "^${key}=" .env 2>/dev/null | tail -n1 | cut -d'=' -f2-)
+        raw="${raw%\"}"
+        raw="${raw#\"}"
+        echo "$raw"
+    }
+
     # Check if .env already exists
     if [ -f .env ]; then
         print_warning ".env file already exists"
         read_input "Reconfigure? (y/N)" "N" "RECONFIG" "false"
 
         if [[ ! "$RECONFIG" =~ ^[Yy]$ ]]; then
-            print_info "Keeping existing configuration"
-            return
+            # Load existing values so summary/checks don't become empty
+            DOMAIN="$(get_env_value DOMAIN)"
+            ADMIN_USERNAME="$(get_env_value ADMIN_USERNAME)"
+            EXISTING_TRAEFIK_NETWORK="$(get_env_value TRAEFIK_NETWORK)"
+            if [ -n "$EXISTING_TRAEFIK_NETWORK" ]; then
+                TRAEFIK_NETWORK="$EXISTING_TRAEFIK_NETWORK"
+            fi
+
+            # DOMAIN is mandatory for Traefik host routing
+            if [ -z "$DOMAIN" ]; then
+                print_warning "Existing .env is missing DOMAIN."
+                print_info "Starting reconfiguration to fix routing..."
+            else
+                print_info "Keeping existing configuration"
+                return
+            fi
         fi
         cp .env ".env.backup.$(date +%s)"
         print_info "Existing .env backed up"
@@ -699,6 +723,12 @@ verify_deployment() {
     sleep 30
 
     APP_OK=0
+    if [ -z "$DOMAIN" ]; then
+        print_error "DOMAIN is empty. Web route cannot work via Traefik."
+        print_info "Run deploy again and set a valid domain in configuration."
+        APP_OK=1
+    fi
+
     if $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running"; then
         print_success "Application container is running"
     else

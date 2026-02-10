@@ -569,6 +569,8 @@ configure_application() {
     print_header "[6/8] Configuring VPS Control App"
 
     cd "$APP_DIR"
+    DETECTED_CERT_RESOLVER=$(docker inspect traefik --format '{{range .Config.Cmd}}{{println .}}{{end}}' 2>/dev/null \
+        | sed -n 's/^--certificatesresolvers\.\([^.]*\)\.acme\..*$/\1/p' | head -n1)
 
     # Helper: read KEY=value from .env safely (strip optional quotes)
     get_env_value() {
@@ -589,15 +591,23 @@ configure_application() {
             # Load existing values so summary/checks don't become empty
             DOMAIN="$(get_env_value DOMAIN)"
             ADMIN_USERNAME="$(get_env_value ADMIN_USERNAME)"
+            CERT_RESOLVER="$(get_env_value CERT_RESOLVER)"
             EXISTING_TRAEFIK_NETWORK="$(get_env_value TRAEFIK_NETWORK)"
+            EXISTING_CERT_RESOLVER="$CERT_RESOLVER"
             if [ -n "$EXISTING_TRAEFIK_NETWORK" ]; then
                 TRAEFIK_NETWORK="$EXISTING_TRAEFIK_NETWORK"
             fi
 
-            # DOMAIN is mandatory for Traefik host routing
+            # DOMAIN and CERT_RESOLVER are mandatory for Traefik host routing + TLS.
             if [ -z "$DOMAIN" ]; then
                 print_warning "Existing .env is missing DOMAIN."
                 print_info "Starting reconfiguration to fix routing..."
+            elif [ -z "$CERT_RESOLVER" ]; then
+                print_warning "Existing .env is missing CERT_RESOLVER."
+                print_info "Starting reconfiguration to fix TLS resolver..."
+            elif [ -n "$DETECTED_CERT_RESOLVER" ] && [ "$CERT_RESOLVER" != "$DETECTED_CERT_RESOLVER" ]; then
+                print_warning "CERT_RESOLVER mismatch (.env=$CERT_RESOLVER, traefik=$DETECTED_CERT_RESOLVER)."
+                print_info "Starting reconfiguration to fix TLS resolver..."
             else
                 print_info "Keeping existing configuration"
                 return
@@ -617,8 +627,20 @@ configure_application() {
         read_input "Enter domain (e.g. panel.example.com)" "" "DOMAIN" "false"
     done
 
-    # Cert resolver — always "letsencrypt" (matches Traefik config generated in setup_traefik)
-    CERT_RESOLVER="letsencrypt"
+    # Cert resolver: prefer detected value from running Traefik, then existing .env, then fallback.
+    DEFAULT_CERT_RESOLVER="$DETECTED_CERT_RESOLVER"
+    if [ -z "$DEFAULT_CERT_RESOLVER" ] && [ -n "$EXISTING_CERT_RESOLVER" ]; then
+        DEFAULT_CERT_RESOLVER="$EXISTING_CERT_RESOLVER"
+    fi
+    if [ -z "$DEFAULT_CERT_RESOLVER" ]; then
+        DEFAULT_CERT_RESOLVER="letsencrypt"
+    fi
+
+    read_input "Certificate resolver name (Traefik)" "$DEFAULT_CERT_RESOLVER" "CERT_RESOLVER" "false"
+    while [ -z "$CERT_RESOLVER" ]; do
+        print_error "Certificate resolver is required!"
+        read_input "Certificate resolver name (Traefik)" "$DEFAULT_CERT_RESOLVER" "CERT_RESOLVER" "false"
+    done
 
     # Admin credentials
     read_input "Admin username" "admin" "ADMIN_USERNAME" "false"

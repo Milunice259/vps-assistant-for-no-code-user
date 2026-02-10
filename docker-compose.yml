@@ -19,6 +19,8 @@ services:
     labels:
       # --- Enable Traefik discovery ---
       - "traefik.enable=true"
+      # Tell Traefik which Docker network to use for backend IP resolution
+      - "traefik.docker.network=${TRAEFIK_NETWORK}"
 
       # --- HTTPS Router ---
       - "traefik.http.routers.vps-control.rule=Host(`${DOMAIN}`)"

@@ -9,10 +9,18 @@ set -e
 # ═══════════════════════════════════════════════════
 
 echo "[entrypoint] Initializing database..."
-npx prisma db push 2>&1 || {
-  echo "[entrypoint] ERROR: Failed to initialize database."
-  exit 1
-}
+# Run Prisma CLI via node (avoids relying on npx/.bin in minimal standalone image)
+if [ -f "./node_modules/prisma/build/index.js" ]; then
+  node ./node_modules/prisma/build/index.js db push 2>&1 || {
+    echo "[entrypoint] ERROR: Failed to initialize database."
+    exit 1
+  }
+else
+  npx prisma db push 2>&1 || {
+    echo "[entrypoint] ERROR: Failed to initialize database."
+    exit 1
+  }
+fi
 echo "[entrypoint] Database ready."
 
 # Seed admin user if ADMIN_PASSWORD is set and user doesn't exist yet

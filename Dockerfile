@@ -42,10 +42,13 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Copy Prisma CLI and its deps (e.g. effect) from builder so entrypoint can run `prisma db push`
+# Copy Prisma CLI and its deps from builder so entrypoint can run `npx prisma db push`
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/effect ./node_modules/effect
-RUN chmod -R 755 node_modules/prisma node_modules/effect 2>/dev/null || true
+# .bin/prisma is the script that runs the CLI; without it we get "sh: prisma: not found"
+RUN mkdir -p node_modules/.bin
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+RUN chmod -R 755 node_modules/prisma node_modules/effect node_modules/.bin/prisma 2>/dev/null || true
 
 # Copy entrypoint
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

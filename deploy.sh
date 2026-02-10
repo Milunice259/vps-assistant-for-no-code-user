@@ -402,12 +402,33 @@ configure_firewall() {
 setup_traefik() {
     print_header "[5/8] Setting Up Traefik Reverse Proxy"
 
-    # 1. Ask user for network name
-    print_info "Available Docker networks:"
-    docker network ls --format "  - {{.Name}} ({{.Driver}})" | grep "bridge" || echo "  No bridge networks found"
-    echo ""
+    # 1. List bridge networks and let user choose
+    print_info "Available Docker networks (bridge):"
+    mapfile -t NETWORK_LIST < <(docker network ls --format '{{.Name}}' --filter driver=bridge 2>/dev/null) || true
 
-    read_input "Enter Traefik network name" "traefik" "TRAEFIK_NETWORK" "false"
+    if [ "${#NETWORK_LIST[@]}" -gt 1 ]; then
+        echo ""
+        for i in "${!NETWORK_LIST[@]}"; do
+            echo -e "  ${CYAN}  $((i+1)))${NC} ${NETWORK_LIST[$i]}"
+        done
+        echo ""
+        echo -e -n "${YELLOW}  Enter number (1-${#NETWORK_LIST[@]}) or network name (Default: 1): ${NC}"
+        read choice
+        choice="${choice:-1}"
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "${#NETWORK_LIST[@]}" ] 2>/dev/null; then
+            TRAEFIK_NETWORK="${NETWORK_LIST[$((choice-1))]}"
+        else
+            TRAEFIK_NETWORK="${choice}"
+        fi
+        echo ""
+    elif [ "${#NETWORK_LIST[@]}" -eq 1 ]; then
+        TRAEFIK_NETWORK="${NETWORK_LIST[0]}"
+        print_info "Using only available network: $TRAEFIK_NETWORK"
+    else
+        echo -e "  ${YELLOW}(No bridge networks found)${NC}"
+        echo ""
+        read_input "Enter Traefik network name" "traefik" "TRAEFIK_NETWORK" "false"
+    fi
 
     # 2. Check if network exists and Traefik is running
     if docker network inspect "$TRAEFIK_NETWORK" &> /dev/null; then

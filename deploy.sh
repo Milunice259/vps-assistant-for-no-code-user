@@ -629,7 +629,7 @@ deploy_application() {
     export DOCKER_CLIENT_TIMEOUT=300
     export COMPOSE_HTTP_TIMEOUT=300
 
-    # Stop and remove old containers
+    # Stop and remove old containers (volumes kept — app_data has SQLite DB)
     print_info "Stopping old containers..."
     $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
 
@@ -642,9 +642,11 @@ deploy_application() {
     print_info "Starting containers..."
     $COMPOSE_CMD up -d
 
-    # Clean up old images and build cache
-    print_info "Cleaning up old Docker images..."
+    # Clean up old resources (after new containers run, so app_data + traefik_network stay)
+    print_info "Cleaning up unused images, volumes, and networks..."
     docker image prune -f 2>/dev/null || true
+    docker volume prune -f 2>/dev/null || true
+    docker network prune -f 2>/dev/null || true
 
     print_success "Containers started"
 }

@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
-import { getRemoteStats, getRemoteOSDetails, closeSSH } from "@/lib/ssh";
-import type { ApiResponse } from "@/types";
+import { getRemoteContainers, closeSSH } from "@/lib/ssh";
+import type { ApiResponse, ContainerInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/servers/[id]/stats - Fetch live system stats + OS details from a remote server via SSH.
+ * GET /api/servers/[id]/docker - List all Docker containers on a remote server.
  */
 export async function GET(
   _request: NextRequest,
   context: RouteContext
-): Promise<NextResponse<ApiResponse>> {
+): Promise<NextResponse<ApiResponse<ContainerInfo[]>>> {
   let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
 
   try {
@@ -21,19 +21,19 @@ export async function GET(
     const result = await connectToServer(id);
     ssh = result.ssh;
 
-    // Fetch stats and OS details in parallel
-    const [stats, osDetails] = await Promise.all([
-      getRemoteStats(ssh),
-      getRemoteOSDetails(ssh),
-    ]);
+    const containers = await getRemoteContainers(ssh);
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...stats,
-        os: osDetails,
-      },
-    });
+    const data: ContainerInfo[] = containers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      image: c.image,
+      status: c.status,
+      uptime: c.uptime,
+      ports: c.ports,
+      state: c.state,
+    }));
+
+    return NextResponse.json({ success: true, data });
   } catch (error) {
     if (isDisconnectedError(error)) {
       return NextResponse.json(
@@ -44,11 +44,8 @@ export async function GET(
 
     const err = error as Error & { statusCode?: number };
     const status = err.statusCode || 500;
-    const message = err.message || "Failed to fetch remote stats";
-    return NextResponse.json(
-      { success: false, error: message },
-      { status }
-    );
+    const message = err.message || "Failed to fetch containers";
+    return NextResponse.json({ success: false, error: message }, { status });
   } finally {
     await closeSSH(ssh);
   }

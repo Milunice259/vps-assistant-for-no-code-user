@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Server,
   Network,
+  AppWindow,
   GitBranch,
   Terminal,
   PanelLeftClose,
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="h-5 w-5" /> },
   { label: "Servers", href: "/servers", icon: <Server className="h-5 w-5" /> },
   { label: "Network", href: "/network", icon: <Network className="h-5 w-5" /> },
+  { label: "Apps", href: "/apps", icon: <AppWindow className="h-5 w-5" /> },
   { label: "Deploy", href: "/deploy", icon: <GitBranch className="h-5 w-5" /> },
 ];
 

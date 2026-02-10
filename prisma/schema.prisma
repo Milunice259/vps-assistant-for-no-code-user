@@ -39,6 +39,9 @@ model Server {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
+  apps        App[]
+  deployments DeploymentLog[]
+
   @@map("servers")
 }
 
@@ -51,10 +54,33 @@ model DeploymentLog {
   status        DeployStatus @default(PENDING)
   logs          String
   domain        String?
+  serverId      String?      @map("server_id")
+  server        Server?      @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  commitHash    String?      @map("commit_hash")
+  customPath    String?      @map("custom_path")
+  encryptedEnv  String?      @map("encrypted_env") // AES-256-GCM encrypted JSON env vars
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 
   @@map("deployment_logs")
+}
+
+// ─── Tracked applications across servers ───
+model App {
+  id            String    @id @default(cuid())
+  name          String
+  containerId   String?   @map("container_id")
+  containerName String?   @map("container_name")
+  image         String?
+  serverId      String    @map("server_id")
+  server        Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  deploymentId  String?   @map("deployment_id")
+  status        AppStatus @default(UNKNOWN)
+  domain        String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("apps")
 }
 
 enum AuthMethod {
@@ -68,4 +94,12 @@ enum DeployStatus {
   BUILDING
   RUNNING
   FAILED
+}
+
+enum AppStatus {
+  RUNNING
+  STOPPED
+  RESTARTING
+  UNHEALTHY
+  UNKNOWN
 }

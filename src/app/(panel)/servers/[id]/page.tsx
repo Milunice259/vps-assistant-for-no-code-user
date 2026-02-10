@@ -2,12 +2,31 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Pencil,
+  Trash2,
+  Monitor,
+  Box,
+  Cog,
+  Zap,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Tabs } from "@/components/ui/Tabs";
 import { ServerStats } from "@/components/servers/ServerStats";
+import { DockerContainerList } from "@/components/servers/DockerContainerList";
+import { ServiceList } from "@/components/servers/ServiceList";
+import { QuickActions } from "@/components/servers/QuickActions";
 import { ServerForm } from "@/components/servers/ServerForm";
 import type { ServerInfo } from "@/types";
+
+const SERVER_TABS = [
+  { key: "overview", label: "Overview", icon: <Monitor className="h-4 w-4" /> },
+  { key: "containers", label: "Containers", icon: <Box className="h-4 w-4" /> },
+  { key: "services", label: "Services", icon: <Cog className="h-4 w-4" /> },
+  { key: "actions", label: "Quick Actions", icon: <Zap className="h-4 w-4" /> },
+];
 
 export default function ServerDetailPage() {
   const params = useParams();
@@ -18,6 +37,7 @@ export default function ServerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
   async function fetchServer() {
     try {
@@ -117,8 +137,14 @@ export default function ServerDetailPage() {
         </div>
       </div>
 
-      {/* Live Stats */}
-      <ServerStats serverId={serverId} />
+      {/* Tabs */}
+      <Tabs tabs={SERVER_TABS} activeTab={activeTab} onChange={setActiveTab} />
+
+      {/* Tab Content */}
+      {activeTab === "overview" && <ServerStats serverId={serverId} />}
+      {activeTab === "containers" && <DockerContainerList serverId={serverId} />}
+      {activeTab === "services" && <ServiceList serverId={serverId} />}
+      {activeTab === "actions" && <QuickActions serverId={serverId} />}
     </div>
   );
 }

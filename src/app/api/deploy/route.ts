@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { encrypt, decrypt } from "@/lib/crypto";
 import {
   prepareDeployment,
   cleanupDeployDir,
   pruneOldDeployments,
 } from "@/lib/deployer";
+import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
+import { remoteDeployViaSSH, closeSSH } from "@/lib/ssh";
 import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +32,9 @@ export async function GET(): Promise<
       status: log.status,
       logs: log.logs,
       domain: log.domain,
+      serverId: log.serverId,
+      commitHash: log.commitHash,
+      customPath: log.customPath,
       createdAt: log.createdAt.toISOString(),
     }));
 
@@ -45,6 +51,9 @@ export async function GET(): Promise<
 
 /**
  * POST /api/deploy - Start a new deployment.
+ *
+ * When serverId is provided: Deploys to the remote server via SSH (git clone + docker compose).
+ * When serverId is omitted:  Clones locally for stack detection (original behavior).
  */
 export async function POST(
   request: NextRequest
@@ -54,7 +63,7 @@ export async function POST(
 
   try {
     const body = (await request.json()) as DeployInput;
-    const { repoUrl, branch = "main", domain } = body;
+    const { repoUrl, branch = "main", domain, serverId, customPath, envVars } = body;
 
     if (!repoUrl) {
       return NextResponse.json(
@@ -63,15 +72,124 @@ export async function POST(
       );
     }
 
-    // Create initial deployment log record
+    // If serverId provided, verify it exists
+    if (serverId) {
+      const server = await prisma.server.findUnique({ where: { id: serverId } });
+      if (!server) {
+        return NextResponse.json(
+          { success: false, error: "Target server not found" },
+          { status: 404 }
+        );
+      }
+    }
+
+    // Encrypt env vars if provided
+    const encryptedEnv = envVars ? encrypt(envVars) : null;
+
+    // ─── Remote Deployment (SSH) ───
+    if (serverId) {
+      if (!customPath) {
+        return NextResponse.json(
+          { success: false, error: "customPath is required for remote deployments" },
+          { status: 400 }
+        );
+      }
+
+      // Create initial log record
+      const logRecord = await prisma.deploymentLog.create({
+        data: {
+          repoUrl,
+          branch,
+          detectedStack: "unknown",
+          status: "CLONING",
+          logs: `Starting remote deployment of ${repoUrl} (branch: ${branch})...\n` +
+            `Target: Remote server (${serverId})\n` +
+            `Custom path: ${customPath}\n`,
+          domain: domain ?? null,
+          serverId,
+          customPath,
+          encryptedEnv,
+        },
+      });
+      logId = logRecord.id;
+
+      let ssh = null;
+      try {
+        const conn = await connectToServer(serverId);
+        ssh = conn.ssh;
+
+        // Decrypt env vars for the remote .env file
+        const envVarsDecrypted = encryptedEnv ? decrypt(encryptedEnv) : undefined;
+
+        const result = await remoteDeployViaSSH(
+          ssh,
+          repoUrl,
+          branch,
+          customPath,
+          envVarsDecrypted
+        );
+
+        const finalStatus = result.success ? "RUNNING" : "FAILED";
+        const updated = await prisma.deploymentLog.update({
+          where: { id: logId },
+          data: {
+            status: finalStatus,
+            commitHash: result.commitHash || null,
+            logs: logRecord.logs + result.logs,
+          },
+        });
+
+        const data: DeploymentInfo = {
+          id: updated.id,
+          repoUrl: updated.repoUrl,
+          branch: updated.branch,
+          detectedStack: updated.detectedStack,
+          status: updated.status,
+          logs: updated.logs,
+          domain: updated.domain,
+          serverId: updated.serverId,
+          commitHash: updated.commitHash,
+          customPath: updated.customPath,
+          createdAt: updated.createdAt.toISOString(),
+        };
+
+        return NextResponse.json(
+          { success: result.success, data },
+          { status: result.success ? 201 : 500 }
+        );
+      } catch (error) {
+        if (isDisconnectedError(error)) {
+          // Update log to FAILED
+          if (logId) {
+            await prisma.deploymentLog.update({
+              where: { id: logId },
+              data: { status: "FAILED", logs: logRecord.logs + "\nServer is offline or unreachable." },
+            }).catch(() => {});
+          }
+          return NextResponse.json(
+            { success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" },
+            { status: 503 }
+          );
+        }
+        throw error; // Re-throw for the outer catch
+      } finally {
+        await closeSSH(ssh);
+      }
+    }
+
+    // ─── Local Deployment (stack detection) ───
     const logRecord = await prisma.deploymentLog.create({
       data: {
         repoUrl,
         branch,
         detectedStack: "unknown",
         status: "CLONING",
-        logs: `Starting deployment of ${repoUrl} (branch: ${branch})...\n`,
+        logs: `Starting deployment of ${repoUrl} (branch: ${branch})...\n` +
+          `Target: Local\n`,
         domain: domain ?? null,
+        serverId: null,
+        customPath: null,
+        encryptedEnv,
       },
     });
     logId = logRecord.id;
@@ -102,6 +220,9 @@ export async function POST(
       status: updated.status,
       logs: updated.logs,
       domain: updated.domain,
+      serverId: updated.serverId,
+      commitHash: updated.commitHash,
+      customPath: updated.customPath,
       createdAt: updated.createdAt.toISOString(),
     };
 

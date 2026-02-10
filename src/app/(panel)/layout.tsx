@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/servers": "Server Management",
   "/network": "Network Manager",
+  "/apps": "Applications",
   "/deploy": "GitHub Deployer",
 };
 

@@ -24,6 +24,12 @@ export interface DiskStats {
   usagePercent: number;
 }
 
+export interface OSDetails {
+  distro: string;
+  version: string;
+  kernel: string;
+}
+
 export interface SystemStats {
   hostname: string;
   platform: string;
@@ -31,6 +37,7 @@ export interface SystemStats {
   cpu: CpuStats;
   memory: MemoryStats;
   disk: DiskStats;
+  os?: OSDetails;
 }
 
 // ─── Server (VPS Connection) ───
@@ -97,6 +104,9 @@ export interface DeploymentInfo {
   status: DeployStatus;
   logs: string;
   domain: string | null;
+  serverId: string | null;
+  commitHash: string | null;
+  customPath: string | null;
   createdAt: string;
 }
 
@@ -104,6 +114,9 @@ export interface DeployInput {
   repoUrl: string;
   branch?: string;
   domain?: string;
+  serverId?: string;
+  customPath?: string;
+  envVars?: string;
 }
 
 // ─── Network ───
@@ -126,12 +139,93 @@ export interface PackageInfo {
   newVersion?: string;
 }
 
+// ─── Docker & Containers ───
+
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  uptime: string;
+  ports: string;
+  state: string;
+}
+
+export type ContainerActionType = "start" | "stop" | "restart";
+
+// ─── System Services ───
+
+export interface ServiceInfo {
+  name: string;
+  loadState: string;
+  activeState: string;
+  subState: string;
+  description: string;
+}
+
+// ─── Network Topology ───
+
+export interface DockerNetworkContainer {
+  id: string;
+  name: string;
+  ipv4: string;
+}
+
+export interface DockerNetworkInfo {
+  id: string;
+  name: string;
+  driver: string;
+  containers: DockerNetworkContainer[];
+}
+
+export interface NetworkTopology {
+  networks: DockerNetworkInfo[];
+  hostPorts: PortInfo[];
+}
+
+// ─── Applications ───
+
+export type AppStatusType =
+  | "RUNNING"
+  | "STOPPED"
+  | "RESTARTING"
+  | "UNHEALTHY"
+  | "UNKNOWN";
+
+export interface AppInfo {
+  id: string;
+  name: string;
+  containerId: string | null;
+  containerName: string | null;
+  image: string | null;
+  serverId: string;
+  serverName: string;
+  status: AppStatusType;
+  domain: string | null;
+  createdAt: string;
+}
+
+export interface CreateAppInput {
+  name: string;
+  serverId: string;
+  containerId?: string;
+  containerName?: string;
+  image?: string;
+  domain?: string;
+}
+
+// ─── Quick Actions ───
+
+export type QuickActionType = "apt-update" | "docker-prune" | "restart-docker";
+
 // ─── API Responses ───
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  warning?: string;
+  code?: string;
 }
 
 // ─── Auth ───

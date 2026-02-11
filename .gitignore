@@ -23,6 +23,7 @@ dist/
 .git-credentials
 
 # ─── IDE & Editor ───
+.agent/
 .cursor/
 .vscode/
 .idea/

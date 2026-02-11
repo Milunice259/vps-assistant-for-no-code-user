@@ -69,7 +69,7 @@ Snapshot of host system stats.
 **Server-Sent Events** — streams stats every 2 seconds.
 
 ```typescript
-const { data, error, connected } = useSSE<SystemStats>('/api/stats/stream');
+const { data, error, connected } = useSSE<SystemStats>("/api/stats/stream");
 ```
 
 ---
@@ -106,7 +106,93 @@ Delete a server.
 
 ### GET `/api/servers/[id]/stats`
 
-Fetch live system stats from a remote server via SSH. Returns `500` if SSH connection fails.
+Fetch live system stats from a remote server via SSH. Returns `503` if server is offline.
+
+### GET `/api/servers/[id]/docker`
+
+List all Docker containers (running and stopped) on a remote server.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "abc123",
+      "name": "my-app",
+      "image": "node:20",
+      "status": "Up 2 hours",
+      "state": "running",
+      "ports": "0.0.0.0:3000->3000/tcp"
+    }
+  ]
+}
+```
+
+### POST `/api/servers/[id]/docker/action`
+
+Perform a Docker container action (start, stop, restart).
+
+```json
+{ "containerId": "abc123", "action": "restart" }
+```
+
+### GET `/api/servers/[id]/services`
+
+List systemd service units on a remote server.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "docker.service",
+      "loadState": "loaded",
+      "activeState": "active",
+      "subState": "running",
+      "description": "Docker Application Container Engine"
+    }
+  ]
+}
+```
+
+### GET `/api/servers/[id]/network`
+
+Fetch Docker network topology and host ports from a remote server.
+
+### POST `/api/servers/[id]/actions`
+
+Run a quick maintenance action on a remote server.
+
+```json
+{ "action": "apt-update" }
+```
+
+**Valid actions:** `apt-update`, `docker-prune`, `restart-docker`
+
+---
+
+## Apps Endpoints
+
+### GET `/api/apps`
+
+List all applications across all managed servers. Aggregates DB records with live Docker container discovery via SSH.
+
+### POST `/api/apps`
+
+Manually add a tracked application.
+
+```json
+{
+  "name": "My App",
+  "serverId": "cuid...",
+  "containerId": "abc123",
+  "domain": "app.example.com"
+}
+```
+
+### GET `/api/apps/[id]/logs`
+
+Fetch container logs for a tracked application.
 
 ---
 
@@ -119,7 +205,18 @@ Fetch live system stats from a remote server via SSH. Returns `500` if SSH conne
 List open ports on the host (uses `ss -tulnp`).
 
 ```json
-{ "success": true, "data": [{ "protocol": "tcp", "localAddress": "0.0.0.0", "localPort": 443, "process": "traefik", "state": "LISTEN" }] }
+{
+  "success": true,
+  "data": [
+    {
+      "protocol": "tcp",
+      "localAddress": "0.0.0.0",
+      "localPort": 443,
+      "process": "traefik",
+      "state": "LISTEN"
+    }
+  ]
+}
 ```
 
 ### GET `/api/network/packages`
@@ -151,31 +248,48 @@ Get the 20 most recent deployment logs.
 
 ### POST `/api/deploy`
 
-Start a new deployment — clones repo and detects tech stack.
+Start a new deployment.
+
+**Local mode** (no `serverId`): Clones repo locally for stack detection.
 
 ```json
-// Request
+// Request (local)
 { "repoUrl": "https://github.com/user/repo", "branch": "main", "domain": "app.example.com" }
 
 // Response 201
-{ "success": true, "data": { "id": "...", "detectedStack": "nextjs", "status": "CLONING" } }
+{ "success": true, "data": { "id": "...", "detectedStack": "nextjs", "status": "BUILDING" } }
 ```
 
-**Detected stacks:** `nextjs`, `react`, `vue`, `nuxt`, `python`, `go`, `rust`, `node`, `static`
+**Remote mode** (with `serverId`): Deploys to a remote server via SSH using `git clone` + `docker compose`.
+
+```json
+// Request (remote)
+{
+  "repoUrl": "https://github.com/user/repo",
+  "branch": "main",
+  "serverId": "cuid...",
+  "customPath": "/opt/my-app",
+  "domain": "app.example.com",
+  "envVars": "KEY=value\nKEY2=value2"
+}
+```
+
+**Detected stacks:** `nextjs`, `react`, `vue`, `nuxt`, `python`, `go`, `rust`, `node`, `static`, `unknown`
 
 ---
 
 ## HTTP Status Codes
 
-| Code | Meaning             | When                                    |
-| ---- | ------------------- | --------------------------------------- |
-| 200  | OK                  | Request succeeded                       |
-| 201  | Created             | New resource created                    |
-| 400  | Bad Request         | Invalid input                           |
-| 401  | Unauthorized        | Not logged in or token expired          |
-| 404  | Not Found           | Resource doesn't exist                  |
-| 422  | Unprocessable       | Unsupported platform (Windows)          |
-| 500  | Server Error        | SSH fail, DB error, etc.                |
+| Code | Meaning             | When                                 |
+| ---- | ------------------- | ------------------------------------ |
+| 200  | OK                  | Request succeeded                    |
+| 201  | Created             | New resource created                 |
+| 400  | Bad Request         | Invalid input                        |
+| 401  | Unauthorized        | Not logged in or token expired       |
+| 404  | Not Found           | Resource doesn't exist               |
+| 422  | Unprocessable       | Unsupported platform (Windows)       |
+| 500  | Server Error        | SSH fail, DB error, etc.             |
+| 503  | Service Unavailable | Remote server offline or unreachable |
 
 ---
 
@@ -190,22 +304,25 @@ Start a new deployment — clones repo and detects tech stack.
 ## Entity Relationship
 
 ```
-┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
-│        User         │    │       Server        │    │   DeploymentLog     │
-├─────────────────────┤    ├─────────────────────┤    ├─────────────────────┤
-│ id          (PK)    │    │ id          (PK)    │    │ id          (PK)    │
-│ username    (unique) │    │ name                │    │ repoUrl             │
-│ passwordHash        │    │ host                │    │ branch      (main)  │
-│ createdAt           │    │ port        (22)    │    │ detectedStack       │
-│ updatedAt           │    │ username            │    │ status      (enum)  │
-└─────────────────────┘    │ authMethod  (enum)  │    │ logs        (Text)  │
-                           │ encryptedKey  🔒    │    │ domain      (?)     │
-                           │ encryptedPass 🔒    │    │ createdAt           │
-                           │ isActive    (true)  │    │ updatedAt           │
-                           │ lastConnected (?)   │    └─────────────────────┘
-                           │ createdAt           │
-                           │ updatedAt           │
-                           └─────────────────────┘
+┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
+│        User         │    │       Server        │    │   DeploymentLog     │    │        App          │
+├─────────────────────┤    ├─────────────────────┤    ├─────────────────────┤    ├─────────────────────┤
+│ id          (PK)    │    │ id          (PK)    │    │ id          (PK)    │    │ id          (PK)    │
+│ username    (unique) │    │ name                │    │ repoUrl             │    │ name                │
+│ passwordHash        │    │ host                │    │ branch      (main)  │    │ containerId   (?)   │
+│ createdAt           │    │ port        (22)    │    │ detectedStack       │    │ containerName (?)   │
+│ updatedAt           │    │ username            │    │ status      (enum)  │    │ image         (?)   │
+└─────────────────────┘    │ authMethod  (enum)  │    │ logs        (Text)  │    │ serverId      (FK)  │
+                           │ encryptedKey  🔒    │    │ domain      (?)     │    │ deploymentId  (?)   │
+                           │ encryptedPass 🔒    │    │ serverId    (FK?)   │    │ status      (enum)  │
+                           │ isActive    (true)  │    │ commitHash  (?)     │    │ domain        (?)   │
+                           │ lastConnected (?)   │    │ customPath  (?)     │    │ createdAt           │
+                           │ createdAt           │    │ encryptedEnv 🔒(?)  │    │ updatedAt           │
+                           │ updatedAt           │    │ createdAt           │    └─────────────────────┘
+                           └─────────────────────┘    │ updatedAt           │
+                              ▲ has many              └─────────────────────┘
+                              ├── apps[]
+                              └── deployments[]
 ```
 
 🔒 = AES-256-GCM encrypted at rest
@@ -213,8 +330,11 @@ Start a new deployment — clones repo and detects tech stack.
 ## Enums
 
 ```
-AuthMethod:  PASSWORD | KEY
+
+AuthMethod: PASSWORD | KEY
 DeployStatus: PENDING | CLONING | BUILDING | RUNNING | FAILED
+AppStatus: RUNNING | STOPPED | RESTARTING | UNHEALTHY | UNKNOWN
+
 ```
 
 ## Database Commands
@@ -233,14 +353,14 @@ npm run db:generate   # Regenerate Prisma client
 ```typescript
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 export const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 ```
 
 ## Connection Strings
 
-| Environment | URL |
-| --- | --- |
-| Local dev | `file:./prisma/dev.db` |
+| Environment | URL                            |
+| ----------- | ------------------------------ |
+| Local dev   | `file:./prisma/dev.db`         |
 | Docker prod | `file:/app/data/vpscontrol.db` |
 
 ---
@@ -292,19 +412,19 @@ Client                    Server
 
 ## AES-256-GCM Encryption
 
-| Property    | Value                              |
-| ----------- | ---------------------------------- |
-| Algorithm   | AES-256-GCM                        |
-| Key         | `ENCRYPTION_KEY` (32 bytes hex)    |
-| IV          | 16 bytes random (per encryption)   |
-| Auth Tag    | 16 bytes                           |
-| Format      | `base64(IV + ciphertext + authTag)` |
+| Property  | Value                               |
+| --------- | ----------------------------------- |
+| Algorithm | AES-256-GCM                         |
+| Key       | `ENCRYPTION_KEY` (32 bytes hex)     |
+| IV        | 16 bytes random (per encryption)    |
+| Auth Tag  | 16 bytes                            |
+| Format    | `base64(IV + ciphertext + authTag)` |
 
 ```typescript
-import { encrypt, decrypt } from '@/lib/crypto';
+import { encrypt, decrypt } from "@/lib/crypto";
 
-const encrypted = encrypt(sshPassword);   // → base64 string
-const original = decrypt(encrypted);       // → plaintext
+const encrypted = encrypt(sshPassword); // → base64 string
+const original = decrypt(encrypted); // → plaintext
 ```
 
 **CRITICAL:** If `ENCRYPTION_KEY` is lost, all encrypted credentials become unrecoverable.
@@ -317,23 +437,23 @@ const original = decrypt(encrypted);       // → plaintext
 
 ## Secrets
 
-| Secret           | Purpose              | Generated by | Length    |
-| ---------------- | -------------------- | ------------ | --------- |
-| `JWT_SECRET`     | JWT signing          | `deploy.sh`  | 64 hex    |
-| `ENCRYPTION_KEY` | AES-256-GCM          | `deploy.sh`  | 64 hex    |
-| `ADMIN_PASSWORD` | Initial admin        | User input   | User-set  |
+| Secret           | Purpose       | Generated by | Length   |
+| ---------------- | ------------- | ------------ | -------- |
+| `JWT_SECRET`     | JWT signing   | `deploy.sh`  | 64 hex   |
+| `ENCRYPTION_KEY` | AES-256-GCM   | `deploy.sh`  | 64 hex   |
+| `ADMIN_PASSWORD` | Initial admin | User input   | User-set |
 
 **Rules:** Never hardcode, never commit `.env`, never log to console.
 
 ## Known Limitations
 
-| Limitation             | Severity | Future Improvement              |
-| ---------------------- | -------- | ------------------------------- |
-| No rate limiting       | Medium   | Add rate limiter middleware     |
-| No 2FA                 | Medium   | Add TOTP (Google Authenticator) |
-| No audit log           | Low      | Log actions to DB               |
-| SSH host keys not stored | Low    | Store known_hosts               |
-| No CORS/CSP headers    | Low      | Add security headers            |
+| Limitation               | Severity | Future Improvement              |
+| ------------------------ | -------- | ------------------------------- |
+| No rate limiting         | Medium   | Add rate limiter middleware     |
+| No 2FA                   | Medium   | Add TOTP (Google Authenticator) |
+| No audit log             | Low      | Log actions to DB               |
+| SSH host keys not stored | Low      | Store known_hosts               |
+| No CORS/CSP headers      | Low      | Add security headers            |
 
 ## Deployment Security Checklist
 

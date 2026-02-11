@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { execSync } from "child_process";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, getRemoteContainers, closeSSH } from "@/lib/ssh";
@@ -19,11 +20,51 @@ function mapContainerState(state: string): AppStatusType {
 }
 
 /**
+ * Discover Docker containers on the local machine via `docker ps`.
+ * Returns empty array if Docker is not available.
+ */
+function discoverLocalContainers(): AppInfo[] {
+  try {
+    const raw = execSync(
+      "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}' 2>/dev/null",
+      { encoding: "utf-8", timeout: 10_000 }
+    );
+
+    if (!raw.trim()) return [];
+
+    return raw
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [id, name, image, state, ports] = line.split("\t");
+        if (!id) return null;
+        return {
+          id: `local::${id}`,
+          name: name || image || id,
+          containerId: id,
+          containerName: name || null,
+          image: image || null,
+          serverId: "local",
+          serverName: "This Server",
+          status: mapContainerState(state || ""),
+          domain: ports?.match(/:(\d+)->/)?.[1] ? null : null, // port info available in topology
+          createdAt: new Date().toISOString(),
+        } satisfies AppInfo;
+      })
+      .filter((c): c is AppInfo => c !== null);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * GET /api/apps - List all applications across all managed servers.
  *
- * This aggregates data from two sources:
+ * This aggregates data from three sources:
  * 1. DB App records (manually tracked)
- * 2. Live Docker containers from each active server (discovered via SSH)
+ * 2. Local Docker containers on the host machine
+ * 3. Live Docker containers from each active server (discovered via SSH)
  *
  * DB records are merged with live data when container IDs match.
  * Containers not in the DB are included as "discovered" apps.
@@ -56,7 +97,16 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
       if (app.containerId) discoveredContainerIds.add(app.containerId);
     }
 
-    // Discover live containers from each server
+    // ── Discover LOCAL Docker containers (host machine) ──
+    const localContainers = discoverLocalContainers();
+    for (const lc of localContainers) {
+      if (lc.containerId && !discoveredContainerIds.has(lc.containerId)) {
+        allApps.push(lc);
+        discoveredContainerIds.add(lc.containerId);
+      }
+    }
+
+    // Discover live containers from each remote server
     for (const server of servers) {
       let ssh = null;
       try {

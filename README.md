@@ -26,15 +26,17 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| **Real-Time Dashboard** | Live CPU, RAM, and disk monitoring via Server-Sent Events (SSE). No page refresh needed. |
-| **Remote Server Management** | Add multiple VPS connections. Monitor them all from one place via SSH. |
-| **Network Manager** | View open ports and manage Ubuntu packages directly from the browser. |
-| **GitHub Deployer** | Paste a repo URL — the app clones it, detects the tech stack (Next.js, React, Vue, Python, Go...), and prepares deployment. |
-| **One-Click Deploy** | A single `deploy.sh` script that detects Traefik, generates secrets, and brings everything up. |
-| **Encrypted Credentials** | SSH passwords and private keys are encrypted with **AES-256-GCM** before touching the database. |
-| **JWT Authentication** | Session-based auth with bcrypt password hashing and HttpOnly cookies. |
+| Feature                      | Description                                                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Real-Time Dashboard**      | Live CPU, RAM, and disk monitoring via Server-Sent Events (SSE). No page refresh needed.                              |
+| **Remote Server Management** | Add multiple VPS connections. Monitor stats, Docker containers, systemd services, and network topology — all via SSH. |
+| **App Tracking**             | Auto-discover Docker containers across servers. Track, monitor status, and view logs from one panel.                  |
+| **Network Manager**          | View open ports, Docker network topology, and manage Ubuntu packages directly from the browser.                       |
+| **GitHub Deployer**          | Paste a repo URL — deploy locally for stack detection or remotely via SSH with `docker compose`.                      |
+| **Quick Actions**            | One-click server maintenance: `apt update`, `docker prune`, `restart docker` on any managed server.                   |
+| **One-Click Deploy**         | A single `deploy.sh` script that detects Traefik, generates secrets, and brings everything up.                        |
+| **Encrypted Credentials**    | SSH passwords and private keys are encrypted with **AES-256-GCM** before touching the database.                       |
+| **JWT Authentication**       | Session-based auth with bcrypt password hashing and HttpOnly cookies.                                                 |
 
 ## Architecture
 
@@ -63,17 +65,17 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js (App Router, Server Components) |
-| Frontend | React 19, Tailwind CSS, Recharts, Lucide Icons |
-| Backend | Next.js API Routes, Server-Sent Events |
-| Database | SQLite (embedded) via Prisma ORM |
-| Auth | bcrypt + JWT (jose) in HttpOnly cookies |
-| SSH | ssh2-promise (auto-accept host keys) |
-| Encryption | AES-256-GCM (Node.js crypto) |
-| Proxy | Traefik with automatic TLS |
-| Container | Docker + Docker Compose |
+| Layer      | Technology                                     |
+| ---------- | ---------------------------------------------- |
+| Framework  | Next.js (App Router, Server Components)        |
+| Frontend   | React 19, Tailwind CSS, Recharts, Lucide Icons |
+| Backend    | Next.js API Routes, Server-Sent Events         |
+| Database   | SQLite (embedded) via Prisma ORM               |
+| Auth       | bcrypt + JWT (jose) in HttpOnly cookies        |
+| SSH        | ssh2-promise (auto-accept host keys)           |
+| Encryption | AES-256-GCM (Node.js crypto)                   |
+| Proxy      | Traefik with automatic TLS                     |
+| Container  | Docker + Docker Compose                        |
 
 ## Quick Start
 
@@ -137,7 +139,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ├── docker-entrypoint.sh       # Init SQLite, seed admin, start app
 ├── Dockerfile                 # Multi-stage: deps → build → runner
 ├── prisma/
-│   └── schema.prisma          # User, Server, DeploymentLog models
+│   └── schema.prisma          # User, Server, DeploymentLog, App models
 ├── scripts/
 │   └── seed.ts                # Creates default admin user
 └── src/
@@ -148,37 +150,47 @@ Open [http://localhost:3000](http://localhost:3000).
     │   │   ├── dashboard/      # Real-time host stats (SSE)
     │   │   ├── servers/        # Remote VPS management
     │   │   ├── network/        # Ports + package management
+    │   │   ├── apps/           # Application tracking
     │   │   └── deploy/         # GitHub deployer
     │   └── api/                # API route handlers
     │       ├── auth/           # Login, logout, session
     │       ├── stats/          # Host stats + SSE stream
-    │       ├── servers/        # CRUD + remote stats via SSH
+    │       ├── servers/        # CRUD + stats + docker + services + actions
+    │       ├── apps/           # App CRUD + container logs
     │       ├── network/        # Ports + packages
-    │       └── deploy/         # Clone + detect + deploy
+    │       └── deploy/         # Clone + detect + deploy (local & remote)
     ├── lib/
     │   ├── auth.ts             # JWT sessions + bcrypt
     │   ├── crypto.ts           # AES-256-GCM encrypt/decrypt
     │   ├── db.ts               # Prisma client singleton
     │   ├── deployer.ts         # Git clone + stack detection
-    │   ├── ssh.ts              # SSH2 wrapper (auto-accept keys)
+    │   ├── server-ssh.ts       # Per-server SSH connection helper
+    │   ├── ssh.ts              # SSH2 wrapper + remote ops (containers, services, deploy)
     │   └── stats.ts            # Host system stats (os module)
     ├── components/             # UI components (dark theme)
+    │   ├── ui/                 # Button, Card, Input, Badge, Tabs, ConfirmDialog
+    │   ├── layout/             # Sidebar, Header
+    │   ├── dashboard/          # StatsCard, CpuGauge, MemoryBar, DiskUsage
+    │   ├── servers/            # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList
+    │   ├── network/            # PortTable, PackageManager, NetworkTopology
+    │   ├── apps/               # AppList, AppLogViewer
+    │   └── deploy/             # DeployForm, DeployLog
     ├── hooks/                  # useSSE, useAuth
     └── types/                  # Shared TypeScript interfaces
 ```
 
 ## Environment Variables
 
-| Variable | Description | Example |
-|---|---|---|
-| `DOMAIN` | Your domain pointing to the server | `vps.example.com` |
-| `CERT_RESOLVER` | Traefik certificate resolver name | `letsencrypt` |
-| `TRAEFIK_NETWORK` | Name of your Traefik Docker network | `traefik` |
-| `DATABASE_URL` | SQLite file path | `file:/app/data/vpscontrol.db` |
-| `JWT_SECRET` | 64-char hex string for signing tokens | *(generated by deploy.sh)* |
-| `ENCRYPTION_KEY` | 64-char hex string for AES-256-GCM | *(generated by deploy.sh)* |
-| `ADMIN_USERNAME` | Default admin username | `admin` |
-| `ADMIN_PASSWORD` | Default admin password | *(set during deploy)* |
+| Variable          | Description                           | Example                        |
+| ----------------- | ------------------------------------- | ------------------------------ |
+| `DOMAIN`          | Your domain pointing to the server    | `vps.example.com`              |
+| `CERT_RESOLVER`   | Traefik certificate resolver name     | `letsencrypt`                  |
+| `TRAEFIK_NETWORK` | Name of your Traefik Docker network   | `traefik`                      |
+| `DATABASE_URL`    | SQLite file path                      | `file:/app/data/vpscontrol.db` |
+| `JWT_SECRET`      | 64-char hex string for signing tokens | _(generated by deploy.sh)_     |
+| `ENCRYPTION_KEY`  | 64-char hex string for AES-256-GCM    | _(generated by deploy.sh)_     |
+| `ADMIN_USERNAME`  | Default admin username                | `admin`                        |
+| `ADMIN_PASSWORD`  | Default admin password                | _(set during deploy)_          |
 
 > All secrets are **auto-generated** by `deploy.sh`. You only need to provide domain, cert resolver, and admin credentials.
 
@@ -219,11 +231,12 @@ docker compose down -v
 
 Full documentation is available in the [`docs/`](./docs/) directory:
 
-| Document | Description |
-|---|---|
-| [README](./docs/README.md) | Architecture, local setup, and production deployment |
-| [API & Database](./docs/API-AND-DATABASE.md) | All endpoints, schema, encryption, and security model |
-| [Development](./docs/DEVELOPMENT.md) | Components, hooks, code conventions, and contributing |
+| Document                                       | Description                                           |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| [README](./docs/README.md)                     | Architecture, local setup, and production deployment  |
+| [API & Database](./docs/API-AND-DATABASE.md)   | All endpoints, schema, encryption, and security model |
+| [Capabilities](./docs/CAPABILITIES-SUMMARY.md) | Complete list of implemented features and constraints |
+| [Development](./docs/DEVELOPMENT.md)           | Components, hooks, code conventions, and contributing |
 
 ## License
 

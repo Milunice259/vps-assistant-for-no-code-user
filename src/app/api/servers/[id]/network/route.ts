@@ -35,6 +35,9 @@ export async function GET(
           id: c.id,
           name: c.name,
           ipv4: c.ipv4,
+          image: c.image,
+          state: c.state,
+          ports: c.ports,
         })),
       })),
       hostPorts: hostPorts.map((p) => ({

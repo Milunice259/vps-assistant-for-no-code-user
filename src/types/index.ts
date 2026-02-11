@@ -169,6 +169,9 @@ export interface DockerNetworkContainer {
   id: string;
   name: string;
   ipv4: string;
+  image?: string;
+  state?: string;
+  ports?: string;
 }
 
 export interface DockerNetworkInfo {

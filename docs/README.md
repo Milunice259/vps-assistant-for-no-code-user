@@ -2,12 +2,12 @@
 
 > Everything you need to understand, develop, and deploy VPS Control App.
 
-| You want to...                        | Go to                                                    |
-| ------------------------------------- | -------------------------------------------------------- |
-| Understand architecture & get started | **This file** (sections below)                           |
-| See all implemented app capabilities  | [CAPABILITIES-SUMMARY.md](./CAPABILITIES-SUMMARY.md)    |
-| See API endpoints, DB schema, security| [API-AND-DATABASE.md](./API-AND-DATABASE.md)            |
-| Learn code conventions & components   | [DEVELOPMENT.md](./DEVELOPMENT.md)                       |
+| You want to...                         | Go to                                                |
+| -------------------------------------- | ---------------------------------------------------- |
+| Understand architecture & get started  | **This file** (sections below)                       |
+| See all implemented app capabilities   | [CAPABILITIES-SUMMARY.md](./CAPABILITIES-SUMMARY.md) |
+| See API endpoints, DB schema, security | [API-AND-DATABASE.md](./API-AND-DATABASE.md)         |
+| Learn code conventions & components    | [DEVELOPMENT.md](./DEVELOPMENT.md)                   |
 
 ---
 
@@ -16,17 +16,17 @@
 | Layer      | Technology                          |
 | ---------- | ----------------------------------- |
 | Framework  | Next.js 16 (App Router, standalone) |
-| UI         | React 19.2, Tailwind CSS 3.4       |
-| Language   | TypeScript 5.7+ (strict)           |
-| Database   | SQLite (embedded, file-based)      |
+| UI         | React 19.2, Tailwind CSS 3.4        |
+| Language   | TypeScript 5.7+ (strict)            |
+| Database   | SQLite (embedded, file-based)       |
 | ORM        | Prisma                              |
-| Auth       | JWT (jose HS256) + bcryptjs        |
+| Auth       | JWT (jose HS256) + bcryptjs         |
 | SSH        | ssh2-promise                        |
-| Encryption | AES-256-GCM                        |
-| Proxy      | Traefik (external)                 |
-| Container  | Docker + Compose                   |
-| Icons      | lucide-react                       |
-| Charts     | recharts                           |
+| Encryption | AES-256-GCM                         |
+| Proxy      | Traefik (external)                  |
+| Container  | Docker + Compose                    |
+| Icons      | lucide-react                        |
+| Charts     | recharts                            |
 
 ---
 
@@ -55,8 +55,8 @@
 
 ### Docker Network
 
-| Network           | Type     | Purpose                                               |
-| ----------------- | -------- | ----------------------------------------------------- |
+| Network           | Type     | Purpose                                                 |
+| ----------------- | -------- | ------------------------------------------------------- |
 | `traefik_network` | External | Connects the app to Traefik for internet-facing traffic |
 
 **Single container** — SQLite database is a file stored in a Docker volume (`app_data`).
@@ -71,26 +71,29 @@ Traefik (TLS termination, domain-based routing)
   │
   ▼
 Next.js App ──┬── Server Components (SSR HTML)
-              ├── API Routes (/api/*)
-              │     ├── Auth (JWT cookie)
-              │     ├── Server CRUD (encrypt/decrypt credentials)
-              │     ├── SSH connections (ssh2-promise)
-              │     ├── SSE stream (real-time stats)
-              │     └── Deploy (git clone + stack detection)
-              └── Static assets
+               ├── API Routes (/api/*)
+               │     ├── Auth (JWT cookie)
+               │     ├── Server CRUD (encrypt/decrypt credentials)
+               │     ├── SSH connections (ssh2-promise)
+               │     ├── SSE stream (real-time stats)
+               │     ├── Apps (container discovery + tracking)
+               │     ├── Server ops (docker, services, actions)
+               │     └── Deploy (local detection + remote SSH)
+               └── Static assets
 ```
 
 ### Key Design Decisions
 
-| Decision | Why |
-| --- | --- |
-| **Monolith in Docker** | Single container with embedded SQLite, low complexity, right-sized for a VPS tool |
-| **App Router** | Route groups: `(auth)` for login, `(panel)` for main panel with sidebar |
-| **SSE over WebSocket** | Unidirectional server→client, no separate socket server, auto-reconnect |
-| **AES-256-GCM** | Authenticated encryption for SSH credentials; format: `base64(IV + ciphertext + authTag)` |
-| **JWT HttpOnly Cookie** | No tokens in localStorage (XSS-safe), `Secure` + `SameSite: lax`, 7-day TTL |
-| **Standalone Output** | `output: "standalone"` in next.config.ts for compact Docker image |
-| **SSH Auto-Accept** | ssh2-promise accepts host keys by default for automation |
+| Decision                | Why                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| **Monolith in Docker**  | Single container with embedded SQLite, low complexity, right-sized for a VPS tool            |
+| **App Router**          | Route groups: `(auth)` for login, `(panel)` for main panel with sidebar                      |
+| **SSE over WebSocket**  | Unidirectional server→client, no separate socket server, auto-reconnect                      |
+| **AES-256-GCM**         | Authenticated encryption for SSH credentials; format: `base64(IV + ciphertext + authTag)`    |
+| **JWT HttpOnly Cookie** | No tokens in localStorage (XSS-safe), `Secure` + `SameSite: lax`, 7-day TTL                  |
+| **Standalone Output**   | `output: "standalone"` + `serverExternalPackages` in next.config.ts for compact Docker image |
+| **SSH Auto-Accept**     | ssh2-promise accepts host keys by default for automation                                     |
+| **Dual Deploy Mode**    | Local clone for stack detection, or remote SSH deployment with `docker compose`              |
 
 ### Directory Structure
 
@@ -99,22 +102,34 @@ src/
 ├── app/                  # Next.js App Router
 │   ├── (auth)/           # Route group: login page
 │   ├── (panel)/          # Route group: main panel (auth required)
+│   │   ├── dashboard/    # Real-time host stats
+│   │   ├── servers/      # VPS management + detail view
+│   │   ├── network/      # Ports + package management
+│   │   ├── apps/         # Application tracking
+│   │   └── deploy/       # GitHub deployer
 │   ├── api/              # API Routes (backend)
+│   │   ├── auth/         # Login, logout, session
+│   │   ├── stats/        # Host stats + SSE stream
+│   │   ├── servers/      # CRUD, sub-routes: stats, docker, services, actions, network
+│   │   ├── apps/         # App CRUD + container logs
+│   │   ├── network/      # Host ports + packages
+│   │   └── deploy/       # Clone + detect + deploy (local & remote)
 │   ├── layout.tsx        # Root layout (dark theme)
 │   └── globals.css       # Global styles + Tailwind
 │
 ├── components/           # React components
-│   ├── dashboard/        # Gauges, bars, cards for stats
-│   ├── deploy/           # Form + log for deployments
+│   ├── ui/               # Button, Card, Input, Badge, Tabs, ConfirmDialog
 │   ├── layout/           # Sidebar, Header
-│   ├── network/          # Port table, Package manager
-│   ├── servers/          # CRUD + stats for servers
-│   └── ui/               # Primitives: Button, Card, Input, Badge
+│   ├── dashboard/        # StatsCard, CpuGauge, MemoryBar, DiskUsage
+│   ├── servers/          # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList
+│   ├── network/          # PortTable, PackageManager, NetworkTopology
+│   ├── apps/             # AppList, AppLogViewer
+│   └── deploy/           # DeployForm, DeployLog
 │
 ├── hooks/                # useAuth, useSSE
-├── lib/                  # auth, crypto, db, deployer, ssh, stats
+├── lib/                  # auth, crypto, db, deployer, server-ssh, ssh, stats
 ├── middleware.ts          # Auth guard for protected routes
-└── types/index.ts        # TypeScript interfaces
+└── types/index.ts        # TypeScript interfaces (38 types)
 ```
 
 ---
@@ -123,12 +138,12 @@ src/
 
 ### Prerequisites
 
-| Tool           | Minimum | Verify                   |
-| -------------- | ------- | ------------------------ |
-| Node.js        | 20.x    | `node --version`        |
-| npm            | 10.x    | `npm --version`         |
-| Docker         | 24.x    | `docker --version`      |
-| Git            | 2.x     | `git --version`         |
+| Tool    | Minimum | Verify             |
+| ------- | ------- | ------------------ |
+| Node.js | 20.x    | `node --version`   |
+| npm     | 10.x    | `npm --version`    |
+| Docker  | 24.x    | `docker --version` |
+| Git     | 2.x     | `git --version`    |
 
 ### Setup Steps
 
@@ -162,35 +177,36 @@ npm run dev
 
 ### Common Commands
 
-| Command              | Description                             |
-| -------------------- | --------------------------------------- |
-| `npm run dev`        | Start dev server (hot reload)           |
-| `npm run build`      | Production build                        |
-| `npm run lint`       | ESLint check                            |
-| `npm run db:push`    | Create/update database from schema      |
-| `npm run db:seed`    | Seed initial data                       |
-| `npm run db:studio`  | Prisma Studio GUI (localhost:5555)      |
+| Command             | Description                        |
+| ------------------- | ---------------------------------- |
+| `npm run dev`       | Start dev server (hot reload)      |
+| `npm run build`     | Production build                   |
+| `npm run lint`      | ESLint check                       |
+| `npm run db:push`   | Create/update database from schema |
+| `npm run db:seed`   | Seed initial data                  |
+| `npm run db:studio` | Prisma Studio GUI (localhost:5555) |
 
 ### URL Map
 
-| URL             | Description               | Auth? |
-| --------------- | ------------------------- | ----- |
-| `/login`        | Login page                | No    |
-| `/dashboard`    | Real-time stats dashboard | Yes   |
-| `/servers`      | VPS server management     | Yes   |
-| `/servers/[id]` | Server detail + live stats| Yes   |
-| `/network`      | Port & package management | Yes   |
-| `/deploy`       | GitHub deployer           | Yes   |
+| URL             | Description                | Auth? |
+| --------------- | -------------------------- | ----- |
+| `/login`        | Login page                 | No    |
+| `/dashboard`    | Real-time stats dashboard  | Yes   |
+| `/servers`      | VPS server management      | Yes   |
+| `/servers/[id]` | Server detail + live stats | Yes   |
+| `/network`      | Port & package management  | Yes   |
+| `/apps`         | Application tracking       | Yes   |
+| `/deploy`       | GitHub deployer            | Yes   |
 
 ### Troubleshooting
 
-| Problem | Fix |
-| --- | --- |
-| `Cannot find module '@prisma/client'` | Run `npm run db:generate` |
-| Database connection errors | Check `DATABASE_URL` in `.env` (should be `file:./prisma/dev.db`) |
-| `ENCRYPTION_KEY must be 64 hex chars` | Generate with `openssl rand -hex 32` |
-| Port 3000 in use | `PORT=3001 npm run dev` |
-| Network page errors on Windows | Expected — `ss` and `apt` are Linux-only commands |
+| Problem                               | Fix                                                               |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| `Cannot find module '@prisma/client'` | Run `npm run db:generate`                                         |
+| Database connection errors            | Check `DATABASE_URL` in `.env` (should be `file:./prisma/dev.db`) |
+| `ENCRYPTION_KEY must be 64 hex chars` | Generate with `openssl rand -hex 32`                              |
+| Port 3000 in use                      | `PORT=3001 npm run dev`                                           |
+| Network page errors on Windows        | Expected — `ss` and `apt` are Linux-only commands                 |
 
 ---
 
@@ -198,13 +214,13 @@ npm run dev
 
 ### Server Requirements
 
-| Requirement    | Details                                  |
-| -------------- | ---------------------------------------- |
-| OS             | Ubuntu 20.04+ / Debian (recommended)    |
-| Root access    | Required (the script installs Docker)    |
-| Domain         | A record pointing to the server IP       |
-| RAM            | 1 GB minimum (2 GB recommended)          |
-| Disk           | 5 GB minimum                             |
+| Requirement | Details                               |
+| ----------- | ------------------------------------- |
+| OS          | Ubuntu 20.04+ / Debian (recommended)  |
+| Root access | Required (the script installs Docker) |
+| Domain      | A record pointing to the server IP    |
+| RAM         | 1 GB minimum (2 GB recommended)       |
+| Disk        | 5 GB minimum                          |
 
 > Docker, Docker Compose, Traefik, and firewall are all **installed automatically** by the deploy script.
 
@@ -218,6 +234,7 @@ chmod +x deploy.sh
 ```
 
 **The script automatically:**
+
 1. Checks system requirements (OS, RAM, disk, internet)
 2. Installs Docker, Docker Compose, UFW firewall
 3. Sets up Traefik reverse proxy (detects existing or creates new)
@@ -254,14 +271,17 @@ docker compose up -d --build
 ```yaml
 labels:
   - "traefik.enable=true"
+  - "traefik.docker.network=${TRAEFIK_NETWORK}"
   - "traefik.http.routers.vps-control.rule=Host(`${DOMAIN}`)"
   - "traefik.http.routers.vps-control.entrypoints=websecure"
+  - "traefik.http.routers.vps-control.tls=true"
   - "traefik.http.routers.vps-control.tls.certresolver=${CERT_RESOLVER}"
+  - "traefik.http.services.vps-control.loadbalancer.server.port=3000"
   - "traefik.http.routers.vps-control-http.rule=Host(`${DOMAIN}`)"
   - "traefik.http.routers.vps-control-http.entrypoints=web"
-  - "traefik.http.routers.vps-control-http.middlewares=redirect-https"
-  - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
-  - "traefik.http.services.vps-control.loadbalancer.server.port=3000"
+  - "traefik.http.routers.vps-control-http.middlewares=vps-https-redirect"
+  - "traefik.http.middlewares.vps-https-redirect.redirectscheme.scheme=https"
+  - "traefik.http.middlewares.vps-https-redirect.redirectscheme.permanent=true"
 ```
 
 ### Startup Flow
@@ -292,8 +312,8 @@ docker compose logs -f --tail=100 app
 
 ### Deployment Troubleshooting
 
-| Problem | Fix |
-| --- | --- |
-| App won't start | `docker compose logs app` — check for DB/migration/env errors |
-| Can't access via domain | Verify DNS (`dig domain`), Traefik logs, network inspect |
-| Database disk full | `docker system prune -a --volumes` |
+| Problem                 | Fix                                                           |
+| ----------------------- | ------------------------------------------------------------- |
+| App won't start         | `docker compose logs app` — check for DB/migration/env errors |
+| Can't access via domain | Verify DNS (`dig domain`), Traefik logs, network inspect      |
+| Database disk full      | `docker system prune -a --volumes`                            |

@@ -290,6 +290,9 @@ export interface RemoteDockerNetworkContainer {
   id: string;
   name: string;
   ipv4: string;
+  image?: string;
+  state?: string;
+  ports?: string;
 }
 
 export interface RemoteDockerNetwork {
@@ -305,13 +308,29 @@ export interface RemoteDockerNetwork {
 export async function getRemoteDockerNetworks(
   ssh: SSH2Promise
 ): Promise<{ networks: RemoteDockerNetwork[]; dockerInstalled: boolean }> {
-  const networkList = await executeCommandSafe(
-    ssh,
-    "docker network ls --format '{{.ID}}\\t{{.Name}}\\t{{.Driver}}' 2>/dev/null"
-  );
+  // Fetch network list and container status in parallel
+  const [networkList, containerStatusRaw] = await Promise.all([
+    executeCommandSafe(
+      ssh,
+      "docker network ls --format '{{.ID}}\\t{{.Name}}\\t{{.Driver}}' 2>/dev/null"
+    ),
+    executeCommandSafe(
+      ssh,
+      "docker ps -a --format '{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}' 2>/dev/null"
+    ),
+  ]);
 
   if (!networkList) {
     return { networks: [], dockerInstalled: false };
+  }
+
+  // Build lookup map: container name → { image, state, ports }
+  const containerMeta = new Map<string, { image: string; state: string; ports: string }>();
+  if (containerStatusRaw) {
+    for (const line of containerStatusRaw.split("\n").filter(Boolean)) {
+      const [cName, cImage, cState, cPorts] = line.split("\t");
+      if (cName) containerMeta.set(cName, { image: cImage || "", state: cState || "", ports: cPorts || "" });
+    }
   }
 
   const networkEntries = networkList.split("\n").filter(Boolean);
@@ -336,10 +355,14 @@ export async function getRemoteDockerNetworks(
       for (const cLine of inspectRaw.split("\n").filter(Boolean)) {
         const [cName, cId, cIpv4] = cLine.split("\t");
         if (cName) {
+          const meta = containerMeta.get(cName);
           containers.push({
             id: cId || "",
             name: cName,
             ipv4: (cIpv4 || "").replace(/\/\d+$/, ""),
+            image: meta?.image,
+            state: meta?.state,
+            ports: meta?.ports,
           });
         }
       }

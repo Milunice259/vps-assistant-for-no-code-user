@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
 import { isLocalServer, execLocal } from "@/lib/local-server";
+import { validateTerminalCommand, validateContainerId } from "@/lib/validation";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +15,8 @@ type RouteContext = { params: Promise<{ id: string }> };
  * Body: { command: string }
  * Returns: { output: string }
  *
- * For local containers: uses `execSync("docker exec ...")`.
- * For remote containers: uses SSH.
+ * Commands are validated against an allowlist of safe executables.
+ * Dangerous shell metacharacters are rejected.
  */
 export async function POST(
   request: NextRequest,
@@ -26,16 +27,11 @@ export async function POST(
     const body = await request.json();
     const command = body.command as string;
 
-    if (!command || typeof command !== "string") {
+    // ── Validate command against allowlist ──
+    const cmdCheck = validateTerminalCommand(command);
+    if (!cmdCheck.valid) {
       return NextResponse.json(
-        { success: false, error: "command is required" },
-        { status: 400 }
-      );
-    }
-
-    if (command.length > 4096) {
-      return NextResponse.json(
-        { success: false, error: "Command too long (max 4096 chars)" },
+        { success: false, error: cmdCheck.reason },
         { status: 400 }
       );
     }
@@ -72,23 +68,29 @@ export async function POST(
       containerId = app.containerId;
     }
 
-    const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
-    if (!safeId) {
+    // ── Validate container ID ──
+    const idCheck = validateContainerId(containerId);
+    if (!idCheck.valid) {
       return NextResponse.json(
         { success: false, error: "Invalid container ID" },
         { status: 400 }
       );
     }
 
-    const escapedCmd = command.replace(/'/g, "'\\''" );
+    const safeId = containerId;
+
+    // Split command into executable + args for docker exec
+    const cmdParts = command.trim().split(/\s+/);
+    const executable = cmdParts[0];
+    const args = cmdParts.slice(1);
+
+    // Build docker exec with explicit args (no sh -c)
+    const dockerCmd = ["docker", "exec", safeId, executable, ...args].join(" ");
 
     // Local server — use execLocal
     if (isLocalServer(serverId)) {
       try {
-        const output = execLocal(
-          `docker exec ${safeId} sh -c '${escapedCmd}' 2>&1`,
-          30_000
-        );
+        const output = execLocal(`${dockerCmd} 2>&1`, 30_000);
         return NextResponse.json({ success: true, data: { output: output || "" } });
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Command failed";
@@ -119,7 +121,7 @@ export async function POST(
     try {
       const output = await executeCommand(
         ssh,
-        `docker exec ${safeId} sh -c '${escapedCmd}' 2>&1`,
+        `${dockerCmd} 2>&1`,
         30_000
       );
 

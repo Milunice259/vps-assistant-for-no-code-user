@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import {
+  validateDockerImage,
+  validateRestartPolicy,
+  validateCpu,
+  validateMemory,
+  validateEnvKey,
+  validateEnvValue,
+  validatePath,
+  validateComposeObject,
+} from "@/lib/validation";
+import yaml from "js-yaml";
+import { sanitizeLogs } from "@/lib/sanitize";
 import type { ApiResponse, DeploymentInfo, DeployStatus } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +30,7 @@ export const dynamic = "force-dynamic";
 export async function POST(
   request: NextRequest
 ): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
-  let logId: string | null = null;
+  const logId: string | null = null;
 
   try {
     const body = await request.json();
@@ -73,7 +85,7 @@ export async function POST(
       try {
         await prisma.deploymentLog.update({
           where: { id: logId },
-          data: { status: "FAILED", logs: `Deploy failed: ${message}` },
+          data: { status: "FAILED", logs: sanitizeLogs(`Deploy failed: ${message}`) },
         });
       } catch { /* ok */ }
     }
@@ -101,18 +113,46 @@ async function deployImage(
   ssh: Parameters<typeof executeCommand>[0],
   body: ImageDeployInput,
   serverId: string,
-  serverName: string,
+  _serverName: string,
 ): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
   const { image, name, ports, env, cpuLimit, memoryLimit, restartPolicy } = body;
 
-  if (!image) {
-    return NextResponse.json(
-      { success: false, error: "image is required" },
-      { status: 400 }
-    );
+  // ── Validate all inputs ──
+  const imgCheck = validateDockerImage(image);
+  if (!imgCheck.valid) {
+    return NextResponse.json({ success: false, error: imgCheck.reason }, { status: 400 });
   }
 
-  const safeImage = image.replace(/[;&|`$(){}!#]/g, "");
+  const policyCheck = validateRestartPolicy(restartPolicy);
+  if (!policyCheck.valid) {
+    return NextResponse.json({ success: false, error: policyCheck.reason }, { status: 400 });
+  }
+
+  const cpuCheck = validateCpu(cpuLimit);
+  if (!cpuCheck.valid) {
+    return NextResponse.json({ success: false, error: cpuCheck.reason }, { status: 400 });
+  }
+
+  const memCheck = validateMemory(memoryLimit);
+  if (!memCheck.valid) {
+    return NextResponse.json({ success: false, error: memCheck.reason }, { status: 400 });
+  }
+
+  // Validate env vars
+  if (env && typeof env === "object") {
+    for (const [key, value] of Object.entries(env)) {
+      const keyCheck = validateEnvKey(key);
+      if (!keyCheck.valid) {
+        return NextResponse.json({ success: false, error: keyCheck.reason }, { status: 400 });
+      }
+      const valCheck = validateEnvValue(value);
+      if (!valCheck.valid) {
+        return NextResponse.json({ success: false, error: `Env var '${key}': ${valCheck.reason}` }, { status: 400 });
+      }
+    }
+  }
+
+  const safeImage = image;
   let allLogs = `Deploying Docker image: ${safeImage}\n`;
 
   // Create deployment log
@@ -133,30 +173,35 @@ async function deployImage(
     const pullOutput = await executeCommand(ssh, `docker pull ${safeImage} 2>&1`, 120_000);
     allLogs += pullOutput + "\n";
 
-    // Build run command
+    // Build run command with validated values
     const runParts = ["docker run -d"];
 
-    if (cpuLimit) runParts.push(`--cpus=${cpuLimit}`);
-    if (memoryLimit) runParts.push(`--memory=${memoryLimit}m`);
-    if (restartPolicy) runParts.push(`--restart=${restartPolicy}`);
+    if (cpuLimit != null) {
+      runParts.push(`--cpus=${Number(cpuLimit)}`);
+    }
+    if (memoryLimit != null) {
+      runParts.push(`--memory=${Number(memoryLimit)}m`);
+    }
+    if (restartPolicy) {
+      runParts.push(`--restart=${restartPolicy}`);
+    }
 
     if (name) {
       const safeName = name.replace(/[^a-zA-Z0-9_.-]/g, "");
-      runParts.push(`--name ${safeName}`);
+      if (safeName) runParts.push(`--name ${safeName}`);
     }
 
     if (ports && Array.isArray(ports)) {
       for (const p of ports) {
-        const safePort = p.replace(/[^0-9:\/a-z]/g, "");
+        const safePort = p.replace(/[^0-9:/a-z]/g, "");
         if (safePort) runParts.push(`-p ${safePort}`);
       }
     }
 
     if (env && typeof env === "object") {
       for (const [key, value] of Object.entries(env)) {
-        const safeKey = key.replace(/[^a-zA-Z0-9_]/g, "");
-        const safeVal = value.replace(/'/g, "'\\''");
-        if (safeKey) runParts.push(`-e ${safeKey}='${safeVal}'`);
+        // Keys and values have been validated above
+        runParts.push(`-e ${key}=${value}`);
       }
     }
 
@@ -177,8 +222,8 @@ async function deployImage(
         image: safeImage,
         serverId,
         status: "RUNNING",
-        cpuLimit: cpuLimit || null,
-        memoryLimit: memoryLimit || null,
+        cpuLimit: cpuLimit != null ? Number(cpuLimit) : null,
+        memoryLimit: memoryLimit != null ? Number(memoryLimit) : null,
         restartPolicy: restartPolicy || null,
         ports: ports ? JSON.stringify(ports) : null,
       },
@@ -188,7 +233,7 @@ async function deployImage(
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
-      data: { status: "RUNNING", logs: allLogs },
+      data: { status: "RUNNING", logs: sanitizeLogs(allLogs) },
     });
 
     return NextResponse.json({
@@ -202,7 +247,7 @@ async function deployImage(
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
-      data: { status: "FAILED", logs: allLogs },
+      data: { status: "FAILED", logs: sanitizeLogs(allLogs) },
     });
 
     return NextResponse.json({
@@ -236,7 +281,29 @@ async function deployCompose(
     );
   }
 
-  const safePath = projectPath.replace(/[;&|`$(){}!#]/g, "");
+  // ── Validate projectPath ──
+  const pathCheck = validatePath(projectPath);
+  if (!pathCheck.valid) {
+    return NextResponse.json({ success: false, error: pathCheck.reason }, { status: 400 });
+  }
+
+  // ── Validate compose YAML structure ──
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(composeContent);
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Invalid YAML in composeContent" },
+      { status: 400 }
+    );
+  }
+
+  const composeCheck = validateComposeObject(parsed);
+  if (!composeCheck.valid) {
+    return NextResponse.json({ success: false, error: composeCheck.reason }, { status: 400 });
+  }
+
+  const safePath = projectPath;
   let allLogs = `Deploying Docker Compose to ${safePath}\n`;
 
   const logRecord = await prisma.deploymentLog.create({
@@ -252,13 +319,13 @@ async function deployCompose(
 
   try {
     // Create project directory
-    await executeCommand(ssh, `mkdir -p ${safePath}`, 10_000);
+    await executeCommand(ssh, `mkdir -p "${safePath}"`, 10_000);
 
-    // Write compose file (escape content for heredoc)
-    const escContent = composeContent.replace(/\\/g, "\\\\").replace(/'/g, "'\\''");
+    // Write compose file using base64 to avoid any shell interpretation
+    const base64Content = Buffer.from(composeContent).toString("base64");
     await executeCommand(
       ssh,
-      `cat > ${safePath}/docker-compose.yml << 'COMPOSE_EOF'\n${escContent}\nCOMPOSE_EOF`,
+      `echo "${base64Content}" | base64 -d > "${safePath}/docker-compose.yml"`,
       15_000
     );
     allLogs += "Uploaded docker-compose.yml\n";
@@ -267,7 +334,7 @@ async function deployCompose(
     const nameFlag = projectName ? `-p ${projectName.replace(/[^a-zA-Z0-9_-]/g, "")}` : "";
     const upOutput = await executeCommand(
       ssh,
-      `cd ${safePath} && docker compose ${nameFlag} up -d 2>&1`,
+      `cd "${safePath}" && docker compose ${nameFlag} up -d 2>&1`,
       120_000
     );
     allLogs += upOutput + "\n";
@@ -275,14 +342,14 @@ async function deployCompose(
     // List services started
     const psOutput = await executeCommand(
       ssh,
-      `cd ${safePath} && docker compose ${nameFlag} ps --format '{{.Name}}\t{{.Image}}\t{{.State}}' 2>&1`,
+      `cd "${safePath}" && docker compose ${nameFlag} ps --format '{{.Name}}\t{{.Image}}\t{{.State}}' 2>&1`,
       15_000
     );
     allLogs += "Services:\n" + psOutput + "\n";
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
-      data: { status: "RUNNING", logs: allLogs, customPath: safePath },
+      data: { status: "RUNNING", logs: sanitizeLogs(allLogs), customPath: safePath },
     });
 
     return NextResponse.json({
@@ -296,7 +363,7 @@ async function deployCompose(
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
-      data: { status: "FAILED", logs: allLogs },
+      data: { status: "FAILED", logs: sanitizeLogs(allLogs) },
     });
 
     return NextResponse.json({

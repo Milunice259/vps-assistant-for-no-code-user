@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { containerAction, closeSSH } from "@/lib/ssh";
+import { validateContainerId } from "@/lib/validation";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,15 @@ export async function POST(
     if (!containerId || !action) {
       return NextResponse.json(
         { success: false, error: "containerId and action are required" },
+        { status: 400 }
+      );
+    }
+
+    // ── Validate containerId at API boundary ──
+    const idCheck = validateContainerId(containerId);
+    if (!idCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: idCheck.reason },
         { status: 400 }
       );
     }

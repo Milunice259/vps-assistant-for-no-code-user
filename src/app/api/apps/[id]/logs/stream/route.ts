@@ -8,11 +8,18 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+/** Maximum lines buffered before dropping oldest */
+const MAX_BUFFER_LINES = 1000;
+/** Batch interval in milliseconds */
+const BATCH_INTERVAL_MS = 500;
+
 /**
  * GET /api/apps/[id]/logs/stream - Stream container logs via SSE.
  * Query: ?lines=200 (tail lines, default 200)
  *
  * Uses `docker logs -f --tail <N>` via SSH, streaming each line as an SSE event.
+ * Includes backpressure: buffers up to MAX_BUFFER_LINES, drops oldest on overflow,
+ * and batches output every BATCH_INTERVAL_MS.
  */
 export async function GET(
   request: NextRequest,
@@ -44,11 +51,34 @@ export async function GET(
     async start(controller) {
       const encoder = new TextEncoder();
 
-      function sendEvent(data: string) {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-        } catch {
-          // Stream might be closed
+      // ── Backpressure buffer ──
+      const lineBuffer: string[] = [];
+      let batchTimer: ReturnType<typeof setInterval> | null = null;
+
+      function flushBuffer() {
+        if (lineBuffer.length === 0) return;
+        const lines = lineBuffer.splice(0, lineBuffer.length);
+        for (const line of lines) {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(line)}\n\n`));
+          } catch {
+            // Stream closed
+          }
+        }
+      }
+
+      function addLine(line: string) {
+        lineBuffer.push(line);
+        // Drop oldest lines if buffer exceeds max
+        while (lineBuffer.length > MAX_BUFFER_LINES) {
+          lineBuffer.shift();
+        }
+      }
+
+      function cleanup() {
+        if (batchTimer) {
+          clearInterval(batchTimer);
+          batchTimer = null;
         }
       }
 
@@ -64,6 +94,9 @@ export async function GET(
         const safeId = app.containerId!.replace(/[^a-zA-Z0-9_.-]/g, "");
         const safeTail = Math.min(Math.max(tailLines, 10), 5000);
 
+        // Start batch flush timer
+        batchTimer = setInterval(flushBuffer, BATCH_INTERVAL_MS);
+
         // Use SSH exec to run docker logs -f
         const rawSSH = (ssh as unknown as { ssh: { connection: { exec: (cmd: string, cb: (err: Error | null, stream: NodeJS.ReadableStream & { stderr: NodeJS.ReadableStream }) => void) => void } } }).ssh;
 
@@ -72,8 +105,10 @@ export async function GET(
             `docker logs -f --tail ${safeTail} ${safeId} 2>&1`,
             (err: Error | null, execStream: NodeJS.ReadableStream & { stderr: NodeJS.ReadableStream }) => {
               if (err) {
-                sendEvent(`[ERROR] ${err.message}`);
-                controller.close();
+                addLine(`[ERROR] ${err.message}`);
+                flushBuffer();
+                cleanup();
+                try { controller.close(); } catch { /* ok */ }
                 return;
               }
 
@@ -82,7 +117,7 @@ export async function GET(
                 const lines = text.split("\n");
                 for (const line of lines) {
                   if (line.trim()) {
-                    sendEvent(line);
+                    addLine(line);
                   }
                 }
               });
@@ -92,12 +127,14 @@ export async function GET(
                 const lines = text.split("\n");
                 for (const line of lines) {
                   if (line.trim()) {
-                    sendEvent(line);
+                    addLine(line);
                   }
                 }
               });
 
               execStream.on("close", () => {
+                flushBuffer();
+                cleanup();
                 try { controller.close(); } catch { /* ok */ }
                 if (ssh) closeSSH(ssh);
               });
@@ -106,6 +143,7 @@ export async function GET(
               request.signal.addEventListener("abort", () => {
                 try {
                   execStream.removeAllListeners();
+                  cleanup();
                   if (ssh) closeSSH(ssh);
                   controller.close();
                 } catch { /* ok */ }
@@ -121,14 +159,20 @@ export async function GET(
             30_000
           );
           for (const line of output.split("\n")) {
-            sendEvent(line);
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(line)}\n\n`));
+            } catch { /* ok */ }
           }
+          cleanup();
           controller.close();
           await closeSSH(ssh);
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Stream failed";
-        sendEvent(`[ERROR] ${msg}`);
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(`[ERROR] ${msg}`)}\n\n`));
+        } catch { /* ok */ }
+        cleanup();
         try { controller.close(); } catch { /* ok */ }
         if (ssh) await closeSSH(ssh);
       }

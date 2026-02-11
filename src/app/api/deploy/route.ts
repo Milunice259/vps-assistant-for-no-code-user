@@ -8,6 +8,8 @@ import {
 } from "@/lib/deployer";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { remoteDeployViaSSH, closeSSH } from "@/lib/ssh";
+import { validateRepoUrl, validateBranch, validatePath } from "@/lib/validation";
+import { sanitizeLogs } from "@/lib/sanitize";
 import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -65,9 +67,19 @@ export async function POST(
     const body = (await request.json()) as DeployInput;
     const { repoUrl, branch = "main", domain, serverId, customPath, envVars } = body;
 
-    if (!repoUrl) {
+    // ── Validate inputs at API boundary ──
+    const urlCheck = validateRepoUrl(repoUrl);
+    if (!urlCheck.valid) {
       return NextResponse.json(
-        { success: false, error: "repoUrl is required" },
+        { success: false, error: urlCheck.reason },
+        { status: 400 }
+      );
+    }
+
+    const branchCheck = validateBranch(branch);
+    if (!branchCheck.valid) {
+      return NextResponse.json(
+        { success: false, error: branchCheck.reason },
         { status: 400 }
       );
     }
@@ -91,6 +103,14 @@ export async function POST(
       if (!customPath) {
         return NextResponse.json(
           { success: false, error: "customPath is required for remote deployments" },
+          { status: 400 }
+        );
+      }
+
+      const pathCheck = validatePath(customPath);
+      if (!pathCheck.valid) {
+        return NextResponse.json(
+          { success: false, error: pathCheck.reason },
           { status: 400 }
         );
       }
@@ -135,7 +155,7 @@ export async function POST(
           data: {
             status: finalStatus,
             commitHash: result.commitHash || null,
-            logs: logRecord.logs + result.logs,
+            logs: sanitizeLogs(logRecord.logs + result.logs),
           },
         });
 
@@ -163,7 +183,7 @@ export async function POST(
           if (logId) {
             await prisma.deploymentLog.update({
               where: { id: logId },
-              data: { status: "FAILED", logs: logRecord.logs + "\nServer is offline or unreachable." },
+              data: { status: "FAILED", logs: sanitizeLogs(logRecord.logs + "\nServer is offline or unreachable.") },
             }).catch(() => {});
           }
           return NextResponse.json(
@@ -204,11 +224,11 @@ export async function POST(
       data: {
         detectedStack: result.detectedStack,
         status: "BUILDING",
-        logs:
+        logs: sanitizeLogs(
           logRecord.logs +
           `Cloned to ${result.projectDir}\n` +
           `Detected stack: ${result.detectedStack}\n` +
-          `Default port: ${result.port}\n`,
+          `Default port: ${result.port}\n`),
       },
     });
 

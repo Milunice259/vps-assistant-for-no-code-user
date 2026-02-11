@@ -70,7 +70,7 @@ interface ContainerCardProps {
   actionLoading: string | null;
 }
 
-function ContainerCard({ container, serverId, onAction, actionLoading }: ContainerCardProps) {
+function ContainerCard({ container, serverId: _serverId, onAction, actionLoading }: ContainerCardProps) {
   const colors = containerStateColor(container.state);
   const isRunning = container.state?.toLowerCase() === "running";
 

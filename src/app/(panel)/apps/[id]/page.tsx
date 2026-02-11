@@ -12,7 +12,6 @@ import {
   Play,
   Square,
   RotateCcw,
-  RefreshCw,
   Download,
   Trash2,
   Terminal,

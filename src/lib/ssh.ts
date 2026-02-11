@@ -8,6 +8,9 @@
  */
 
 import SSH2Promise from "ssh2-promise";
+import { validateRepoUrl, validateBranch, validatePath } from "./validation";
+import * as fs from "fs";
+import * as crypto from "crypto";
 
 export interface SSHConnectionConfig {
   host: string;
@@ -50,6 +53,46 @@ export async function createSSHConnection(
       ],
     },
   };
+
+  // ── SSH Host Key Verification Policy ──
+  // When SSH_KNOWN_HOSTS_PATH is set, verify host keys against the file.
+  // Otherwise, auto-accept all host keys (default for VPS automation).
+  const knownHostsPath = process.env.SSH_KNOWN_HOSTS_PATH;
+  if (knownHostsPath) {
+    try {
+      const knownHosts = fs.readFileSync(knownHostsPath, "utf-8");
+      sshConfig.hostVerifier = (keyHash: string) => {
+        // keyHash is the hex fingerprint of the server's host key
+        const hostPattern = config.host;
+        const lines = knownHosts.split("\n").filter((l: string) => l.trim() && !l.startsWith("#"));
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length < 3) continue;
+          const hosts = parts[0];
+          const keyData = parts[2];
+          if (hosts.includes(hostPattern)) {
+            // Compare fingerprints
+            const storedHash = crypto
+              .createHash("md5")
+              .update(Buffer.from(keyData, "base64"))
+              .digest("hex");
+            if (storedHash === keyHash || keyData === keyHash) return true;
+          }
+        }
+        // If host not found in known_hosts, reject with clear error
+        throw new Error(
+          `SSH host key verification failed for ${config.host}. ` +
+          `Host key not found in ${knownHostsPath}. ` +
+          `Add the host key or unset SSH_KNOWN_HOSTS_PATH to auto-accept.`
+        );
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(`SSH_KNOWN_HOSTS_PATH file not found: ${knownHostsPath}`);
+      }
+      throw err;
+    }
+  }
 
   if (config.password) {
     sshConfig.password = config.password;
@@ -498,8 +541,7 @@ export interface RemoteDeployResult {
  * Clones (or pulls) the repo at the specified path on the target server.
  * Returns the latest commit hash and deployment logs.
  *
- * Security: repoUrl is validated by the caller (API route).
- * customPath is sanitized to prevent directory traversal.
+ * Security: All inputs are validated before command construction.
  */
 export async function remoteDeployViaSSH(
   ssh: SSH2Promise,
@@ -510,19 +552,27 @@ export async function remoteDeployViaSSH(
 ): Promise<RemoteDeployResult> {
   const logs: string[] = [];
 
-  // Sanitize customPath — prevent traversal and command injection
-  const safePath = customPath
-    .replace(/[;&|`$(){}!#]/g, "") // strip shell metacharacters
-    .replace(/\.\./g, "")          // prevent directory traversal
-    .trim();
+  // ── Validate all inputs using central validators ──
+  const urlCheck = validateRepoUrl(repoUrl);
+  if (!urlCheck.valid) {
+    return { success: false, logs: urlCheck.reason, commitHash: "" };
+  }
 
-  if (!safePath || !safePath.startsWith("/")) {
+  const branchCheck = validateBranch(branch);
+  if (!branchCheck.valid) {
+    return { success: false, logs: branchCheck.reason, commitHash: "" };
+  }
+
+  const pathCheck = validatePath(customPath);
+  if (!pathCheck.valid) {
     return {
       success: false,
       logs: "Invalid custom path. Must be an absolute path (e.g., /opt/apps/myapp).",
       commitHash: "",
     };
   }
+
+  const safePath = customPath;
 
   try {
     // 1. Ensure parent directory exists

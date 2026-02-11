@@ -2,9 +2,10 @@
  * GitHub Deployer - Clone repos, detect stack, generate Docker Compose.
  */
 
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, mkdirSync } from "fs";
 import path from "path";
+import { validateRepoUrl, validateBranch } from "./validation";
 
 export type DetectedStack =
   | "nextjs"
@@ -30,20 +31,35 @@ const MAX_DEPLOY_DIRS = 5;
 
 /**
  * Clone a GitHub repository to a temporary directory.
+ * Uses spawnSync with array args — no shell interpolation.
  */
 export function cloneRepository(
   repoUrl: string,
   branch: string = "main"
 ): string {
+  // Validate inputs before executing
+  const urlCheck = validateRepoUrl(repoUrl);
+  if (!urlCheck.valid) throw new Error(urlCheck.reason);
+
+  const branchCheck = validateBranch(branch);
+  if (!branchCheck.valid) throw new Error(branchCheck.reason);
+
   const repoName =
     repoUrl.split("/").pop()?.replace(".git", "") || "app";
   const targetDir = path.join(DEPLOY_DIR, `${repoName}-${Date.now()}`);
 
   mkdirSync(DEPLOY_DIR, { recursive: true });
-  execSync(`git clone --depth 1 --branch ${branch} ${repoUrl} ${targetDir}`, {
-    timeout: 120_000,
-    stdio: "pipe",
-  });
+
+  const result = spawnSync(
+    "git",
+    ["clone", "--depth", "1", "--branch", branch, repoUrl, targetDir],
+    { timeout: 120_000, stdio: "pipe" }
+  );
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString().trim() || "Unknown git error";
+    throw new Error(`git clone failed: ${stderr}`);
+  }
 
   return targetDir;
 }

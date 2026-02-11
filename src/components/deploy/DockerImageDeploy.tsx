@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Server, Box, Play, RefreshCw } from "lucide-react";
+import { Play } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import type { ApiResponse, ServerInfo } from "@/types";
 

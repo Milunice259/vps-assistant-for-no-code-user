@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { decrypt, encrypt } from "@/lib/crypto";
+import { decrypt } from "@/lib/crypto";
+import { validateHealthCheck, validateDomain } from "@/lib/validation";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
 import type {
   ApiResponse,
@@ -9,7 +10,6 @@ import type {
   UpdateAppInput,
   ContainerStats,
   AppMetricInfo,
-  AppActionType,
 } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -223,6 +223,26 @@ export async function PATCH(
         { success: false, error: "Application not found" },
         { status: 404 }
       );
+    }
+
+    // ── Write-time validation ──
+    if (body.healthCheck !== undefined) {
+      const hcCheck = validateHealthCheck(body.healthCheck);
+      if (!hcCheck.valid) {
+        return NextResponse.json(
+          { success: false, error: hcCheck.reason },
+          { status: 400 }
+        );
+      }
+    }
+    if (body.domain !== undefined) {
+      const domCheck = validateDomain(body.domain);
+      if (!domCheck.valid) {
+        return NextResponse.json(
+          { success: false, error: domCheck.reason },
+          { status: 400 }
+        );
+      }
     }
 
     const updateData: Record<string, unknown> = {};

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteStats, getRemoteOSDetails, closeSSH } from "@/lib/ssh";
+import { isLocalServer } from "@/lib/local-server";
+import { getHostStats } from "@/lib/stats";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +10,9 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/servers/[id]/stats - Fetch live system stats + OS details from a remote server via SSH.
+ * GET /api/servers/[id]/stats - Fetch live system stats.
+ * For local server: uses Node.js os module.
+ * For remote servers: uses SSH.
  */
 export async function GET(
   _request: NextRequest,
@@ -18,6 +22,13 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+
+    // Local server — use Node.js os module directly
+    if (isLocalServer(id)) {
+      const stats = getHostStats();
+      return NextResponse.json({ success: true, data: { ...stats, os: { distro: stats.platform, kernel: "", arch: process.arch } } });
+    }
+
     const result = await connectToServer(id);
     ssh = result.ssh;
 
@@ -53,3 +64,4 @@ export async function GET(
     await closeSSH(ssh);
   }
 }
+

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
+import { getLocalServerInfo } from "@/lib/local-server";
 import type { ApiResponse, ServerInfo, CreateServerInput } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/servers - List all servers (without encrypted fields).
+ * The local server is always injected as the first entry.
  */
 export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
   try {
@@ -25,7 +27,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
       orderBy: { createdAt: "desc" },
     });
 
-    const data: ServerInfo[] = servers.map((s) => ({
+    const dbServers: ServerInfo[] = servers.map((s) => ({
       id: s.id,
       name: s.name,
       host: s.host,
@@ -36,6 +38,9 @@ export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
       lastConnected: s.lastConnected?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
     }));
+
+    // Always show local server first
+    const data = [getLocalServerInfo(), ...dbServers];
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

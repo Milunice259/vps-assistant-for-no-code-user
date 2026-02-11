@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteServices, closeSSH } from "@/lib/ssh";
+import { isLocalServer, getLocalServices } from "@/lib/local-server";
 import type { ApiResponse, ServiceInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,9 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/servers/[id]/services - List systemd services on a remote server.
+ * GET /api/servers/[id]/services - List systemd services.
+ * For local server: uses execSync.
+ * For remote servers: uses SSH.
  */
 export async function GET(
   _request: NextRequest,
@@ -18,6 +21,20 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+
+    // Local server — use local systemctl
+    if (isLocalServer(id)) {
+      const services = getLocalServices();
+      const data: ServiceInfo[] = services.map((s) => ({
+        name: s.name,
+        loadState: s.loadState,
+        activeState: s.activeState,
+        subState: s.subState,
+        description: s.description,
+      }));
+      return NextResponse.json({ success: true, data });
+    }
+
     const result = await connectToServer(id);
     ssh = result.ssh;
 
@@ -48,3 +65,4 @@ export async function GET(
     await closeSSH(ssh);
   }
 }
+

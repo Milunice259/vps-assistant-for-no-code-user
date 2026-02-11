@@ -39,6 +39,8 @@ export default function ServerDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
 
+  const isLocal = serverId === "local";
+
   async function fetchServer() {
     try {
       const res = await fetch(`/api/servers/${serverId}`);
@@ -115,26 +117,31 @@ export default function ServerDetailPage() {
           <div>
             <h2 className="text-xl font-semibold text-white">{server.name}</h2>
             <p className="text-sm text-gray-400">
-              {server.username}@{server.host}:{server.port}
+              {isLocal ? "This machine" : `${server.username}@${server.host}:${server.port}`}
             </p>
           </div>
+          {isLocal && (
+            <Badge variant="info">Local</Badge>
+          )}
           <Badge variant={server.isActive ? "success" : "default"}>
             {server.isActive ? "Active" : "Inactive"}
           </Badge>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-            <Pencil className="w-4 h-4 mr-1" /> Edit
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            loading={deleting}
-            onClick={handleDelete}
-          >
-            <Trash2 className="w-4 h-4 mr-1" /> Delete
-          </Button>
-        </div>
+        {!isLocal && (
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="w-4 h-4 mr-1" /> Edit
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={deleting}
+              onClick={handleDelete}
+            >
+              <Trash2 className="w-4 h-4 mr-1" /> Delete
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

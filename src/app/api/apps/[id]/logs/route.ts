@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getContainerLogs, closeSSH } from "@/lib/ssh";
+import { isLocalServer, execLocal } from "@/lib/local-server";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +10,16 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/apps/[id]/logs?lines=100 - Fetch recent logs for a tracked application.
+ * GET /api/apps/[id]/logs?lines=100 - Fetch recent logs for an application.
  *
- * If the ID starts with "discovered::", it's parsed as a live-discovered container
- * (format: discovered::{serverId}::{containerId}).
- * Otherwise, it's looked up in the DB App table.
+ * ID formats:
+ *   - "discovered::local::{containerId}" — local discovered container
+ *   - "discovered::{serverId}::{containerId}" — remote discovered container
+ *   - "local::{containerId}" — local container
+ *   - any other — DB app
+ *
+ * For local containers: uses execSync("docker logs ...").
+ * For remote containers: uses SSH.
  */
 export async function GET(
   request: NextRequest,
@@ -30,10 +36,7 @@ export async function GET(
     let containerRef: string;
 
     if (id.startsWith("discovered::")) {
-      // Format: discovered::{serverId}::{containerId}
-      // Using :: delimiter to safely support any ID format (CUID, UUID, etc.)
       const parts = id.split("::");
-      // parts[0] = "discovered", parts[1] = serverId, parts[2] = containerId
       serverId = parts[1] || "";
       containerRef = parts[2] || "";
 
@@ -43,8 +46,10 @@ export async function GET(
           { status: 400 }
         );
       }
+    } else if (id.startsWith("local::")) {
+      serverId = "local";
+      containerRef = id.replace("local::", "");
     } else {
-      // DB-tracked app
       const app = await prisma.app.findUnique({ where: { id } });
 
       if (!app) {
@@ -65,6 +70,22 @@ export async function GET(
       }
     }
 
+    // Local server — use execSync
+    if (isLocalServer(serverId)) {
+      try {
+        const safeRef = containerRef.replace(/[^a-zA-Z0-9_.-]/g, "");
+        const logs = execLocal(
+          `docker logs --tail ${lines} ${safeRef} 2>&1`,
+          15_000
+        );
+        return NextResponse.json({ success: true, data: { logs } });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Failed to fetch logs";
+        return NextResponse.json({ success: true, data: { logs: msg } });
+      }
+    }
+
+    // Remote server — use SSH
     const result = await connectToServer(serverId);
     ssh = result.ssh;
 

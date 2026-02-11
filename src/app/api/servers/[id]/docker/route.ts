@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteContainers, closeSSH } from "@/lib/ssh";
+import { isLocalServer, getLocalContainers } from "@/lib/local-server";
 import type { ApiResponse, ContainerInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,9 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/servers/[id]/docker - List all Docker containers on a remote server.
+ * GET /api/servers/[id]/docker - List all Docker containers.
+ * For local server: uses execSync.
+ * For remote servers: uses SSH.
  */
 export async function GET(
   _request: NextRequest,
@@ -18,6 +21,22 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+
+    // Local server — use local docker ps
+    if (isLocalServer(id)) {
+      const containers = getLocalContainers();
+      const data: ContainerInfo[] = containers.map((c) => ({
+        id: c.id,
+        name: c.name,
+        image: c.image,
+        status: c.status,
+        uptime: c.uptime,
+        ports: c.ports,
+        state: c.state,
+      }));
+      return NextResponse.json({ success: true, data });
+    }
+
     const result = await connectToServer(id);
     ssh = result.ssh;
 
@@ -50,3 +69,4 @@ export async function GET(
     await closeSSH(ssh);
   }
 }
+

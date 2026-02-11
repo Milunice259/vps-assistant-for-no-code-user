@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import { isLocalServer, execLocal } from "@/lib/local-server";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,8 @@ interface HealthResult {
 
 /**
  * GET /api/apps/[id]/health - Run health check on the container.
- *
- * If app has a custom healthCheck command, runs it inside the container.
- * Otherwise checks container inspect health status.
+ * For local containers: uses execSync.
+ * For remote containers: uses SSH.
  */
 export async function GET(
   _request: NextRequest,
@@ -52,24 +52,32 @@ export async function GET(
       });
     }
 
-    const server = app.server;
-    const password = server.encryptedPass ? decrypt(server.encryptedPass) : undefined;
-    const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
+    const safeId = app.containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
 
-    const ssh = await createSSHConnection({
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      password,
-      privateKey,
-    });
+    // Helper to run a command locally or via SSH
+    const runCmd = isLocalServer(app.serverId)
+      ? (cmd: string, timeout?: number) => execLocal(cmd, timeout)
+      : null;
+
+    // If remote, set up SSH
+    let ssh: Awaited<ReturnType<typeof createSSHConnection>> | null = null;
+    if (!runCmd) {
+      const server = app.server;
+      const password = server.encryptedPass ? decrypt(server.encryptedPass) : undefined;
+      const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
+      ssh = await createSSHConnection({
+        host: server.host,
+        port: server.port,
+        username: server.username,
+        password,
+        privateKey,
+      });
+    }
+
+    const exec = runCmd || ((cmd: string, timeout?: number) => executeCommand(ssh!, cmd, timeout));
 
     try {
-      const safeId = app.containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
-
-      // Get container state
-      const stateOutput = await executeCommand(
-        ssh,
+      const stateOutput = await exec(
         `docker inspect --format '{{.State.Status}}' ${safeId} 2>&1`,
         10_000
       );
@@ -82,11 +90,9 @@ export async function GET(
         status = "unhealthy";
         output = `Container is ${containerState}`;
       } else if (app.healthCheck) {
-        // Run custom health check inside container
         try {
-          const escapedCmd = app.healthCheck.replace(/'/g, "'\\''");
-          const checkOutput = await executeCommand(
-            ssh,
+          const escapedCmd = app.healthCheck.replace(/'/g, "'\\''" );
+          const checkOutput = await exec(
             `docker exec ${safeId} sh -c '${escapedCmd}' 2>&1`,
             15_000
           );
@@ -97,9 +103,7 @@ export async function GET(
           output = "Health check command failed";
         }
       } else {
-        // Check Docker's built-in health status
-        const healthOutput = await executeCommand(
-          ssh,
+        const healthOutput = await exec(
           `docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${safeId} 2>&1`,
           10_000
         );
@@ -112,13 +116,11 @@ export async function GET(
           status = "unhealthy";
           output = "Docker health check: unhealthy";
         } else {
-          // No health check configured, just check if running
           status = containerState === "running" ? "healthy" : "unhealthy";
           output = `Container is ${containerState} (no health check configured)`;
         }
       }
 
-      // Update app status based on health
       const appStatus = status === "healthy" ? "RUNNING" : status === "unhealthy" ? "UNHEALTHY" : "UNKNOWN";
       await prisma.app.update({
         where: { id },
@@ -127,15 +129,10 @@ export async function GET(
 
       return NextResponse.json({
         success: true,
-        data: {
-          status,
-          output,
-          checkedAt: new Date().toISOString(),
-          containerState,
-        },
+        data: { status, output, checkedAt: new Date().toISOString(), containerState },
       });
     } finally {
-      await closeSSH(ssh);
+      if (ssh) await closeSSH(ssh);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Health check failed";

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
+import { isLocalServer, getLocalServerInfo } from "@/lib/local-server";
 import type { ApiResponse, ServerInfo, UpdateServerInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,11 @@ export async function GET(
   try {
     const { id } = await context.params;
 
+    // Virtual local server
+    if (isLocalServer(id)) {
+      return NextResponse.json({ success: true, data: getLocalServerInfo() });
+    }
+
     const server = await prisma.server.findUnique({
       where: { id },
       select: {
@@ -86,6 +92,14 @@ export async function PATCH(
 ): Promise<NextResponse<ApiResponse<ServerInfo>>> {
   try {
     const { id } = await context.params;
+
+    if (isLocalServer(id)) {
+      return NextResponse.json(
+        { success: false, error: "Cannot modify the local server" },
+        { status: 400 }
+      );
+    }
+
     const body = (await request.json()) as UpdateServerInput;
 
     // Verify the server exists
@@ -152,6 +166,13 @@ export async function DELETE(
 ): Promise<NextResponse<ApiResponse>> {
   try {
     const { id } = await context.params;
+
+    if (isLocalServer(id)) {
+      return NextResponse.json(
+        { success: false, error: "Cannot delete the local server" },
+        { status: 400 }
+      );
+    }
 
     const existing = await prisma.server.findUnique({ where: { id } });
     if (!existing) {

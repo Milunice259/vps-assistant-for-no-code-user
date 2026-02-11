@@ -188,10 +188,10 @@ check_for_updates() {
     git reset --hard origin/main 2>/dev/null
     chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
 
-    print_success "Code updated. Restarting deploy with new script..."
-    echo ""
-    exec bash "$APP_DIR/deploy.sh" "$@"
-    exit 0
+    # NOTE: If deploy.sh itself was updated, auto_update_script() (line 168)
+    # already handled the restart via exec. No need to restart here for
+    # non-deploy-script changes — just continue with the current flow.
+    print_success "Code updated to latest version."
 }
 
 # --- Helper Functions ---

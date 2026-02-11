@@ -77,10 +77,42 @@ model App {
   deploymentId  String?   @map("deployment_id")
   status        AppStatus @default(UNKNOWN)
   domain        String?
+
+  // ── Resource Limits ──
+  cpuLimit      Float?    @map("cpu_limit")        // CPU cores (e.g., 0.5 = half core)
+  memoryLimit   Int?      @map("memory_limit")      // Memory limit in MB
+  storageLimit  Int?      @map("storage_limit")     // Storage limit in MB
+
+  // ── Environment Variables (AES-256-GCM encrypted JSON) ──
+  encryptedEnv  String?   @map("encrypted_env")
+
+  // ── Container Configuration ──
+  restartPolicy String?   @map("restart_policy")    // always|unless-stopped|on-failure|no
+  healthCheck   String?   @map("health_check")      // Health check command
+  volumes       String?   @map("volumes")           // JSON array of volume mounts
+  ports         String?   @map("ports")             // JSON array of port mappings
+
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
+  metrics       AppMetric[]
+
   @@map("apps")
+}
+
+// ─── Per-app resource metrics (time-series) ───
+model AppMetric {
+  id        String   @id @default(cuid())
+  appId     String   @map("app_id")
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  cpuUsage  Float    @map("cpu_usage")     // percentage 0-100
+  memUsage  Float    @map("mem_usage")     // MB used
+  netIn     Float?   @map("net_in")        // bytes/s inbound
+  netOut    Float?   @map("net_out")       // bytes/s outbound
+  timestamp DateTime @default(now())
+
+  @@index([appId, timestamp])
+  @@map("app_metrics")
 }
 
 enum AuthMethod {

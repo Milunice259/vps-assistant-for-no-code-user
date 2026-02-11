@@ -36,10 +36,10 @@ function discoverLocalContainers(): AppInfo[] {
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((line) => {
+      .flatMap((line): AppInfo[] => {
         const [id, name, image, state, ports] = line.split("\t");
-        if (!id) return null;
-        return {
+        if (!id) return [];
+        return [{
           id: `local::${id}`,
           name: name || image || id,
           containerId: id,
@@ -48,11 +48,10 @@ function discoverLocalContainers(): AppInfo[] {
           serverId: "local",
           serverName: "This Server",
           status: mapContainerState(state || ""),
-          domain: ports?.match(/:(\d+)->/)?.[1] ? null : null, // port info available in topology
+          domain: ports?.match(/:(\d+)->/)?.[1] ? null : null,
           createdAt: new Date().toISOString(),
-        } satisfies AppInfo;
-      })
-      .filter((c): c is AppInfo => c !== null);
+        }];
+      });
   } catch {
     return [];
   }

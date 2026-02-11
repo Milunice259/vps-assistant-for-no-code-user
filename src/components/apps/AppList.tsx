@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AppWindow,
   RefreshCw,
   FileText,
   Server,
+  ChevronRight,
 } from "lucide-react";
 import type { AppInfo, ApiResponse, AppStatusType } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +30,7 @@ function statusBadgeVariant(status: AppStatusType) {
 }
 
 export function AppList() {
+  const router = useRouter();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,10 +151,14 @@ export function AppList() {
                 {group.apps.map((app) => (
                   <tr key={app.id} className="hover:bg-gray-800/50">
                     <td className="py-3 text-white font-medium">
-                      <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => router.push(`/apps/${app.id}`)}
+                        className="flex items-center gap-2 hover:text-brand-400 transition-colors"
+                      >
                         <AppWindow className="h-4 w-4 text-blue-400 shrink-0" />
                         <span className="truncate max-w-[200px]">{app.name}</span>
-                      </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-gray-600" />
+                      </button>
                     </td>
                     <td className="py-3 text-gray-400 text-xs truncate max-w-[200px]">
                       {app.image || "—"}

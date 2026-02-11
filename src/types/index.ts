@@ -208,6 +208,39 @@ export interface AppInfo {
   createdAt: string;
 }
 
+/** Full app detail with resource config + metrics */
+export interface AppDetailInfo extends AppInfo {
+  cpuLimit: number | null;
+  memoryLimit: number | null;
+  storageLimit: number | null;
+  restartPolicy: string | null;
+  healthCheck: string | null;
+  volumes: string | null;      // JSON string
+  ports: string | null;        // JSON string
+  updatedAt: string;
+}
+
+/** Per-app resource metric data point */
+export interface AppMetricInfo {
+  id: string;
+  cpuUsage: number;
+  memUsage: number;
+  netIn: number | null;
+  netOut: number | null;
+  timestamp: string;
+}
+
+/** Live container stats from docker stats */
+export interface ContainerStats {
+  cpuPercent: number;
+  memUsageMB: number;
+  memLimitMB: number;
+  memPercent: number;
+  netIn: number;
+  netOut: number;
+  pids: number;
+}
+
 export interface CreateAppInput {
   name: string;
   serverId: string;
@@ -216,6 +249,18 @@ export interface CreateAppInput {
   image?: string;
   domain?: string;
 }
+
+export interface UpdateAppInput {
+  name?: string;
+  domain?: string;
+  cpuLimit?: number | null;
+  memoryLimit?: number | null;
+  storageLimit?: number | null;
+  restartPolicy?: string | null;
+  healthCheck?: string | null;
+}
+
+export type AppActionType = "start" | "stop" | "restart" | "pull" | "recreate";
 
 // ─── Quick Actions ───
 

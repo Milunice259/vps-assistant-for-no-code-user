@@ -3,7 +3,12 @@ import { execSync } from "child_process";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, getRemoteContainers, closeSSH } from "@/lib/ssh";
-import type { ApiResponse, AppInfo, AppStatusType, CreateAppInput } from "@/types";
+import type {
+  ApiResponse,
+  AppInfo,
+  AppStatusType,
+  CreateAppInput,
+} from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +30,14 @@ function mapContainerState(state: string): AppStatusType {
  */
 function discoverLocalContainers(): AppInfo[] {
   try {
-    const raw = execSync(
-      "docker ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}' 2>/dev/null",
-      { encoding: "utf-8", timeout: 10_000 }
-    );
+    // Use double-quoted format string for cross-platform compatibility
+    // (single quotes fail on Windows PowerShell; 2>/dev/null fails on Windows)
+    const fmt = "{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}";
+    const raw = execSync(`docker ps -a --format "${fmt}"`, {
+      encoding: "utf-8",
+      timeout: 10_000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     if (!raw.trim()) return [];
 
@@ -39,20 +48,26 @@ function discoverLocalContainers(): AppInfo[] {
       .flatMap((line): AppInfo[] => {
         const [id, name, image, state, ports] = line.split("\t");
         if (!id) return [];
-        return [{
-          id: `local::${id}`,
-          name: name || image || id,
-          containerId: id,
-          containerName: name || null,
-          image: image || null,
-          serverId: "local",
-          serverName: "This Server",
-          status: mapContainerState(state || ""),
-          domain: ports?.match(/:(\d+)->/)?.[1] ? null : null,
-          createdAt: new Date().toISOString(),
-        }];
+        return [
+          {
+            id: `local::${id}`,
+            name: name || image || id,
+            containerId: id,
+            containerName: name || null,
+            image: image || null,
+            serverId: "local",
+            serverName: "This Server",
+            status: mapContainerState(state || ""),
+            domain: ports?.match(/:(\d+)->/)?.[1] ? null : null,
+            createdAt: new Date().toISOString(),
+          },
+        ];
       });
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[apps] Local Docker discovery failed:",
+      err instanceof Error ? err.message : err,
+    );
     return [];
   }
 }
@@ -168,7 +183,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
       error instanceof Error ? error.message : "Failed to list applications";
     return NextResponse.json(
       { success: false, error: message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -178,7 +193,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
  * Body: { name, serverId, containerId?, containerName?, image?, domain? }
  */
 export async function POST(
-  request: NextRequest
+  request: NextRequest,
 ): Promise<NextResponse<ApiResponse<AppInfo>>> {
   try {
     const body = (await request.json()) as CreateAppInput;
@@ -188,7 +203,7 @@ export async function POST(
     if (!name || !serverId) {
       return NextResponse.json(
         { success: false, error: "name and serverId are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -197,7 +212,7 @@ export async function POST(
     if (!server) {
       return NextResponse.json(
         { success: false, error: "Server not found" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -234,7 +249,7 @@ export async function POST(
       error instanceof Error ? error.message : "Failed to create application";
     return NextResponse.json(
       { success: false, error: message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

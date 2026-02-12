@@ -34,7 +34,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 # Network/ports feature needs `ss` (iproute2)
-RUN apk add --no-cache iproute2
+RUN apk add --no-cache iproute2 docker-cli
 
 # Copy Next.js standalone build (includes minimal node_modules)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

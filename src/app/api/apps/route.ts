@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, getRemoteContainers, closeSSH } from "@/lib/ssh";
+import { execLocal } from "@/lib/local-server";
 import type {
   ApiResponse,
   AppInfo,
@@ -33,11 +33,7 @@ function discoverLocalContainers(): AppInfo[] {
     // Use double-quoted format string for cross-platform compatibility
     // (single quotes fail on Windows PowerShell; 2>/dev/null fails on Windows)
     const fmt = "{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}";
-    const raw = execSync(`docker ps -a --format "${fmt}"`, {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const raw = execLocal(`docker ps -a --format "${fmt}"`, 10_000);
 
     if (!raw.trim()) return [];
 

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
-import os from "os";
+import { execOnHost } from "@/lib/local-server";
 import type { ApiResponse, PortInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -11,42 +10,18 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse<ApiResponse<PortInfo[]>>> {
   try {
-    // ── Environment check ──
-    if (os.platform() !== "linux") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "UNSUPPORTED_PLATFORM",
-          message:
-            "This feature requires a Linux server. " +
-            "You are currently running on " +
-            os.platform().toUpperCase() +
-            ". Port scanning will work automatically when deployed to your Linux VPS.",
-        },
-        { status: 422 }
-      );
-    }
-
     let raw: string;
     try {
-      raw = execSync("ss -tulnp 2>/dev/null", {
-        encoding: "utf-8",
-        timeout: 10_000,
-        maxBuffer: 5 * 1024 * 1024, // 5 MB
-      });
+      // Run ss on the HOST via nsenter for accurate port listing
+      raw = execOnHost("ss -tulnp 2>/dev/null", 10_000);
     } catch (execErr) {
       const msg =
         execErr instanceof Error ? execErr.message : "Command failed";
-      const notFound =
-        typeof msg === "string" &&
-        (msg.includes("ENOENT") || msg.includes("not found") || msg.includes("ss"));
       return NextResponse.json(
         {
           success: false,
           error: "COMMAND_FAILED",
-          message: notFound
-            ? "Port listing requires 'ss' (Linux). Not available in this environment."
-            : "Could not list ports. " + msg,
+          message: "Could not list ports. " + msg,
         },
         { status: 200 }
       );

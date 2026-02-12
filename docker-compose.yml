@@ -11,13 +11,13 @@ services:
       dockerfile: Dockerfile
     container_name: vps-control-app
     restart: unless-stopped
+    pid: "host"
     env_file: .env
     environment:
       - DATABASE_URL=file:/app/data/vpscontrol.db
     volumes:
       - app_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc/hostname:/etc/host_hostname:ro
     labels:
       # --- Enable Traefik discovery ---
       - "traefik.enable=true"

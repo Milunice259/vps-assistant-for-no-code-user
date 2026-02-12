@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
-import os from "os";
 import { prisma } from "@/lib/db";
+import { execLocal, execOnHost } from "@/lib/local-server";
 import type { ApiResponse, DashboardSummary } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +15,8 @@ interface ContainerCounts {
 
 function getContainerCounts(): ContainerCounts {
   try {
-    const raw = execSync('docker ps -a --format "{{.State}}"', {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-
+    // Docker CLI → socket → host daemon (no nsenter needed)
+    const raw = execLocal('docker ps -a --format "{{.State}}"', 10_000);
     if (!raw) return { total: 0, running: 0, stopped: 0 };
 
     const states = raw.split("\n").filter(Boolean);
@@ -41,12 +36,8 @@ function getContainerCounts(): ContainerCounts {
 
 function getDockerNetworkCount(): number {
   try {
-    const raw = execSync('docker network ls --format "{{.Name}}"', {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-
+    // Docker CLI → socket → host daemon
+    const raw = execLocal('docker network ls --format "{{.Name}}"', 10_000);
     if (!raw) return 0;
     return raw.split("\n").filter(Boolean).length;
   } catch {
@@ -54,24 +45,19 @@ function getDockerNetworkCount(): number {
   }
 }
 
-// ─── Helper: count listening ports (Linux only) ───
+// ─── Helper: count listening ports on HOST ───
 
 function getListeningPortCount(): number {
-  if (os.platform() !== "linux") return 0;
   try {
-    const raw = execSync("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", {
-      encoding: "utf-8",
-      timeout: 10_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-
+    // nsenter → host namespace for accurate port listing
+    const raw = execOnHost("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
     return parseInt(raw, 10) || 0;
   } catch {
     return 0;
   }
 }
 
-// ─── Helper: get OS info ───
+// ─── Helper: get HOST OS info ───
 
 interface OSInfo {
   distro: string;
@@ -80,21 +66,29 @@ interface OSInfo {
 }
 
 function getOSInfo(): OSInfo {
-  const arch = os.arch();
-  const kernel = os.release();
+  let distro = "Linux";
+  let kernel = "";
+  let arch = "";
 
-  // Try to read /etc/os-release for distro name
-  let distro = os.type();
   try {
-    const raw = execSync('cat /etc/os-release 2>/dev/null || echo ""', {
-      encoding: "utf-8",
-      timeout: 5_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    // All via nsenter to read the HOST's OS info, not the Alpine container's
+    const raw = execOnHost("cat /etc/os-release 2>/dev/null || echo ''", 5_000);
     const nameMatch = raw.match(/^PRETTY_NAME="?([^"\n]+)"?/m);
     if (nameMatch?.[1]) distro = nameMatch[1];
   } catch {
-    // Keep os.type() fallback
+    // fallback
+  }
+
+  try {
+    kernel = execOnHost("uname -r", 5_000);
+  } catch {
+    // fallback
+  }
+
+  try {
+    arch = execOnHost("uname -m", 5_000);
+  } catch {
+    // fallback
   }
 
   return { distro, kernel, arch };

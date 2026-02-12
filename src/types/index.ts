@@ -86,6 +86,7 @@ export interface ServerInfo {
   isActive: boolean;
   lastConnected: string | null;
   createdAt: string;
+  hostname?: string;
 }
 
 export interface CreateServerInput {

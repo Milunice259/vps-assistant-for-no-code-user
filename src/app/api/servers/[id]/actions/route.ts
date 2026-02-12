@@ -1,17 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { quickAction, closeSSH } from "@/lib/ssh";
+import { isLocalServer, localQuickAction } from "@/lib/local-server";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const VALID_ACTIONS = ["apt-update", "docker-prune", "restart-docker"] as const;
+const VALID_ACTIONS = [
+  "system-update",
+  "docker-prune",
+  "restart-docker",
+  "clear-apt-cache",
+  "clear-logs",
+  "check-disk",
+  "security-updates",
+  "docker-stats",
+  "sync-time",
+  "restart-server",
+] as const;
 
 /**
- * POST /api/servers/[id]/actions - Run a quick maintenance action on a remote server.
- * Body: { action: "apt-update" | "docker-prune" | "restart-docker" }
+ * POST /api/servers/[id]/actions - Run a quick maintenance action.
+ * Body: { action: "system-update" | "docker-prune" | ... }
+ *
+ * For local server: uses execLocal() directly.
+ * For remote servers: uses SSH.
  */
 export async function POST(
   request: NextRequest,
@@ -38,6 +53,22 @@ export async function POST(
       );
     }
 
+    // Local server — execute directly
+    if (isLocalServer(id)) {
+      const result = localQuickAction(action);
+      if (!result.success) {
+        return NextResponse.json(
+          { success: false, error: result.output },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        data: { output: result.output },
+      });
+    }
+
+    // Remote server — use SSH
     const result = await connectToServer(id);
     ssh = result.ssh;
 

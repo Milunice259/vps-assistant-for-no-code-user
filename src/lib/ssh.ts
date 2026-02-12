@@ -501,9 +501,16 @@ export async function containerAction(
 // ─── Quick Server Actions ───
 
 const QUICK_ACTION_COMMANDS: Record<string, string> = {
-  "apt-update": "sudo apt update -y 2>&1",
-  "docker-prune": "docker system prune -af 2>&1",
-  "restart-docker": "sudo systemctl restart docker 2>&1",
+  "system-update":    "sudo apt update -y && sudo apt upgrade -y 2>&1",
+  "docker-prune":     "docker system prune -af 2>&1",
+  "restart-docker":   "sudo systemctl restart docker 2>&1",
+  "clear-apt-cache":  "sudo apt clean && sudo apt autoclean 2>&1",
+  "clear-logs":       "sudo journalctl --vacuum-time=3d 2>&1",
+  "check-disk":       "df -h 2>&1",
+  "security-updates": "sudo apt update -qq && apt list --upgradable 2>&1",
+  "docker-stats":     'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}" 2>&1',
+  "sync-time":        "sudo timedatectl set-ntp true 2>&1; chronyc -a makestep 2>/dev/null || sudo ntpdate -u pool.ntp.org 2>/dev/null || echo 'NTP sync attempted'",
+  "restart-server":   "sudo reboot",
 };
 
 /**

@@ -5,6 +5,7 @@ import {
   createSessionToken,
   setSessionCookie,
 } from "@/lib/auth";
+import { auditLog, getClientIp } from "@/lib/audit";
 import type { ApiResponse, UserInfo, LoginInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ export async function POST(
       "unknown";
 
     if (isRateLimited(ip)) {
+      await auditLog({ action: "login_failed", username: "unknown", ip, details: "Rate limited" });
       return NextResponse.json(
         { success: false, error: "Too many login attempts. Try again later." },
         { status: 429 }
@@ -92,6 +94,7 @@ export async function POST(
     const isValid = await verifyPassword(password, user.passwordHash);
 
     if (!isValid) {
+      await auditLog({ action: "login_failed", username, ip, details: "Invalid password" });
       return NextResponse.json(
         { success: false, error: "Invalid credentials" },
         { status: 401 }
@@ -99,8 +102,10 @@ export async function POST(
     }
 
     // Create JWT and set HttpOnly cookie
-    const token = await createSessionToken(user.id, user.username);
+    const token = await createSessionToken(user.id, user.username, user.role);
     await setSessionCookie(token);
+
+    await auditLog({ action: "login", userId: user.id, username: user.username, ip });
 
     return NextResponse.json({
       success: true,

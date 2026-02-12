@@ -33,6 +33,8 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 | **App Tracking**             | Auto-discover Docker containers across servers. Track, monitor status, and view logs from one panel.                  |
 | **Network Manager**          | View open ports, Docker network topology, and manage Ubuntu packages directly from the browser.                       |
 | **GitHub Deployer**          | Paste a repo URL — deploy locally for stack detection or remotely via SSH with `docker compose`.                      |
+| **Web Terminal**             | Browser-based terminal for executing commands on managed servers via SSH.                                             |
+| **Audit Log**                | Track all administrative actions — server changes, deployments, container operations — with timestamps and details.   |
 | **Quick Actions**            | One-click server maintenance: `apt update`, `docker prune`, `restart docker` on any managed server.                   |
 | **One-Click Deploy**         | A single `deploy.sh` script that detects Traefik, generates secrets, and brings everything up.                        |
 | **Encrypted Credentials**    | SSH passwords and private keys are encrypted with **AES-256-GCM** before touching the database.                       |
@@ -151,22 +153,35 @@ Open [http://localhost:3000](http://localhost:3000).
     │   │   ├── servers/        # Remote VPS management
     │   │   ├── network/        # Ports + package management
     │   │   ├── apps/           # Application tracking
-    │   │   └── deploy/         # GitHub deployer
+    │   │   ├── deploy/         # GitHub deployer
+    │   │   ├── audit/          # Audit log viewer
+    │   │   ├── terminal/       # Web terminal
+    │   │   └── settings/       # App settings
     │   └── api/                # API route handlers
     │       ├── auth/           # Login, logout, session
-    │       ├── stats/          # Host stats + SSE stream
+    │       ├── dashboard/      # Host stats + SSE stream
     │       ├── servers/        # CRUD + stats + docker + services + actions
-    │       ├── apps/           # App CRUD + container logs
+    │       ├── apps/           # App CRUD + container logs + SSE streams
     │       ├── network/        # Ports + packages
-    │       └── deploy/         # Clone + detect + deploy (local & remote)
+    │       ├── deploy/         # Clone + detect + deploy (local & remote)
+    │       ├── audit/          # Audit log API
+    │       ├── backup/         # Database backup
+    │       └── notifications/  # Notification management
     ├── lib/
+    │   ├── api-handler.ts      # Shared API route handler wrapper
+    │   ├── audit.ts            # Audit logging utility
     │   ├── auth.ts             # JWT sessions + bcrypt
     │   ├── crypto.ts           # AES-256-GCM encrypt/decrypt
     │   ├── db.ts               # Prisma client singleton
     │   ├── deployer.ts         # Git clone + stack detection
+    │   ├── local-server.ts     # Local VPS auto-detection
+    │   ├── notifications.ts    # Notification system
+    │   ├── sanitize.ts         # Log sanitization (redact secrets)
     │   ├── server-ssh.ts       # Per-server SSH connection helper
-    │   ├── ssh.ts              # SSH2 wrapper + remote ops (containers, services, deploy)
-    │   └── stats.ts            # Host system stats (os module)
+    │   ├── sse-stream.ts       # Server-Sent Events stream helper
+    │   ├── ssh.ts              # SSH2 wrapper + remote ops
+    │   ├── stats.ts            # Host system stats (os module)
+    │   └── validation.ts       # Input validation for all user inputs
     ├── components/             # UI components (dark theme)
     │   ├── ui/                 # Button, Card, Input, Badge, Tabs, ConfirmDialog
     │   ├── layout/             # Sidebar, Header

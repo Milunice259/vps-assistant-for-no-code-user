@@ -12,6 +12,9 @@ import {
   Terminal,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
+  Shield,
+  SquareTerminal,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -27,6 +30,9 @@ const navItems: NavItem[] = [
   { label: "Network", href: "/network", icon: <Network className="h-5 w-5" /> },
   { label: "Apps", href: "/apps", icon: <AppWindow className="h-5 w-5" /> },
   { label: "Deploy", href: "/deploy", icon: <GitBranch className="h-5 w-5" /> },
+  { label: "Terminal", href: "/terminal", icon: <SquareTerminal className="h-5 w-5" /> },
+  { label: "Audit Log", href: "/audit", icon: <Shield className="h-5 w-5" /> },
+  { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
 ];
 
 export function Sidebar() {

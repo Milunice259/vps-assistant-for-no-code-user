@@ -15,31 +15,38 @@ import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 export const dynamic = "force-dynamic";
 
 /**
+ * Fetch recent deployments list.
+ * Exported so the SSE stream endpoint can reuse this.
+ */
+export async function getDeployments(): Promise<DeploymentInfo[]> {
+  const logs = await prisma.deploymentLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
+  return logs.map((log) => ({
+    id: log.id,
+    repoUrl: log.repoUrl,
+    branch: log.branch,
+    detectedStack: log.detectedStack,
+    status: log.status,
+    logs: log.logs,
+    domain: log.domain,
+    serverId: log.serverId,
+    commitHash: log.commitHash,
+    customPath: log.customPath,
+    createdAt: log.createdAt.toISOString(),
+  }));
+}
+
+/**
  * GET /api/deploy - List recent deployment logs.
  */
 export async function GET(): Promise<
   NextResponse<ApiResponse<DeploymentInfo[]>>
 > {
   try {
-    const logs = await prisma.deploymentLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
-
-    const data: DeploymentInfo[] = logs.map((log) => ({
-      id: log.id,
-      repoUrl: log.repoUrl,
-      branch: log.branch,
-      detectedStack: log.detectedStack,
-      status: log.status,
-      logs: log.logs,
-      domain: log.domain,
-      serverId: log.serverId,
-      commitHash: log.commitHash,
-      customPath: log.customPath,
-      createdAt: log.createdAt.toISOString(),
-    }));
-
+    const data = await getDeployments();
     return NextResponse.json({ success: true, data });
   } catch (error) {
     const message =

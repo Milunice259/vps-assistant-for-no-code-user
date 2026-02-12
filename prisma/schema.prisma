@@ -18,10 +18,60 @@ model User {
   id           String   @id @default(cuid())
   username     String   @unique
   passwordHash String   @map("password_hash")
+  role         UserRole @default(ADMIN)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+// ─── Security audit trail ───
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String                          // e.g., "login", "container_stop", "deploy_git"
+  userId    String?  @map("user_id")
+  username  String   @default("system")
+  target    String?                          // e.g., server name, container ID
+  details   String?                          // extra context / JSON payload
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Notification channels ───
+model NotificationChannel {
+  id        String   @id @default(cuid())
+  name      String                              // e.g., "My Discord"
+  type      String                              // "discord" | "slack" | "telegram"
+  webhookUrl String  @map("webhook_url")        // Webhook endpoint URL
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  alertRules AlertRule[]
+
+  @@map("notification_channels")
+}
+
+// ─── Alert rules (threshold-based) ───
+model AlertRule {
+  id          String   @id @default(cuid())
+  metric      String                              // "cpu" | "memory" | "disk"
+  operator    String   @default("gt")             // "gt" | "lt"
+  threshold   Float                               // e.g., 90.0 (percent)
+  channelId   String   @map("channel_id")
+  channel     NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  serverId    String?  @map("server_id")          // null = all servers
+  enabled     Boolean  @default(true)
+  lastFiredAt DateTime? @map("last_fired_at")
+  cooldownMin Int      @default(15) @map("cooldown_min")  // minimum minutes between alerts
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("alert_rules")
 }
 
 // ─── Remote VPS connections ───
@@ -113,6 +163,12 @@ model AppMetric {
 
   @@index([appId, timestamp])
   @@map("app_metrics")
+}
+
+enum UserRole {
+  ADMIN     // Full access — all actions
+  OPERATOR  // Start/stop containers, deploy, view logs
+  VIEWER    // Read-only dashboard access
 }
 
 enum AuthMethod {

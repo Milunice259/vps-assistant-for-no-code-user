@@ -172,11 +172,38 @@ It is designed for single-team/single-admin operation with a simple deployment m
 
 - No 2FA
 - No account lockout/rate limit for login
-- No fine-grained RBAC/audit trail
+- No fine-grained RBAC
 
 ---
 
-## 11) Operational Tasks Supported
+## 11) Audit Log
+
+- Records administrative actions (server changes, deployments, container operations)
+- Timestamped entries with action type and details
+- Viewable from the panel UI (`/audit`)
+- API endpoint (`/api/audit`)
+
+**Constraints**
+
+- Audit log is stored in SQLite alongside app data
+- No export functionality yet
+
+---
+
+## 12) Web Terminal
+
+- Browser-based command execution on managed servers
+- Runs commands via SSH through the panel
+- Output streamed to the UI
+
+**Constraints**
+
+- Not a full interactive terminal (no PTY allocation)
+- Command execution is subject to validation and sanitization
+
+---
+
+## 13) Operational Tasks Supported
 
 - App logs via Docker Compose
 - Restart/stop/update with script and compose commands
@@ -202,6 +229,9 @@ It is designed for single-team/single-admin operation with a simple deployment m
 | VPS bootstrap automation     | Yes         | deploy.sh end-to-end                     |
 | Traefik HTTPS routing        | Yes         | Requires correct DNS/resolver            |
 | SQLite persistence           | Yes         | Volume-backed                            |
+| Audit log                    | Yes         | Action tracking with timestamps          |
+| Web terminal                 | Yes         | Command execution via SSH                |
+| SSE real-time streams        | Yes         | Dashboard, apps, deploy log streams      |
 
 ---
 

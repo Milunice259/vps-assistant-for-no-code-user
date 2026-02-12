@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Globe,
@@ -11,31 +11,32 @@ import {
   Play,
   Square,
   RotateCw,
-  ChevronDown,
-  ChevronRight,
   Layers,
   HardDrive,
   Workflow,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from "lucide-react";
 import type { NetworkTopology, ApiResponse, ServerInfo, DockerNetworkContainer } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
-// ─── Helpers ───
+// ─── Color helpers ───
 
 function containerStateColor(state?: string) {
   switch (state?.toLowerCase()) {
     case "running":
-      return { dot: "bg-emerald-400", ring: "ring-emerald-400/20", text: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" };
+      return { dot: "#34d399", stroke: "#059669", bg: "#064e3b", text: "text-emerald-400" };
     case "exited":
     case "dead":
-      return { dot: "bg-red-400", ring: "ring-red-400/20", text: "text-red-400", bg: "bg-red-500/10 border-red-500/20" };
+      return { dot: "#f87171", stroke: "#dc2626", bg: "#450a0a", text: "text-red-400" };
     case "restarting":
-      return { dot: "bg-yellow-400", ring: "ring-yellow-400/20", text: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20" };
+      return { dot: "#fbbf24", stroke: "#d97706", bg: "#451a03", text: "text-yellow-400" };
     case "paused":
-      return { dot: "bg-orange-400", ring: "ring-orange-400/20", text: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" };
+      return { dot: "#fb923c", stroke: "#ea580c", bg: "#431407", text: "text-orange-400" };
     default:
-      return { dot: "bg-gray-400", ring: "ring-gray-400/20", text: "text-gray-400", bg: "bg-gray-500/10 border-gray-500/20" };
+      return { dot: "#9ca3af", stroke: "#6b7280", bg: "#1f2937", text: "text-gray-400" };
   }
 }
 
@@ -49,187 +50,218 @@ function stateLabel(state?: string): string {
   return state || "Unknown";
 }
 
-function networkColor(index: number) {
-  const colors = [
-    { border: "border-purple-500/30", bg: "bg-purple-500/5", header: "bg-purple-500/10", text: "text-purple-400", icon: "text-purple-400" },
-    { border: "border-blue-500/30", bg: "bg-blue-500/5", header: "bg-blue-500/10", text: "text-blue-400", icon: "text-blue-400" },
-    { border: "border-cyan-500/30", bg: "bg-cyan-500/5", header: "bg-cyan-500/10", text: "text-cyan-400", icon: "text-cyan-400" },
-    { border: "border-teal-500/30", bg: "bg-teal-500/5", header: "bg-teal-500/10", text: "text-teal-400", icon: "text-teal-400" },
-    { border: "border-indigo-500/30", bg: "bg-indigo-500/5", header: "bg-indigo-500/10", text: "text-indigo-400", icon: "text-indigo-400" },
-    { border: "border-pink-500/30", bg: "bg-pink-500/5", header: "bg-pink-500/10", text: "text-pink-400", icon: "text-pink-400" },
-  ];
-  return colors[index % colors.length];
-}
+const NETWORK_COLORS = [
+  { fill: "#7c3aed20", stroke: "#7c3aed", text: "#a78bfa", label: "text-purple-400" },
+  { fill: "#3b82f620", stroke: "#3b82f6", text: "#60a5fa", label: "text-blue-400" },
+  { fill: "#06b6d420", stroke: "#06b6d4", text: "#22d3ee", label: "text-cyan-400" },
+  { fill: "#14b8a620", stroke: "#14b8a6", text: "#2dd4bf", label: "text-teal-400" },
+  { fill: "#6366f120", stroke: "#6366f1", text: "#818cf8", label: "text-indigo-400" },
+  { fill: "#ec489920", stroke: "#ec4899", text: "#f472b6", label: "text-pink-400" },
+];
 
-// ─── Container Card ───
+// ─── Layout constants ───
 
-interface ContainerCardProps {
+const NET_CARD_W = 220;
+const NET_CARD_H = 60;
+const CONT_CARD_W = 180;
+const CONT_CARD_H = 70;
+const NET_GAP_X = 280;
+const CONT_GAP_X = 200;
+const NET_Y = 30;
+const CONT_Y = 160;
+const PADDING = 40;
+
+// ─── SVG Container Card ───
+
+function SvgContainerCard({
+  container,
+  x,
+  y,
+  onAction,
+  actionLoading,
+}: {
   container: DockerNetworkContainer;
-  serverId: string;
-  onAction: (containerId: string, action: "start" | "stop" | "restart") => void;
+  x: number;
+  y: number;
+  onAction: (id: string, action: "start" | "stop" | "restart") => void;
   actionLoading: string | null;
-}
-
-function ContainerCard({ container, serverId: _serverId, onAction, actionLoading }: ContainerCardProps) {
+}) {
   const colors = containerStateColor(container.state);
   const isRunning = container.state?.toLowerCase() === "running";
+  const [hovered, setHovered] = useState(false);
 
   return (
-    <div
-      className={`group relative overflow-hidden rounded-xl border ${colors.bg} backdrop-blur-sm transition-all duration-200 hover:scale-[1.01] hover:shadow-lg hover:shadow-black/20`}
+    <g
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ cursor: "pointer" }}
     >
+      {/* Card background */}
+      <rect
+        x={x}
+        y={y}
+        width={CONT_CARD_W}
+        height={hovered ? CONT_CARD_H + 30 : CONT_CARD_H}
+        rx={10}
+        fill={colors.bg}
+        stroke={hovered ? colors.stroke : "#374151"}
+        strokeWidth={hovered ? 2 : 1}
+        style={{ transition: "all 0.2s ease" }}
+      />
+
       {/* Status indicator bar */}
-      <div className={`absolute left-0 top-0 h-full w-1 ${colors.dot} rounded-l-xl`} />
+      <rect
+        x={x}
+        y={y}
+        width={4}
+        height={hovered ? CONT_CARD_H + 30 : CONT_CARD_H}
+        rx={2}
+        fill={colors.dot}
+      />
 
-      <div className="pl-4 pr-3 py-3">
-        {/* Header: name + status */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={`h-2 w-2 rounded-full ${colors.dot} ring-4 ${colors.ring} shrink-0`} />
-            <span className="text-sm font-semibold text-white truncate">
-              {container.name}
-            </span>
-          </div>
-          <Badge variant={isRunning ? "success" : container.state?.toLowerCase() === "exited" ? "danger" : "default"}>
-            {stateLabel(container.state)}
-          </Badge>
-        </div>
+      {/* Status dot */}
+      <circle cx={x + 20} cy={y + 18} r={4} fill={colors.dot} />
 
-        {/* Details grid */}
-        <div className="space-y-1.5 ml-4">
-          {container.image && (
-            <div className="flex items-center gap-2 text-xs">
-              <HardDrive className="h-3 w-3 text-gray-500 shrink-0" />
-              <span className="text-gray-400 truncate" title={container.image}>
-                {container.image}
-              </span>
-            </div>
-          )}
-          {container.ipv4 && (
-            <div className="flex items-center gap-2 text-xs">
-              <Workflow className="h-3 w-3 text-gray-500 shrink-0" />
-              <span className="font-mono text-gray-300">{container.ipv4}</span>
-            </div>
-          )}
-          {container.ports && (
-            <div className="flex items-center gap-2 text-xs">
-              <Globe className="h-3 w-3 text-gray-500 shrink-0" />
-              <span className="text-gray-400 truncate" title={container.ports}>
-                {container.ports || "—"}
-              </span>
-            </div>
-          )}
-        </div>
+      {/* Container name */}
+      <text
+        x={x + 32}
+        y={y + 22}
+        fill="white"
+        fontSize={12}
+        fontWeight={600}
+        fontFamily="system-ui, sans-serif"
+      >
+        {container.name.length > 16
+          ? container.name.slice(0, 15) + "…"
+          : container.name}
+      </text>
 
-        {/* Action buttons — visible on hover */}
-        <div className="flex gap-1 mt-2.5 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Status badge */}
+      <text
+        x={x + 20}
+        y={y + 42}
+        fill={colors.dot}
+        fontSize={10}
+        fontFamily="system-ui, sans-serif"
+      >
+        {stateLabel(container.state)}
+      </text>
+
+      {/* IP address */}
+      {container.ipv4 && (
+        <text
+          x={x + 80}
+          y={y + 42}
+          fill="#9ca3af"
+          fontSize={9}
+          fontFamily="monospace"
+        >
+          {container.ipv4}
+        </text>
+      )}
+
+      {/* Image name */}
+      {container.image && (
+        <text
+          x={x + 20}
+          y={y + 58}
+          fill="#6b7280"
+          fontSize={9}
+          fontFamily="monospace"
+        >
+          {container.image.length > 22
+            ? container.image.slice(0, 21) + "…"
+            : container.image}
+        </text>
+      )}
+
+      {/* Action buttons — appear on hover */}
+      {hovered && (
+        <g>
           {isRunning ? (
             <>
-              <button
+              <rect
+                x={x + 16}
+                y={y + CONT_CARD_H + 4}
+                width={48}
+                height={20}
+                rx={4}
+                fill="#dc262630"
+                stroke="#dc262650"
+                strokeWidth={1}
+                style={{ cursor: "pointer" }}
                 onClick={() => onAction(container.name, "stop")}
-                disabled={actionLoading === `${container.name}-stop`}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+              />
+              <text
+                x={x + 27}
+                y={y + CONT_CARD_H + 18}
+                fill="#f87171"
+                fontSize={9}
+                fontWeight={500}
+                fontFamily="system-ui"
+                style={{ pointerEvents: "none" }}
               >
-                <Square className="h-3 w-3" />
                 Stop
-              </button>
-              <button
+              </text>
+
+              <rect
+                x={x + 72}
+                y={y + CONT_CARD_H + 4}
+                width={60}
+                height={20}
+                rx={4}
+                fill="#d9770630"
+                stroke="#d9770650"
+                strokeWidth={1}
+                style={{ cursor: "pointer" }}
                 onClick={() => onAction(container.name, "restart")}
-                disabled={actionLoading === `${container.name}-restart`}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
+              />
+              <text
+                x={x + 80}
+                y={y + CONT_CARD_H + 18}
+                fill="#fbbf24"
+                fontSize={9}
+                fontWeight={500}
+                fontFamily="system-ui"
+                style={{ pointerEvents: "none" }}
               >
-                <RotateCw className="h-3 w-3" />
                 Restart
-              </button>
+              </text>
             </>
           ) : (
-            <button
-              onClick={() => onAction(container.name, "start")}
-              disabled={actionLoading === `${container.name}-start`}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-            >
-              <Play className="h-3 w-3" />
-              Start
-            </button>
+            <>
+              <rect
+                x={x + 16}
+                y={y + CONT_CARD_H + 4}
+                width={48}
+                height={20}
+                rx={4}
+                fill="#05966830"
+                stroke="#05966850"
+                strokeWidth={1}
+                style={{ cursor: "pointer" }}
+                onClick={() => onAction(container.name, "start")}
+              />
+              <text
+                x={x + 27}
+                y={y + CONT_CARD_H + 18}
+                fill="#34d399"
+                fontSize={9}
+                fontWeight={500}
+                fontFamily="system-ui"
+                style={{ pointerEvents: "none" }}
+              >
+                Start
+              </text>
+            </>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Network Section ───
-
-interface NetworkSectionProps {
-  network: { id: string; name: string; driver: string; containers: DockerNetworkContainer[] };
-  index: number;
-  serverId: string;
-  onAction: (containerId: string, action: "start" | "stop" | "restart") => void;
-  actionLoading: string | null;
-}
-
-function NetworkSection({ network, index, serverId, onAction, actionLoading }: NetworkSectionProps) {
-  const [expanded, setExpanded] = useState(true);
-  const colors = networkColor(index);
-  const runningCount = network.containers.filter(c => c.state?.toLowerCase() === "running").length;
-  const totalCount = network.containers.length;
-
-  return (
-    <div className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all duration-200`}>
-      {/* Network header — clickable to expand/collapse */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={`w-full flex items-center justify-between gap-3 px-4 py-3 ${colors.header} transition-colors hover:brightness-110`}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <Network className={`h-4 w-4 ${colors.icon} shrink-0`} />
-          <span className={`font-semibold text-sm ${colors.text}`}>{network.name}</span>
-          <Badge variant="default">{network.driver}</Badge>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Layers className="h-3 w-3" />
-            <span>
-              <span className="text-emerald-400">{runningCount}</span>
-              <span className="text-gray-600"> / </span>
-              {totalCount}
-            </span>
-          </div>
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 text-gray-500" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-gray-500" />
-          )}
-        </div>
-      </button>
-
-      {/* Container cards grid */}
-      {expanded && (
-        <div className="p-3">
-          {totalCount === 0 ? (
-            <p className="text-xs text-gray-500 text-center py-4">
-              No containers attached to this network
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {network.containers.map((c) => (
-                <ContainerCard
-                  key={c.id || c.name}
-                  container={c}
-                  serverId={serverId}
-                  onAction={onAction}
-                  actionLoading={actionLoading}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        </g>
       )}
-    </div>
+    </g>
   );
 }
 
-// ─── Main Topology View ───
+// ─── Main Flowchart View ───
 
 interface NetworkTopologyViewProps {
   serverId: string;
@@ -242,6 +274,8 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
   const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -330,38 +364,47 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
 
   if (!topology) return null;
 
-  // ── Compute stats ──
+  // ── Compute layout ──
+  const networksWithContainers = topology.networks.filter(n => n.containers.length > 0);
   const allContainers = topology.networks.flatMap((n) => n.containers);
   const totalContainers = allContainers.length;
   const runningContainers = allContainers.filter(c => c.state?.toLowerCase() === "running").length;
   const stoppedContainers = allContainers.filter(c => c.state?.toLowerCase() === "exited" || c.state?.toLowerCase() === "dead").length;
-  const networksWithContainers = topology.networks.filter(n => n.containers.length > 0);
   const listeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
+
+  // Calculate positions for flowchart layout
+  let maxContainersInRow = 0;
+  networksWithContainers.forEach(n => {
+    if (n.containers.length > maxContainersInRow) maxContainersInRow = n.containers.length;
+  });
+
+  const svgWidth = Math.max(
+    networksWithContainers.length * NET_GAP_X + PADDING * 2,
+    maxContainersInRow * CONT_GAP_X + PADDING * 2,
+    800
+  );
+  const svgHeight = CONT_Y + CONT_CARD_H + 60 + PADDING;
 
   return (
     <div className="space-y-6">
       {/* ── Summary Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-3">
-          {/* Networks */}
           <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
             <Network className="h-4 w-4 text-purple-400" />
             <span className="text-xs text-gray-400">Networks</span>
             <span className="text-sm font-semibold text-white">{topology.networks.length}</span>
           </div>
-          {/* Containers */}
           <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
             <Box className="h-4 w-4 text-blue-400" />
             <span className="text-xs text-gray-400">Containers</span>
             <span className="text-sm font-semibold text-white">{totalContainers}</span>
           </div>
-          {/* Running */}
           <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
             <div className="h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20" />
             <span className="text-xs text-gray-400">Running</span>
             <span className="text-sm font-semibold text-emerald-400">{runningContainers}</span>
           </div>
-          {/* Stopped */}
           {stoppedContainers > 0 && (
             <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
               <div className="h-2 w-2 rounded-full bg-red-400 ring-4 ring-red-400/20" />
@@ -369,16 +412,44 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
               <span className="text-sm font-semibold text-red-400">{stoppedContainers}</span>
             </div>
           )}
-          {/* Ports */}
           <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
             <Globe className="h-4 w-4 text-amber-400" />
             <span className="text-xs text-gray-400">Ports</span>
             <span className="text-sm font-semibold text-white">{listeningPorts.length}</span>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={fetchTopology}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Zoom controls */}
+          <div className="flex items-center gap-1 bg-gray-800 rounded-lg border border-gray-700 p-0.5">
+            <button
+              onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
+              title="Zoom out"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-xs text-gray-500 px-1 min-w-[3rem] text-center">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom(z => Math.min(1.5, z + 0.1))}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
+              title="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
+              title="Reset zoom"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <Button variant="ghost" size="sm" onClick={fetchTopology}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* ── Warning ── */}
@@ -413,7 +484,7 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
         </div>
       )}
 
-      {/* ── Networks & Containers ── */}
+      {/* ── Flowchart SVG ── */}
       {networksWithContainers.length === 0 && topology.networks.length > 0 ? (
         <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-8 text-center">
           <Box className="h-8 w-8 text-gray-600 mx-auto mb-3" />
@@ -423,19 +494,135 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {topology.networks
-            .filter((n) => n.containers.length > 0)
-            .map((net, i) => (
-              <NetworkSection
-                key={net.id}
-                network={net}
-                index={i}
-                serverId={serverId}
-                onAction={handleContainerAction}
-                actionLoading={actionLoading}
-              />
-            ))}
+        <div className="bg-gray-800/30 rounded-xl border border-gray-700 overflow-x-auto">
+          <svg
+            ref={svgRef}
+            width={svgWidth * zoom}
+            height={svgHeight * zoom}
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full"
+            style={{ minHeight: 300 }}
+          >
+            {/* Background grid pattern */}
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1f2937" strokeWidth="0.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+
+            {/* Render networks and connections */}
+            {networksWithContainers.map((net, netIdx) => {
+              const netColor = NETWORK_COLORS[netIdx % NETWORK_COLORS.length];
+              const netX = PADDING + netIdx * NET_GAP_X + (NET_GAP_X - NET_CARD_W) / 2;
+              const netCenterX = netX + NET_CARD_W / 2;
+              const netBottomY = NET_Y + NET_CARD_H;
+
+              // Position containers evenly below their network
+              const contCount = net.containers.length;
+              const totalContW = contCount * CONT_CARD_W + (contCount - 1) * 20;
+              const contStartX = netCenterX - totalContW / 2;
+
+              return (
+                <g key={net.id}>
+                  {/* Network card */}
+                  <rect
+                    x={netX}
+                    y={NET_Y}
+                    width={NET_CARD_W}
+                    height={NET_CARD_H}
+                    rx={12}
+                    fill={netColor.fill}
+                    stroke={netColor.stroke}
+                    strokeWidth={1.5}
+                  />
+                  {/* Network icon placeholder (circle) */}
+                  <circle
+                    cx={netX + 22}
+                    cy={NET_Y + NET_CARD_H / 2}
+                    r={8}
+                    fill={netColor.stroke}
+                    opacity={0.3}
+                  />
+                  <text
+                    x={netX + 22}
+                    y={NET_Y + NET_CARD_H / 2 + 4}
+                    fill={netColor.text}
+                    fontSize={10}
+                    textAnchor="middle"
+                    fontFamily="system-ui"
+                  >
+                    🌐
+                  </text>
+
+                  {/* Network name */}
+                  <text
+                    x={netX + 38}
+                    y={NET_Y + 24}
+                    fill={netColor.text}
+                    fontSize={13}
+                    fontWeight={600}
+                    fontFamily="system-ui, sans-serif"
+                  >
+                    {net.name.length > 16 ? net.name.slice(0, 15) + "…" : net.name}
+                  </text>
+
+                  {/* Driver label */}
+                  <text
+                    x={netX + 38}
+                    y={NET_Y + 42}
+                    fill="#9ca3af"
+                    fontSize={10}
+                    fontFamily="system-ui, sans-serif"
+                  >
+                    {net.driver} · {contCount} container{contCount !== 1 ? "s" : ""}
+                  </text>
+
+                  {/* Connection lines from network to containers */}
+                  {net.containers.map((cont, contIdx) => {
+                    const contX = contStartX + contIdx * (CONT_CARD_W + 20);
+                    const contCenterX = contX + CONT_CARD_W / 2;
+                    const contTopY = CONT_Y;
+
+                    // Curved connection line
+                    const midY = netBottomY + (contTopY - netBottomY) / 2;
+
+                    return (
+                      <g key={cont.id || cont.name}>
+                        {/* Connection path */}
+                        <path
+                          d={`M ${netCenterX} ${netBottomY} C ${netCenterX} ${midY}, ${contCenterX} ${midY}, ${contCenterX} ${contTopY}`}
+                          fill="none"
+                          stroke={netColor.stroke}
+                          strokeWidth={1.5}
+                          strokeDasharray="4 3"
+                          opacity={0.5}
+                        />
+
+                        {/* Connection dot at container end */}
+                        <circle
+                          cx={contCenterX}
+                          cy={contTopY}
+                          r={3}
+                          fill={netColor.stroke}
+                          opacity={0.7}
+                        />
+
+                        {/* Container card */}
+                        <SvgContainerCard
+                          container={cont}
+                          x={contX}
+                          y={contTopY}
+                          onAction={handleContainerAction}
+                          actionLoading={actionLoading}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </svg>
         </div>
       )}
     </div>
@@ -459,7 +646,6 @@ export function ServerSelector({ selectedId, onSelect }: ServerSelectorProps) {
       .then((json) => {
         if (json.success) {
           setServers(json.data || []);
-          // Auto-select first server if none selected
           if (!selectedId && json.data?.length > 0) {
             onSelect(json.data[0].id);
           }

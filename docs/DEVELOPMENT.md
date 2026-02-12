@@ -49,6 +49,25 @@ src/components/
     └── DeployLog.tsx      History with status badges + expandable logs
 ```
 
+### Library Map (`src/lib/`)
+
+| File               | Purpose                                        |
+| ------------------ | ---------------------------------------------- |
+| `api-handler.ts`   | Shared API route handler wrapper               |
+| `audit.ts`         | Audit logging utility                          |
+| `auth.ts`          | JWT sessions + bcrypt                          |
+| `crypto.ts`        | AES-256-GCM encrypt/decrypt                    |
+| `db.ts`            | Prisma client singleton                        |
+| `deployer.ts`      | Git clone + stack detection                    |
+| `local-server.ts`  | Local VPS auto-detection                       |
+| `notifications.ts` | Notification system                            |
+| `sanitize.ts`      | Log sanitization (redact secrets)              |
+| `server-ssh.ts`    | Per-server SSH connection helper               |
+| `sse-stream.ts`    | SSE stream builder                             |
+| `ssh.ts`           | SSH2 wrapper + remote ops                      |
+| `stats.ts`         | Host system stats (os module)                  |
+| `validation.ts`    | Input validation for all user-submitted values |
+
 ---
 
 ## Custom Hooks

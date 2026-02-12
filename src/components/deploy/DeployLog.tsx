@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Clock, RefreshCw } from "lucide-react";
 import type { DeploymentInfo, DeployStatus } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { useSSE } from "@/hooks/useSSE";
 
 const statusVariant: Record<DeployStatus, "success" | "warning" | "danger" | "info" | "default"> = {
   PENDING: "default",
@@ -14,46 +15,47 @@ const statusVariant: Record<DeployStatus, "success" | "warning" | "danger" | "in
   FAILED: "danger",
 };
 
-export function DeployLog() {
-  const [deployments, setDeployments] = useState<DeploymentInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface DeployStreamData {
+  deployments: DeploymentInfo[];
+}
 
-  const fetchDeployments = useCallback(async () => {
+export function DeployLog() {
+  const { data: streamData } = useSSE<DeployStreamData>("/api/deploy/stream", {
+    fallbackPollMs: 10_000,
+  });
+  const [manualData, setManualData] = useState<DeploymentInfo[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const deployments = manualData ?? streamData?.deployments ?? [];
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       const res = await fetch("/api/deploy");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to load deployments");
-      setDeployments(json.data ?? []);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (json.success) {
+        setManualData(json.data ?? []);
+        // Clear manual override after next SSE update
+        setTimeout(() => setManualData(null), 5_000);
+      }
+    } catch {
+      // ignore
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchDeployments();
-    const interval = setInterval(fetchDeployments, 10_000);
-    return () => clearInterval(interval);
-  }, [fetchDeployments]);
+  const loading = !streamData && !manualData;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Deployment History</h2>
-        <Button variant="ghost" size="sm" onClick={fetchDeployments} loading={loading}>
+        <Button variant="ghost" size="sm" onClick={handleRefresh} loading={refreshing}>
           <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
       </div>
-
-      {error && (
-        <p className="rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
-          {error}
-        </p>
-      )}
 
       {loading && deployments.length === 0 ? (
         <div className="flex items-center justify-center py-12">

@@ -35,13 +35,15 @@ export async function verifyPassword(
 export interface SessionPayload extends JWTPayload {
   sub: string; // userId
   username: string;
+  role: string; // "ADMIN" | "OPERATOR" | "VIEWER"
 }
 
 export async function createSessionToken(
   userId: string,
-  username: string
+  username: string,
+  role: string = "ADMIN"
 ): Promise<string> {
-  return new SignJWT({ sub: userId, username })
+  return new SignJWT({ sub: userId, username, role })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)

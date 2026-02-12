@@ -14,6 +14,12 @@ const DEPLOY_TABS = [
   { key: "compose", label: "Docker Compose", icon: <Layers className="h-4 w-4" /> },
 ];
 
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  git: "Clone a Git repository and auto-deploy. The app will detect the stack (Node.js, Python, etc.) and configure Docker automatically.",
+  image: "Pull a Docker image from any registry and run it as a container with custom port mappings and resource limits.",
+  compose: "Deploy a multi-container stack using a docker-compose.yml file. Browse the server's file system to select the project directory.",
+};
+
 export default function DeployPage() {
   const [activeTab, setActiveTab] = useState("git");
 
@@ -23,6 +29,9 @@ export default function DeployPage() {
       <section>
         <h2 className="text-lg font-semibold text-white mb-4">Deploy Application</h2>
         <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={setActiveTab} />
+        <p className="mt-3 text-sm text-gray-400 leading-relaxed">
+          {TAB_DESCRIPTIONS[activeTab]}
+        </p>
       </section>
 
       {/* Deploy Form */}
@@ -32,9 +41,8 @@ export default function DeployPage() {
         {activeTab === "compose" && <DockerComposeDeploy />}
       </section>
 
-      {/* Deployment History */}
+      {/* Deployment History — title is inside DeployLog */}
       <section>
-        <h2 className="text-lg font-semibold text-white mb-4">Deployment History</h2>
         <DeployLog />
       </section>
     </div>

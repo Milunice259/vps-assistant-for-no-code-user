@@ -1,9 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Play } from "lucide-react";
+import { Play, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import type { ApiResponse, ServerInfo } from "@/types";
+
+/* ── Tooltip wrapper ── */
+function Tip({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-flex ml-1 cursor-help">
+      <HelpCircle className="h-3.5 w-3.5 text-gray-500 group-hover:text-gray-300 transition-colors" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+        {text}
+      </span>
+    </span>
+  );
+}
 
 export function DockerImageDeploy() {
   const [servers, setServers] = useState<ServerInfo[]>([]);
@@ -89,7 +101,7 @@ export function DockerImageDeploy() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Target Server" required>
+        <Field label="Target Server" required tooltip="The server where this Docker container will run. Select your local server or any connected remote server.">
           <select
             value={serverId}
             onChange={(e) => setServerId(e.target.value)}
@@ -104,7 +116,7 @@ export function DockerImageDeploy() {
           </select>
         </Field>
 
-        <Field label="Docker Image" required hint="e.g. nginx:latest">
+        <Field label="Docker Image" required tooltip="The Docker image name and tag to pull. Examples: nginx:latest, postgres:16, node:20-alpine">
           <input
             type="text"
             value={image}
@@ -114,7 +126,7 @@ export function DockerImageDeploy() {
           />
         </Field>
 
-        <Field label="Container Name" hint="Optional">
+        <Field label="Container Name" tooltip="A friendly name for this container. If left empty, Docker will auto-generate a random name.">
           <input
             type="text"
             value={name}
@@ -124,7 +136,7 @@ export function DockerImageDeploy() {
           />
         </Field>
 
-        <Field label="Port Mappings" hint="Comma-separated: 8080:80, 443:443">
+        <Field label="Port Mappings" tooltip="Map host ports to container ports so you can access the app. Format: HOST_PORT:CONTAINER_PORT. Separate multiple with commas. Example: 8080:80, 443:443">
           <input
             type="text"
             value={ports}
@@ -134,7 +146,7 @@ export function DockerImageDeploy() {
           />
         </Field>
 
-        <Field label="CPU Limit (cores)" hint="e.g. 0.5">
+        <Field label="CPU Limit (cores)" tooltip="Maximum CPU cores this container can use. Example: 0.5 = half a core, 2 = two cores. Leave empty for no limit.">
           <input
             type="number"
             step="0.1"
@@ -146,7 +158,7 @@ export function DockerImageDeploy() {
           />
         </Field>
 
-        <Field label="Memory Limit (MB)" hint="e.g. 512">
+        <Field label="Memory Limit (MB)" tooltip="Maximum memory (RAM) in megabytes this container can use. Example: 512 = 512 MB. Leave empty for no limit.">
           <input
             type="number"
             min="0"
@@ -158,7 +170,7 @@ export function DockerImageDeploy() {
         </Field>
       </div>
 
-      <Field label="Restart Policy">
+      <Field label="Restart Policy" tooltip="Controls when Docker should auto-restart this container. 'Unless Stopped' is recommended — the container restarts automatically unless you manually stop it.">
         <select
           value={restartPolicy}
           onChange={(e) => setRestartPolicy(e.target.value)}
@@ -180,21 +192,21 @@ export function DockerImageDeploy() {
 
 function Field({
   label,
-  hint,
+  tooltip,
   required,
   children,
 }: {
   label: string;
-  hint?: string;
+  tooltip?: string;
   required?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="block text-xs text-gray-400 mb-1">
+      <label className="flex items-center text-xs text-gray-400 mb-1">
         {label}
         {required && <span className="text-red-400 ml-0.5">*</span>}
-        {hint && <span className="text-gray-600 ml-1">({hint})</span>}
+        {tooltip && <Tip text={tooltip} />}
       </label>
       {children}
     </div>

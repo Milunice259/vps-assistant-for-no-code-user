@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import {
   Container,
   AppWindow,
@@ -9,35 +8,16 @@ import {
   Globe,
   GitBranch,
 } from "lucide-react";
-import type { DashboardSummary, ApiResponse } from "@/types";
+import type { DashboardSummary } from "@/types";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
+import { useSSE } from "@/hooks/useSSE";
 
 export function QuickOverview() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: summary } = useSSE<DashboardSummary>("/api/dashboard/stream", {
+    fallbackPollMs: 30_000,
+  });
 
-  const fetchSummary = useCallback(async () => {
-    try {
-      const res = await fetch("/api/dashboard/summary");
-      const json: ApiResponse<DashboardSummary> = await res.json();
-      if (json.success && json.data) {
-        setSummary(json.data);
-      }
-    } catch {
-      // Silent fail — cards just show 0
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSummary();
-    // Refresh every 30s
-    const interval = setInterval(fetchSummary, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchSummary]);
-
-  if (loading) {
+  if (!summary) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (

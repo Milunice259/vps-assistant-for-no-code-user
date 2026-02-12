@@ -1,9 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Play } from "lucide-react";
+import { Play, HelpCircle, FolderSearch } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { FileBrowser } from "@/components/ui/FileBrowser";
 import type { ApiResponse, ServerInfo } from "@/types";
+
+/* ── Tooltip wrapper ── */
+function Tip({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-flex ml-1 cursor-help">
+      <HelpCircle className="h-3.5 w-3.5 text-gray-500 group-hover:text-gray-300 transition-colors" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+        {text}
+      </span>
+    </span>
+  );
+}
 
 export function DockerComposeDeploy() {
   const [servers, setServers] = useState<ServerInfo[]>([]);
@@ -13,6 +26,7 @@ export function DockerComposeDeploy() {
   const [composeContent, setComposeContent] = useState(DEFAULT_COMPOSE);
   const [deploying, setDeploying] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showBrowser, setShowBrowser] = useState(false);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -78,7 +92,7 @@ export function DockerComposeDeploy() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Field label="Target Server" required>
+        <Field label="Target Server" required tooltip="The server where this compose stack will be deployed and run.">
           <select
             value={serverId}
             onChange={(e) => setServerId(e.target.value)}
@@ -93,17 +107,7 @@ export function DockerComposeDeploy() {
           </select>
         </Field>
 
-        <Field label="Project Path" required hint="Remote directory">
-          <input
-            type="text"
-            value={projectPath}
-            onChange={(e) => setProjectPath(e.target.value)}
-            placeholder="/opt/myproject"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
-          />
-        </Field>
-
-        <Field label="Project Name" hint="Optional">
+        <Field label="Project Name" tooltip="An optional name for this Docker Compose project. Used to group containers together. If empty, the directory name is used.">
           <input
             type="text"
             value={projectName}
@@ -114,7 +118,47 @@ export function DockerComposeDeploy() {
         </Field>
       </div>
 
-      <Field label="docker-compose.yml" required>
+      {/* Project Path with File Browser */}
+      <div className="space-y-2">
+        <Field label="Project Path" required tooltip="The directory on the server where the docker-compose.yml file will be saved.">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={projectPath}
+              onChange={(e) => setProjectPath(e.target.value)}
+              placeholder="/opt/myproject"
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowBrowser(!showBrowser)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors ${
+                showBrowser
+                  ? "bg-brand-500/10 border-brand-500/30 text-brand-400"
+                  : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
+              }`}
+            >
+              <FolderSearch className="h-3.5 w-3.5" />
+              Browse
+            </button>
+          </div>
+        </Field>
+
+        {showBrowser && serverId && (
+          <FileBrowser
+            serverId={serverId}
+            mode="pick-directory"
+            selectedPath={projectPath}
+            onSelect={(path) => setProjectPath(path)}
+            initialPath="/opt"
+          />
+        )}
+        {showBrowser && !serverId && (
+          <p className="text-xs text-yellow-400">Select a server first to browse its file system.</p>
+        )}
+      </div>
+
+      <Field label="docker-compose.yml" required tooltip="The YAML configuration that defines your multi-container application. Edit the template below or paste your own compose file.">
         <textarea
           value={composeContent}
           onChange={(e) => setComposeContent(e.target.value)}
@@ -138,21 +182,21 @@ export function DockerComposeDeploy() {
 
 function Field({
   label,
-  hint,
+  tooltip,
   required,
   children,
 }: {
   label: string;
-  hint?: string;
+  tooltip?: string;
   required?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="block text-xs text-gray-400 mb-1">
+      <label className="flex items-center text-xs text-gray-400 mb-1">
         {label}
         {required && <span className="text-red-400 ml-0.5">*</span>}
-        {hint && <span className="text-gray-600 ml-1">({hint})</span>}
+        {tooltip && <Tip text={tooltip} />}
       </label>
       {children}
     </div>

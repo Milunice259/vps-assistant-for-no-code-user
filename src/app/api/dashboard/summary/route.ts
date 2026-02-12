@@ -95,6 +95,82 @@ function getOSInfo(): OSInfo {
 }
 
 /**
+ * Fetch aggregated dashboard summary data.
+ * Exported so the SSE stream endpoint can reuse this.
+ */
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  // Run all queries in parallel
+  const [
+    containers,
+    dockerNetworks,
+    listeningPorts,
+    serverCount,
+    appCounts,
+    deploymentCounts,
+  ] = await Promise.all([
+    // Docker containers (sync but fast)
+    Promise.resolve(getContainerCounts()),
+    Promise.resolve(getDockerNetworkCount()),
+    Promise.resolve(getListeningPortCount()),
+
+    // DB queries
+    prisma.server.count(),
+    prisma.app.groupBy({
+      by: ["status"],
+      _count: true,
+    }),
+    prisma.deploymentLog.groupBy({
+      by: ["status"],
+      _count: true,
+    }),
+  ]);
+
+  // Aggregate app counts
+  const appTotal = appCounts.reduce((sum, g) => sum + g._count, 0);
+  const appRunning =
+    appCounts.find((g) => g.status === "RUNNING")?._count ?? 0;
+  const appStopped =
+    appCounts.find((g) => g.status === "STOPPED")?._count ?? 0;
+
+  // Aggregate deployment counts
+  const deployTotal = deploymentCounts.reduce((sum, g) => sum + g._count, 0);
+  const deployRunning =
+    deploymentCounts.find((g) => g.status === "RUNNING")?._count ?? 0;
+  const deployFailed =
+    deploymentCounts.find((g) => g.status === "FAILED")?._count ?? 0;
+
+  // Recent deployments (last 24h)
+  const oneDayAgo = new Date(Date.now() - 86400_000);
+  const recentCount = await prisma.deploymentLog.count({
+    where: { createdAt: { gte: oneDayAgo } },
+  });
+
+  return {
+    containers,
+    apps: {
+      total: appTotal,
+      running: appRunning,
+      stopped: appStopped,
+    },
+    servers: {
+      total: serverCount + 1, // +1 for local server
+      active: serverCount + 1, // local is always active
+    },
+    network: {
+      listeningPorts,
+      dockerNetworks,
+    },
+    deployments: {
+      total: deployTotal,
+      running: deployRunning,
+      failed: deployFailed,
+      recent: recentCount,
+    },
+    os: getOSInfo(),
+  };
+}
+
+/**
  * GET /api/dashboard/summary
  *
  * Aggregates counts from containers, apps, servers, network, and deployments
@@ -104,76 +180,7 @@ export async function GET(): Promise<
   NextResponse<ApiResponse<DashboardSummary>>
 > {
   try {
-    // Run all queries in parallel
-    const [
-      containers,
-      dockerNetworks,
-      listeningPorts,
-      serverCount,
-      appCounts,
-      deploymentCounts,
-    ] = await Promise.all([
-      // Docker containers (sync but fast)
-      Promise.resolve(getContainerCounts()),
-      Promise.resolve(getDockerNetworkCount()),
-      Promise.resolve(getListeningPortCount()),
-
-      // DB queries
-      prisma.server.count(),
-      prisma.app.groupBy({
-        by: ["status"],
-        _count: true,
-      }),
-      prisma.deploymentLog.groupBy({
-        by: ["status"],
-        _count: true,
-      }),
-    ]);
-
-    // Aggregate app counts
-    const appTotal = appCounts.reduce((sum, g) => sum + g._count, 0);
-    const appRunning =
-      appCounts.find((g) => g.status === "RUNNING")?._count ?? 0;
-    const appStopped =
-      appCounts.find((g) => g.status === "STOPPED")?._count ?? 0;
-
-    // Aggregate deployment counts
-    const deployTotal = deploymentCounts.reduce((sum, g) => sum + g._count, 0);
-    const deployRunning =
-      deploymentCounts.find((g) => g.status === "RUNNING")?._count ?? 0;
-    const deployFailed =
-      deploymentCounts.find((g) => g.status === "FAILED")?._count ?? 0;
-
-    // Recent deployments (last 24h)
-    const oneDayAgo = new Date(Date.now() - 86400_000);
-    const recentCount = await prisma.deploymentLog.count({
-      where: { createdAt: { gte: oneDayAgo } },
-    });
-
-    const summary: DashboardSummary = {
-      containers,
-      apps: {
-        total: appTotal,
-        running: appRunning,
-        stopped: appStopped,
-      },
-      servers: {
-        total: serverCount + 1, // +1 for local server
-        active: serverCount + 1, // local is always active
-      },
-      network: {
-        listeningPorts,
-        dockerNetworks,
-      },
-      deployments: {
-        total: deployTotal,
-        running: deployRunning,
-        failed: deployFailed,
-        recent: recentCount,
-      },
-      os: getOSInfo(),
-    };
-
+    const summary = await getDashboardSummary();
     return NextResponse.json({ success: true, data: summary });
   } catch (error) {
     const message =

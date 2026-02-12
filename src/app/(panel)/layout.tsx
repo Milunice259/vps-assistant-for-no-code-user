@@ -10,6 +10,9 @@ const pageTitles: Record<string, string> = {
   "/network": "Network Manager",
   "/apps": "Applications",
   "/deploy": "GitHub Deployer",
+  "/terminal": "Terminal",
+  "/audit": "Audit Log",
+  "/settings": "Settings",
 };
 
 export default function PanelLayout({

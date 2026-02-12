@@ -25,6 +25,7 @@ import { AppEnvEditor } from "@/components/apps/AppEnvEditor";
 import { AppSettings } from "@/components/apps/AppSettings";
 import { WebTerminal } from "@/components/apps/WebTerminal";
 import { AppHealthCheck } from "@/components/apps/AppHealthCheck";
+import { useSSE } from "@/hooks/useSSE";
 import type { AppDetailInfo, ContainerStats, AppMetricInfo, ApiResponse, AppStatusType } from "@/types";
 
 function statusBadgeVariant(status: AppStatusType) {
@@ -51,19 +52,49 @@ const APP_TABS = [
   { key: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
+interface AppStreamData {
+  status: string;
+  cpuPercent: number;
+  memUsageMB: number;
+  memLimitMB: number;
+  netIn: number;
+  netOut: number;
+}
+
 export default function AppDetailPage() {
   const params = useParams();
   const router = useRouter();
   const appId = params.id as string;
 
   const [app, setApp] = useState<AppDetailInfo | null>(null);
-  const [liveStats, setLiveStats] = useState<ContainerStats | null>(null);
   const [metrics, setMetrics] = useState<AppMetricInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const fetchApp = useCallback(async (includeStats = true, includeMetrics = false) => {
+  // SSE for live stats — replaces 10s polling
+  const isStatsTab = activeTab === "overview" || activeTab === "resources";
+  const { data: streamStats } = useSSE<AppStreamData>(
+    `/api/apps/${appId}/stream`,
+    { enabled: isStatsTab, fallbackPollMs: 10_000 }
+  );
+
+  // Compute liveStats from SSE stream
+  const liveStats: ContainerStats | null = streamStats
+    ? {
+        cpuPercent: streamStats.cpuPercent,
+        memUsageMB: streamStats.memUsageMB,
+        memLimitMB: streamStats.memLimitMB,
+        memPercent: streamStats.memLimitMB > 0
+          ? (streamStats.memUsageMB / streamStats.memLimitMB) * 100
+          : 0,
+        netIn: streamStats.netIn,
+        netOut: streamStats.netOut,
+        pids: 0,
+      }
+    : null;
+
+  const fetchApp = useCallback(async (includeStats = false, includeMetrics = false) => {
     try {
       const params = new URLSearchParams();
       if (includeStats) params.set("stats", "true");
@@ -72,7 +103,6 @@ export default function AppDetailPage() {
       const json: ApiResponse<AppDetailInfo & { liveStats?: ContainerStats; metrics?: AppMetricInfo[] }> = await res.json();
       if (json.success && json.data) {
         setApp(json.data);
-        if (json.data.liveStats) setLiveStats(json.data.liveStats);
         if (json.data.metrics) setMetrics(json.data.metrics);
       }
     } catch {
@@ -83,15 +113,8 @@ export default function AppDetailPage() {
   }, [appId]);
 
   useEffect(() => {
-    fetchApp(true, true);
+    fetchApp(false, true);
   }, [fetchApp]);
-
-  // Auto-refresh stats every 10 seconds
-  useEffect(() => {
-    if (activeTab !== "overview" && activeTab !== "resources") return;
-    const interval = setInterval(() => fetchApp(true, false), 10_000);
-    return () => clearInterval(interval);
-  }, [activeTab, fetchApp]);
 
   async function handleAction(action: string) {
     setActionLoading(action);

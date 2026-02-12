@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { execOnHost } from "@/lib/local-server";
+import { validatePath } from "@/lib/validation";
 import SSH2Promise from "ssh2-promise";
 
 /**
@@ -20,16 +21,16 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const dirPath = searchParams.get("path") || "/";
 
-    // Validate path — prevent traversal
-    if (dirPath.includes("..") || !dirPath.startsWith("/")) {
+    // Validate path using centralized validator
+    const pathCheck = validatePath(dirPath);
+    if (!pathCheck.valid) {
       return NextResponse.json(
-        { success: false, error: "Invalid path" },
+        { success: false, error: pathCheck.reason },
         { status: 400 }
       );
     }
 
-    // Sanitize path
-    const safePath = dirPath.replace(/[`$(){}|;&]/g, "");
+    const safePath = dirPath;
 
     let entries;
 

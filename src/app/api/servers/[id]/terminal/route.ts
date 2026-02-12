@@ -1,23 +1,20 @@
 /**
  * API: /api/servers/[id]/terminal
  * Execute individual commands on a server (stateless).
+ *
+ * Security: Uses allowlist-based validateTerminalCommand() to restrict
+ * which executables can be run. Only whitelisted commands are permitted.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { execOnHost } from "@/lib/local-server";
+import { validateTerminalCommand } from "@/lib/validation";
+import { auditLog, getClientIp } from "@/lib/audit";
 import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
-
-// Dangerous commands that should be blocked
-const BLOCKED_COMMANDS = [
-  /^rm\s+-rf\s+\/\s*$/,  // rm -rf /
-  /^mkfs/,               // format disk
-  /^dd\s+.*of=\/dev/,    // dd to devices
-  /^:\(\)\s*{\s*:\|:/,   // fork bomb
-];
 
 const MAX_OUTPUT_BYTES = 1_000_000; // 1MB max output
 
@@ -37,17 +34,16 @@ export async function POST(
       );
     }
 
-    // Check for dangerous commands
-    for (const pattern of BLOCKED_COMMANDS) {
-      if (pattern.test(command.trim())) {
-        return NextResponse.json({
-          success: true,
-          data: {
-            output: "\x1b[31mBlocked: This command is not allowed for safety reasons.\x1b[0m\n",
-            exitCode: 1,
-          },
-        });
-      }
+    // ── Validate command against allowlist ──
+    const cmdCheck = validateTerminalCommand(command);
+    if (!cmdCheck.valid) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          output: `\x1b[31mBlocked: ${cmdCheck.reason}\x1b[0m\n`,
+          exitCode: 1,
+        },
+      });
     }
 
     let output: string;
@@ -98,6 +94,14 @@ export async function POST(
     if (output.length > MAX_OUTPUT_BYTES) {
       output = output.slice(0, MAX_OUTPUT_BYTES) + "\n... (output truncated)";
     }
+
+    // Audit log the command execution (fire-and-forget)
+    auditLog({
+      action: "quick_action",
+      target: serverId,
+      details: `Terminal: ${command.slice(0, 200)}`,
+      ip: getClientIp(request),
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

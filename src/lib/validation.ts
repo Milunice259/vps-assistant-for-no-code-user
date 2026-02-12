@@ -156,8 +156,6 @@ export function validateTerminalCommand(cmd: unknown): ValidationResult {
 
 // ─── Compose YAML safety ───
 
-export interface ComposeValidationResult extends Omit<Extract<ValidationResult, { valid: true }> | Extract<ValidationResult, { valid: false }>, never> {}
-
 const COMPOSE_DANGEROUS_KEYS = [
   "privileged",
   "cap_add",

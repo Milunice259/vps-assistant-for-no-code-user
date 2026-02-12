@@ -5,7 +5,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, basename } from "path";
+
+/**
+ * Validate a backup filename — must be a plain .db filename with no path traversal.
+ */
+function isValidBackupName(name: string | null | undefined): name is string {
+  if (!name || !name.endsWith(".db")) return false;
+  // Must be a bare filename — no directory separators or traversal
+  if (name !== basename(name)) return false;
+  if (name.includes("..")) return false;
+  // Only allow safe characters in the filename
+  if (!/^[a-zA-Z0-9_.-]+\.db$/.test(name)) return false;
+  return true;
+}
 
 const DB_PATH = resolve(process.env.DATABASE_URL?.replace("file:", "") || "./prisma/dev.db");
 const BACKUP_DIR = resolve("./backups");
@@ -51,9 +64,9 @@ export async function POST(request: NextRequest) {
     if (action === "restore") {
       // Restore from a backup
       const { name } = body as { name: string };
-      if (!name || !name.endsWith(".db")) {
+      if (!isValidBackupName(name)) {
         return NextResponse.json(
-          { success: false, error: "Valid backup name required" },
+          { success: false, error: "Invalid backup name" },
           { status: 400 }
         );
       }
@@ -119,9 +132,9 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const name = searchParams.get("name");
 
-    if (!name || !name.endsWith(".db")) {
+    if (!isValidBackupName(name)) {
       return NextResponse.json(
-        { success: false, error: "Valid backup name required" },
+        { success: false, error: "Invalid backup name" },
         { status: 400 }
       );
     }

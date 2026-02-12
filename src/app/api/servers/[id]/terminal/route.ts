@@ -12,9 +12,33 @@ import { decrypt } from "@/lib/crypto";
 import { execOnHost } from "@/lib/local-server";
 import { validateTerminalCommand } from "@/lib/validation";
 import { auditLog, getClientIp } from "@/lib/audit";
+import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+// ── Rate limiter (30 commands per 60s per IP) ──
+const rateLimitMap = new Map<string, { count: number; firstAttempt: number }>();
+const MAX_CMDS = 30;
+const WINDOW_MS = 60_000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.firstAttempt > WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, firstAttempt: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > MAX_CMDS;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.firstAttempt > WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, 300_000).unref();
 
 const MAX_OUTPUT_BYTES = 1_000_000; // 1MB max output
 
@@ -24,6 +48,15 @@ export async function POST(
 ) {
   try {
     const { id: serverId } = await context.params;
+    const ip = getClientIp(request);
+
+    if (isRateLimited(ip)) {
+      return NextResponse.json(
+        { success: false, error: "Too many commands. Try again later." },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { command } = body as { command: string };
 
@@ -100,7 +133,7 @@ export async function POST(
       action: "quick_action",
       target: serverId,
       details: `Terminal: ${command.slice(0, 200)}`,
-      ip: getClientIp(request),
+      ip,
     }).catch(() => {});
 
     return NextResponse.json({
@@ -108,7 +141,7 @@ export async function POST(
       data: { output, exitCode },
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Command execution failed";
+    const msg = safeErrorMessage(error, "Command execution failed");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

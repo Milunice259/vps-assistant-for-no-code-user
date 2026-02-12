@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execOnHost } from "@/lib/local-server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
+import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
 
 const ALLOWED_ACTIONS = ["start", "stop", "restart"] as const;
@@ -81,7 +82,7 @@ export async function POST(
       message: `Service "${service}" ${action}ed successfully`,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to execute service action";
+    const message = safeErrorMessage(err, "Failed to execute service action");
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }

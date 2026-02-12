@@ -28,7 +28,10 @@ export type AuditAction =
   | "package_install"
   | "package_upgrade"
   | "file_browse"
-  | "quick_action";
+  | "quick_action"
+  | "backup_create"
+  | "backup_restore"
+  | "backup_delete";
 
 interface AuditEntry {
   action: AuditAction;

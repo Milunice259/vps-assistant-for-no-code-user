@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { isLocalServer, getLocalServerInfo } from "@/lib/local-server";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { ApiResponse, ServerInfo, UpdateServerInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -74,8 +76,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: toServerInfo(server) });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to get server";
+    const message = safeErrorMessage(error, "Failed to get server");
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }
@@ -148,8 +149,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, data: toServerInfo(server) });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to update server";
+    const message = safeErrorMessage(error, "Failed to update server");
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }
@@ -184,10 +184,17 @@ export async function DELETE(
 
     await prisma.server.delete({ where: { id } });
 
+    // Audit log
+    auditLog({
+      action: "server_delete",
+      target: id,
+      details: `Deleted server: ${existing.name} (${existing.host})`,
+      ip: getClientIp(_request),
+    }).catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to delete server";
+    const message = safeErrorMessage(error, "Failed to delete server");
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { execOnHost } from "@/lib/local-server";
 import { validatePath } from "@/lib/validation";
+import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
 
 /**
@@ -53,7 +54,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: entries });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list directory";
+    const message = safeErrorMessage(err, "Failed to list directory");
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }

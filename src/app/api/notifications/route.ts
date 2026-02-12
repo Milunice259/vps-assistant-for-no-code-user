@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNotification } from "@/lib/notifications";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: channels });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch channels";
+    const msg = safeErrorMessage(error, "Failed to fetch channels");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to create";
+    const msg = safeErrorMessage(error, "Failed to create");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -132,7 +133,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to delete";
+    const msg = safeErrorMessage(error, "Failed to delete");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

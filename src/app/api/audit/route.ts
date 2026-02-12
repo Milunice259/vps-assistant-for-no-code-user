@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: entries, total });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch audit logs";
+    const msg = safeErrorMessage(error, "Failed to fetch audit logs");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

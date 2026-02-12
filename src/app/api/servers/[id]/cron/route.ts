@@ -7,9 +7,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { execOnHost } from "@/lib/local-server";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+/**
+ * Escape a string for safe embedding in a single-quoted shell argument.
+ * 'hello' → 'hello'    (no change)
+ * "it's"  → "it'\''s"  (break out, add escaped quote, re-enter)
+ */
+function shellEscapeSingleQuote(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
 
 // ── GET — List current crontab entries ──
 export async function GET(
@@ -23,7 +34,7 @@ export async function GET(
     const jobs = parseCrontab(output);
     return NextResponse.json({ success: true, data: jobs });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to list cron jobs";
+    const msg = safeErrorMessage(error, "Failed to list cron jobs");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -49,25 +60,43 @@ export async function POST(
       );
     }
 
-    // Validate schedule format (5 fields)
-    if (!/^(\S+\s+){4}\S+$/.test(schedule.trim())) {
+    // Validate schedule format (5 fields, no shell metacharacters)
+    const trimmedSchedule = schedule.trim();
+    if (!/^(\S+\s+){4}\S+$/.test(trimmedSchedule)) {
       return NextResponse.json(
         { success: false, error: "Invalid cron schedule (expected 5 fields)" },
         { status: 400 }
       );
     }
 
-    // Sanitize command — prevent injection
-    const safeCommand = command.replace(/[`]/g, "");
+    // Reject shell metacharacters in schedule fields
+    if (/[`$(){}|;&'"\\]/.test(trimmedSchedule)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid characters in cron schedule" },
+        { status: 400 }
+      );
+    }
 
-    // Add to crontab
-    const comment = description ? `# ${description}\n` : "";
-    const addCmd = `(crontab -l 2>/dev/null; echo '${comment}${schedule} ${safeCommand}') | crontab -`;
+    // Sanitize command — escape single quotes to prevent shell injection
+    const safeCommand = shellEscapeSingleQuote(command);
+
+    // Build the crontab entry as a safely-quoted string
+    const comment = description ? `# ${shellEscapeSingleQuote(description)}\n` : "";
+    const cronLine = `${trimmedSchedule} ${safeCommand}`;
+    const addCmd = `(crontab -l 2>/dev/null; echo '${comment}${cronLine}') | crontab -`;
     await execCron(serverId, addCmd);
+
+    // Audit log
+    auditLog({
+      action: "quick_action",
+      target: serverId,
+      details: `Cron add: ${trimmedSchedule} ${command.slice(0, 100)}`,
+      ip: getClientIp(request),
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, message: "Cron job added" });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to add cron job";
+    const msg = safeErrorMessage(error, "Failed to add cron job");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -82,7 +111,7 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const lineNum = parseInt(searchParams.get("line") || "0");
 
-    if (lineNum < 1) {
+    if (lineNum < 1 || lineNum > 9999) {
       return NextResponse.json(
         { success: false, error: "Valid line number required" },
         { status: 400 }
@@ -93,9 +122,17 @@ export async function DELETE(
     const deleteCmd = `crontab -l 2>/dev/null | sed '${lineNum}d' | crontab -`;
     await execCron(serverId, deleteCmd);
 
+    // Audit log
+    auditLog({
+      action: "quick_action",
+      target: serverId,
+      details: `Cron delete: line ${lineNum}`,
+      ip: getClientIp(request),
+    }).catch(() => {});
+
     return NextResponse.json({ success: true, message: "Cron job removed" });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to remove cron job";
+    const msg = safeErrorMessage(error, "Failed to remove cron job");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

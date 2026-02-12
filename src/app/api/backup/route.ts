@@ -6,6 +6,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from "fs";
 import { join, resolve, basename } from "path";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { safeErrorMessage } from "@/lib/safe-error";
+
+// ── Rate limiter (5 operations per 60s per IP) ──
+const rateLimitMap = new Map<string, { count: number; firstAttempt: number }>();
+const MAX_OPS = 5;
+const WINDOW_MS = 60_000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.firstAttempt > WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, firstAttempt: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > MAX_OPS;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.firstAttempt > WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, 300_000).unref();
 
 /**
  * Validate a backup filename — must be a plain .db filename with no path traversal.
@@ -50,7 +75,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, data: files });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to list backups";
+    const msg = safeErrorMessage(error, "Failed to list backups");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -58,6 +83,14 @@ export async function GET() {
 // ── POST — Create a new backup ──
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    if (isRateLimited(ip)) {
+      return NextResponse.json(
+        { success: false, error: "Too many backup operations. Try again later." },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const { action } = body as { action?: string };
 
@@ -87,6 +120,8 @@ export async function POST(request: NextRequest) {
       // Restore
       copyFileSync(backupPath, DB_PATH);
 
+      auditLog({ action: "backup_restore", details: `Restored from ${name}`, ip }).catch(() => {});
+
       return NextResponse.json({
         success: true,
         message: `Restored from ${name}. Pre-restore backup saved as ${preRestoreFile}.`,
@@ -109,6 +144,8 @@ export async function POST(request: NextRequest) {
 
     copyFileSync(DB_PATH, destination);
 
+    auditLog({ action: "backup_create", details: `Created ${backupFile}`, ip }).catch(() => {});
+
     const stat = statSync(destination);
 
     return NextResponse.json({
@@ -121,7 +158,7 @@ export async function POST(request: NextRequest) {
       message: `Backup created: ${backupFile}`,
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Backup failed";
+    const msg = safeErrorMessage(error, "Backup failed");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
@@ -150,9 +187,12 @@ export async function DELETE(request: NextRequest) {
     const { unlinkSync } = await import("fs");
     unlinkSync(backupPath);
 
+    const ip = getClientIp(request);
+    auditLog({ action: "backup_delete", details: `Deleted ${name}`, ip }).catch(() => {});
+
     return NextResponse.json({ success: true, message: `Deleted ${name}` });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to delete backup";
+    const msg = safeErrorMessage(error, "Failed to delete backup");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

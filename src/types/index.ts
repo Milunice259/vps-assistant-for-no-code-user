@@ -40,6 +40,40 @@ export interface SystemStats {
   os?: OSDetails;
 }
 
+// ─── Dashboard Summary ───
+
+export interface DashboardSummary {
+  containers: {
+    total: number;
+    running: number;
+    stopped: number;
+  };
+  apps: {
+    total: number;
+    running: number;
+    stopped: number;
+  };
+  servers: {
+    total: number;
+    active: number;
+  };
+  network: {
+    listeningPorts: number;
+    dockerNetworks: number;
+  };
+  deployments: {
+    total: number;
+    running: number;
+    failed: number;
+    recent: number; // last 24h
+  };
+  os: {
+    distro: string;
+    kernel: string;
+    arch: string;
+  };
+}
+
 // ─── Server (VPS Connection) ───
 
 export interface ServerInfo {
@@ -215,8 +249,8 @@ export interface AppDetailInfo extends AppInfo {
   storageLimit: number | null;
   restartPolicy: string | null;
   healthCheck: string | null;
-  volumes: string | null;      // JSON string
-  ports: string | null;        // JSON string
+  volumes: string | null; // JSON string
+  ports: string | null; // JSON string
   updatedAt: string;
 }
 

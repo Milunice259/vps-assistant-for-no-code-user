@@ -6,6 +6,7 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { CpuGauge } from "@/components/dashboard/CpuGauge";
 import { MemoryBar } from "@/components/dashboard/MemoryBar";
 import { DiskUsage } from "@/components/dashboard/DiskUsage";
+import { QuickOverview } from "@/components/dashboard/QuickOverview";
 import { Cpu, MemoryStick, HardDrive, Clock, Server, Wifi } from "lucide-react";
 
 function formatUptime(seconds: number): string {
@@ -81,6 +82,9 @@ export default function DashboardPage() {
           icon={<Clock className="w-5 h-5" />}
         />
       </div>
+
+      {/* Quick Overview — Clickable resource panels */}
+      <QuickOverview />
 
       {/* Detailed Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

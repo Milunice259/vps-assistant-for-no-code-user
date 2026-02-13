@@ -61,7 +61,12 @@ export function PortTable() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Open Ports</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-white">Open Ports</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Ports currently in use on this server. Each port represents a service accepting connections.
+          </p>
+        </div>
         <Button variant="ghost" size="sm" onClick={fetchPorts} loading={loading}>
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -79,6 +84,10 @@ export function PortTable() {
             <p className="mt-1 text-sm text-yellow-200/70">
               {platformError}
             </p>
+            <p className="mt-2 text-xs text-yellow-200/50">
+              Port scanning uses the <code className="bg-yellow-500/10 px-1 rounded">ss</code> command which is only available on Linux servers.
+              When deployed on a VPS, this section will show all active connections.
+            </p>
           </div>
         </div>
       )}
@@ -95,12 +104,42 @@ export function PortTable() {
         <table className="w-full text-left text-sm">
           <thead className="border-b border-gray-700 bg-gray-800/50 text-xs uppercase text-gray-400">
             <tr>
-              <th className="px-4 py-3">Protocol</th>
-              <th className="px-4 py-3">Local Address</th>
-              <th className="px-4 py-3">Port</th>
-              <th className="px-4 py-3">Foreign Address</th>
-              <th className="px-4 py-3">State</th>
-              <th className="px-4 py-3">Process</th>
+              <th className="px-4 py-3 relative group cursor-help">
+                Protocol
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  TCP or UDP — the communication method used
+                </span>
+              </th>
+              <th className="px-4 py-3 relative group cursor-help">
+                Local Address
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  The IP address on this server where the service is listening
+                </span>
+              </th>
+              <th className="px-4 py-3 relative group cursor-help">
+                Port
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  A numbered address where the program listens for network traffic
+                </span>
+              </th>
+              <th className="px-4 py-3 relative group cursor-help">
+                Foreign Address
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  The remote address that is connected (or * if waiting for connections)
+                </span>
+              </th>
+              <th className="px-4 py-3 relative group cursor-help">
+                State
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  LISTEN = waiting for connections, ESTABLISHED = active connection
+                </span>
+              </th>
+              <th className="px-4 py-3 relative group cursor-help">
+                Process
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 normal-case font-normal">
+                  The program or service using this port
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">

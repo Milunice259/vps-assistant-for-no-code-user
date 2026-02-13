@@ -287,6 +287,7 @@ export function PackageManager() {
                 <thead className="sticky top-0 border-b border-gray-700 bg-gray-800 text-xs uppercase text-gray-400">
                   <tr>
                     <th className="px-4 py-3">Package</th>
+                    <th className="px-4 py-3">Description</th>
                     <th className="px-4 py-3">Version</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Upgrade</th>
@@ -301,10 +302,10 @@ export function PackageManager() {
                         className="bg-gray-800 transition-colors hover:bg-gray-750"
                       >
                         <td className="px-4 py-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-white">{pkg.name}</span>
-                            {desc && <Tip text={desc} />}
-                          </div>
+                          <span className="font-mono text-white">{pkg.name}</span>
+                        </td>
+                        <td className="px-4 py-2 text-xs text-gray-400 max-w-[200px]">
+                          {desc || <span className="text-gray-600">—</span>}
                         </td>
                         <td className="px-4 py-2 font-mono text-gray-400">
                           {pkg.version}

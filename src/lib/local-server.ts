@@ -198,6 +198,7 @@ export function getLocalServices() {
 const DOCKER_ACTIONS = new Set([
   "docker-prune",
   "docker-stats",
+  "check-docker-version",
 ]);
 
 /** Command map: all host-level commands run via nsenter */
@@ -212,6 +213,10 @@ const LOCAL_ACTION_COMMANDS: Record<string, string> = {
   "docker-stats":     'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}"',
   "sync-time":        "timedatectl set-ntp true; chronyc -a makestep 2>/dev/null || ntpdate -u pool.ntp.org 2>/dev/null || echo NTP sync attempted",
   "restart-server":   "reboot",
+  "check-uptime":     "uptime",
+  "check-memory":     "free -h",
+  "check-connections": "ss -s",
+  "check-docker-version": 'docker version --format "Client: {{.Client.Version}}, Server: {{.Server.Version}}"',
 };
 
 /**

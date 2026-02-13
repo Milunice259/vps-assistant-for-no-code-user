@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Container,
-  AppWindow,
-  Server,
-  Network,
-  Globe,
-  GitBranch,
-} from "lucide-react";
+import { Container, Server, Network, Globe, GitBranch } from "lucide-react";
 import type { DashboardSummary } from "@/types";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { useSSE } from "@/hooks/useSSE";
@@ -20,7 +13,7 @@ export function QuickOverview() {
   if (!summary) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
             className="h-[104px] rounded-xl bg-gray-800 border border-gray-700/60 animate-pulse"
@@ -34,22 +27,14 @@ export function QuickOverview() {
 
   const cards = [
     {
-      title: "Containers",
+      title: "Applications",
       value: summary.containers.total,
       breakdown: `${summary.containers.running} running · ${summary.containers.stopped} stopped`,
+      subtitle: "Docker containers",
       icon: <Container className="w-5 h-5" />,
       href: "/apps",
       color: "text-sky-400",
       glowColor: "hover:shadow-sky-500/10",
-    },
-    {
-      title: "Applications",
-      value: summary.apps.total,
-      breakdown: `${summary.apps.running} running · ${summary.apps.stopped} stopped`,
-      icon: <AppWindow className="w-5 h-5" />,
-      href: "/apps",
-      color: "text-violet-400",
-      glowColor: "hover:shadow-violet-500/10",
     },
     {
       title: "Servers",
@@ -83,9 +68,10 @@ export function QuickOverview() {
       title: "Deployments",
       value: summary.deployments.total,
       breakdown: `${summary.deployments.running} live · ${summary.deployments.failed} failed`,
-      subtitle: summary.deployments.recent > 0
-        ? `${summary.deployments.recent} in last 24h`
-        : undefined,
+      subtitle:
+        summary.deployments.recent > 0
+          ? `${summary.deployments.recent} in last 24h`
+          : undefined,
       icon: <GitBranch className="w-5 h-5" />,
       href: "/deploy",
       color: "text-pink-400",

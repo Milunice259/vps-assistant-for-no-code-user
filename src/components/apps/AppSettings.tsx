@@ -86,9 +86,10 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
 
       {/* General */}
       <section>
-        <h3 className="text-sm font-medium text-gray-300 mb-3">General</h3>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">General</h3>
+        <p className="text-xs text-gray-500 mb-3">Basic identification for this application.</p>
         <div className="space-y-3">
-          <Field label="App Name">
+          <Field label="App Name" hint="Display name used in the dashboard and logs">
             <input
               type="text"
               value={form.name || ""}
@@ -96,7 +97,7 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none"
             />
           </Field>
-          <Field label="Domain">
+          <Field label="Domain" hint="Custom domain for accessing this app via Traefik reverse proxy">
             <input
               type="text"
               placeholder="e.g., myapp.example.com"
@@ -110,9 +111,10 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
 
       {/* Resource Limits */}
       <section>
-        <h3 className="text-sm font-medium text-gray-300 mb-3">Resource Limits</h3>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">Resource Limits</h3>
+        <p className="text-xs text-gray-500 mb-3">Control how much server resources this app can use. Leave empty for unlimited.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="CPU Limit (cores)" hint="e.g., 0.5 = half core">
+          <Field label="CPU Limit (cores)" hint="0.5 = half a CPU core, 1 = one core. Leave empty for no limit.">
             <input
               type="number"
               step="0.1"
@@ -125,7 +127,7 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
             />
           </Field>
-          <Field label="Memory Limit (MB)" hint="e.g., 512">
+          <Field label="Memory Limit (MB)" hint="512 = 512 megabytes of RAM. Prevents app from using too much memory.">
             <input
               type="number"
               min="0"
@@ -137,7 +139,7 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
             />
           </Field>
-          <Field label="Storage Limit (MB)">
+          <Field label="Storage Limit (MB)" hint="Maximum disk space this container can use.">
             <input
               type="number"
               min="0"
@@ -154,9 +156,10 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
 
       {/* Container Config */}
       <section>
-        <h3 className="text-sm font-medium text-gray-300 mb-3">Container Configuration</h3>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">Container Configuration</h3>
+        <p className="text-xs text-gray-500 mb-3">Docker container behavior and health monitoring settings.</p>
         <div className="space-y-3">
-          <Field label="Restart Policy">
+          <Field label="Restart Policy" hint="What should Docker do when the container crashes or the server reboots?">
             <select
               value={form.restartPolicy || ""}
               onChange={(e) => updateField("restartPolicy", e.target.value || null)}
@@ -167,7 +170,7 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
               ))}
             </select>
           </Field>
-          <Field label="Health Check Command" hint="e.g., curl -f http://localhost:3000/health">
+          <Field label="Health Check Command" hint="A command that Docker runs periodically to check if your app is healthy. If it fails, Docker marks the container as unhealthy.">
             <input
               type="text"
               placeholder="No health check"

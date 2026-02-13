@@ -179,7 +179,7 @@ export function DeployForm() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="">Select a server...</option>
-              {servers.map((s) => (
+              {servers.filter((s) => s.id !== "local").map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.host})
                 </option>

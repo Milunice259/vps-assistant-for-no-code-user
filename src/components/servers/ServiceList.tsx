@@ -183,10 +183,29 @@ export function ServiceList({ serverId }: ServiceListProps) {
   }
 
   if (error) {
+    // Detect nsenter / host access failures and show a friendly message
+    const isHostAccessError =
+      error.includes("nsenter") ||
+      error.includes("Operation not permitted") ||
+      error.includes("systemctl") ||
+      error.includes("command not found");
+
     return (
       <div className="flex flex-col items-center gap-3 py-12">
-        <AlertCircle className="h-8 w-8 text-red-400" />
-        <p className="text-sm text-red-400">{error}</p>
+        <AlertCircle className="h-8 w-8 text-amber-400" />
+        <div className="text-center max-w-md">
+          {isHostAccessError ? (
+            <>
+              <p className="text-sm text-amber-300 font-medium">Host Access Unavailable</p>
+              <p className="text-xs text-gray-400 mt-1">
+                System services require direct host access (pid:host mode in Docker).
+                This feature works when the app is deployed on a Linux VPS via Docker Compose.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-red-400">{error}</p>
+          )}
+        </div>
         <Button variant="secondary" size="sm" onClick={fetchServices}>
           Retry
         </Button>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
-  MessageSquare, Hash, Bot
+  MessageSquare, Hash, Bot, Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -260,6 +260,121 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+
+      {/* ── Docker Defaults ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <svg className="h-5 w-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="4" height="6" rx="1"/><rect x="8" y="4" width="4" height="8" rx="1"/><rect x="14" y="2" width="4" height="10" rx="1"/><rect x="20" y="8" width="4" height="4" rx="1"/></svg>
+          <h2 className="text-lg font-semibold text-white">Docker Defaults</h2>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Default settings applied to newly deployed containers. These can be overridden per-app in App Settings.
+        </p>
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+          <SettingsField
+            label="Default Restart Policy"
+            hint="What should happen when a container crashes or the server reboots? 'unless-stopped' is recommended for most cases."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="unless-stopped">Unless stopped (recommended)</option>
+              <option value="always">Always</option>
+              <option value="on-failure">On failure</option>
+              <option value="">None</option>
+            </select>
+          </SettingsField>
+          <SettingsField
+            label="Auto-Cleanup Schedule"
+            hint="Docker accumulates unused images and containers over time. This setting automatically cleans them up to free disk space."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="weekly">Weekly (recommended)</option>
+              <option value="daily">Daily</option>
+              <option value="monthly">Monthly</option>
+              <option value="never">Never</option>
+            </select>
+          </SettingsField>
+          <SettingsField
+            label="Default Memory Limit"
+            hint="Maximum RAM for new containers. Leave at 0 for unlimited. 512 MB is a safe default for most apps."
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                defaultValue={0}
+                min={0}
+                placeholder="0"
+                className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600"
+              />
+              <span className="text-xs text-gray-500">MB (0 = unlimited)</span>
+            </div>
+          </SettingsField>
+        </div>
+      </section>
+
+      {/* ── Security ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <Shield className="h-5 w-5 text-amber-400" />
+          <h2 className="text-lg font-semibold text-white">Security</h2>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Login and session security preferences for the admin panel.
+        </p>
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+          <SettingsField
+            label="Session Timeout"
+            hint="How long you stay logged in without activity before being automatically signed out."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="1h">1 hour</option>
+              <option value="8h">8 hours</option>
+              <option value="24h">24 hours (default)</option>
+              <option value="7d">7 days</option>
+            </select>
+          </SettingsField>
+          <SettingsField
+            label="Failed Login Lockout"
+            hint="After this many failed login attempts, the account is temporarily locked to prevent brute-force attacks."
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                defaultValue={5}
+                min={3}
+                max={20}
+                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+              <span className="text-xs text-gray-500">attempts before lockout</span>
+            </div>
+          </SettingsField>
+        </div>
+      </section>
+
+      {/* ── About ── */}
+      <section className="text-center py-4">
+        <p className="text-xs text-gray-600">
+          VPS Control App · Built for non-technical server management
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/** Settings field with label and description */
+function SettingsField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-300 mb-0.5">{label}</label>
+      <p className="text-xs text-gray-500 mb-2">{hint}</p>
+      {children}
     </div>
   );
 }

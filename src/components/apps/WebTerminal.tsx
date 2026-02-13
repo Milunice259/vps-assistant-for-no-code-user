@@ -20,7 +20,8 @@ interface TermLine {
 export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
   const [lines, setLines] = useState<TermLine[]>([
     { type: "info", text: `Connected to container: ${appName}` },
-    { type: "info", text: "Type commands below. Each command runs via docker exec." },
+    { type: "info", text: "Commands run inside this container via docker exec." },
+    { type: "info", text: "Some commands may not be available depending on the container's base image." },
     { type: "info", text: "" },
   ]);
   const [input, setInput] = useState("");
@@ -159,6 +160,23 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
           <div className="text-gray-500 animate-pulse">Running...</div>
         )}
       </div>
+
+      {/* Command suggestions */}
+      {lines.length <= 4 && (
+        <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-gray-800/50">
+          <span className="text-[10px] text-gray-600 mr-1 self-center">Quick:</span>
+          {["ls", "env", "whoami", "cat /etc/os-release", "ps aux", "df -h", "free -h"].map((cmd) => (
+            <button
+              key={cmd}
+              onClick={() => execCommand(cmd)}
+              disabled={running}
+              className="text-[10px] px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50"
+            >
+              {cmd}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input */}
       <div className="flex items-center border-t border-gray-800 px-4 py-2 gap-2">

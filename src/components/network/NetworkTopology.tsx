@@ -390,32 +390,47 @@ export function NetworkTopologyView({ serverId }: NetworkTopologyViewProps) {
       {/* ── Summary Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-3">
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
             <Network className="h-4 w-4 text-purple-400" />
             <span className="text-xs text-gray-400">Networks</span>
             <span className="text-sm font-semibold text-white">{topology.networks.length}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              Docker networks connect containers so they can communicate with each other. Think of them as virtual LAN cables.
+            </span>
           </div>
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
             <Box className="h-4 w-4 text-blue-400" />
             <span className="text-xs text-gray-400">Containers</span>
             <span className="text-sm font-semibold text-white">{totalContainers}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              Containers are isolated environments that run your applications. Each app typically runs in its own container.
+            </span>
           </div>
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
             <div className="h-2 w-2 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20" />
             <span className="text-xs text-gray-400">Running</span>
             <span className="text-sm font-semibold text-emerald-400">{runningContainers}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              How many containers are currently active and serving traffic.
+            </span>
           </div>
           {stoppedContainers > 0 && (
-            <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+            <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
               <div className="h-2 w-2 rounded-full bg-red-400 ring-4 ring-red-400/20" />
               <span className="text-xs text-gray-400">Stopped</span>
               <span className="text-sm font-semibold text-red-400">{stoppedContainers}</span>
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                Containers that have been stopped or exited. They can be restarted.
+              </span>
             </div>
           )}
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
             <Globe className="h-4 w-4 text-amber-400" />
             <span className="text-xs text-gray-400">Ports</span>
             <span className="text-sm font-semibold text-white">{listeningPorts.length}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              Ports are numbered addresses where programs listen for incoming connections (like doors into your server).
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

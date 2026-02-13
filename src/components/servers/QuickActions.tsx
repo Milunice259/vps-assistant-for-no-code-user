@@ -1,155 +1,188 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  Download,
+  Zap,
+  RefreshCw,
   Trash2,
-  RotateCw,
-  WifiOff,
-  Terminal,
   HardDrive,
-  ScrollText,
   Shield,
-  BarChart3,
+  Server,
   Clock,
-  Power,
-  Sparkles,
+  Container,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Timer,
+  Network,
+  MemoryStick,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
-interface QuickActionsProps {
-  serverId: string;
+/* ── Friendly error mapping ── */
+function friendlyErrorMessage(raw: string): string {
+  if (raw.includes("nsenter") && raw.includes("Operation not permitted")) {
+    return "Host access unavailable. The app needs to run with pid:host mode in Docker to manage the host system.";
+  }
+  if (raw.includes("permission denied") || raw.includes("Permission denied")) {
+    return "Permission denied. This action requires elevated privileges on the server.";
+  }
+  if (raw.includes("command not found")) {
+    const match = raw.match(/(\S+):\s*command not found/);
+    return match
+      ? `The command "${match[1]}" is not installed on this server.`
+      : "A required command is not installed on this server.";
+  }
+  if (raw.includes("Connection refused") || raw.includes("connect ECONNREFUSED")) {
+    return "Could not connect to the server. Make sure the server is online and accessible.";
+  }
+  if (raw.includes("timeout") || raw.includes("Timeout")) {
+    return "The operation timed out. The server may be busy — try again later.";
+  }
+  if (raw.includes("No space left on device")) {
+    return "The server's disk is full. Free up space before trying again.";
+  }
+  // Truncate very long technical messages
+  if (raw.length > 300) {
+    return raw.slice(0, 250) + "… (truncated)";
+  }
+  return raw;
 }
 
-interface ActionConfig {
+/* ── Action result type ── */
+interface ActionResult {
+  status: "idle" | "loading" | "success" | "error";
+  message?: string;
+  timestamp?: number;
+}
+
+/* ── Action definition ── */
+interface ActionDef {
   key: string;
   label: string;
   description: string;
   icon: React.ReactNode;
-  confirmTitle: string;
-  confirmMessage: string;
-  variant: "primary" | "secondary" | "danger";
   category: "maintenance" | "cleanup" | "info" | "system";
+  confirmMessage?: string;
+  autoRun?: boolean; // Actions that run automatically on first load
 }
 
-const ACTIONS: ActionConfig[] = [
-  // ── Maintenance ──
+const ACTIONS: ActionDef[] = [
+  // Maintenance
   {
     key: "system-update",
     label: "System Update",
-    description: "Update and upgrade all system packages",
-    icon: <Download className="h-5 w-5" />,
-    confirmTitle: "System Update",
-    confirmMessage:
-      "This will run 'apt update && apt upgrade -y' to update all system packages. This may take several minutes.",
-    variant: "primary",
+    description: "Update all system packages to the latest versions",
+    icon: <RefreshCw className="h-4 w-4" />,
     category: "maintenance",
+    confirmMessage: "This will update all system packages. Continue?",
   },
   {
     key: "security-updates",
-    label: "Check Updates",
-    description: "List available package upgrades",
-    icon: <Shield className="h-5 w-5" />,
-    confirmTitle: "Check Available Updates",
-    confirmMessage:
-      "This will refresh the package list and show which packages have updates available. No changes will be made.",
-    variant: "secondary",
+    label: "Security Updates",
+    description: "Check for available security patches",
+    icon: <Shield className="h-4 w-4" />,
     category: "maintenance",
+    autoRun: true,
   },
   {
     key: "sync-time",
-    label: "Sync Clock",
+    label: "Sync Time",
     description: "Synchronize system clock with NTP servers",
-    icon: <Clock className="h-5 w-5" />,
-    confirmTitle: "Sync System Clock",
-    confirmMessage:
-      "This will enable NTP and synchronize the system clock. This is safe and usually instant.",
-    variant: "secondary",
+    icon: <Clock className="h-4 w-4" />,
     category: "maintenance",
   },
 
-  // ── Cleanup ──
+  // Cleanup
   {
     key: "docker-prune",
-    label: "Docker Cleanup",
-    description: "Remove unused images, containers, and volumes",
-    icon: <Trash2 className="h-5 w-5" />,
-    confirmTitle: "Clean Docker System",
-    confirmMessage:
-      "This will run 'docker system prune -af' and remove all unused Docker images, containers, networks, and volumes. This action cannot be undone.",
-    variant: "danger",
+    label: "Docker Prune",
+    description: "Remove unused images, containers, and volumes to free space",
+    icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
+    confirmMessage: "This will remove all unused Docker resources. Running containers are not affected. Continue?",
   },
   {
     key: "clear-apt-cache",
-    label: "Clear APT Cache",
-    description: "Remove downloaded package cache files",
-    icon: <Sparkles className="h-5 w-5" />,
-    confirmTitle: "Clear APT Cache",
-    confirmMessage:
-      "This will run 'apt clean && apt autoclean' to remove cached package files. This is safe and frees disk space.",
-    variant: "secondary",
+    label: "Clear Package Cache",
+    description: "Remove cached package files to free disk space",
+    icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
   },
   {
     key: "clear-logs",
     label: "Clear Old Logs",
     description: "Remove system logs older than 3 days",
-    icon: <ScrollText className="h-5 w-5" />,
-    confirmTitle: "Clear Old Logs",
-    confirmMessage:
-      "This will run 'journalctl --vacuum-time=3d' to remove system logs older than 3 days. Recent logs will be kept.",
-    variant: "secondary",
+    icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
   },
 
-  // ── Info ──
+  // Info
   {
     key: "check-disk",
     label: "Disk Usage",
-    description: "Show disk space usage for all filesystems",
-    icon: <HardDrive className="h-5 w-5" />,
-    confirmTitle: "Check Disk Usage",
-    confirmMessage: "This will display disk space usage. No changes will be made.",
-    variant: "secondary",
+    description: "Show how much disk space is used on each partition",
+    icon: <HardDrive className="h-4 w-4" />,
     category: "info",
+    autoRun: true,
   },
   {
     key: "docker-stats",
     label: "Docker Stats",
-    description: "Show CPU and memory usage per container",
-    icon: <BarChart3 className="h-5 w-5" />,
-    confirmTitle: "Docker Container Stats",
-    confirmMessage:
-      "This will show a snapshot of CPU, memory, and network usage for each running container.",
-    variant: "secondary",
+    description: "Show CPU, memory, and network usage for all containers",
+    icon: <Container className="h-4 w-4" />,
+    category: "info",
+    autoRun: true,
+  },
+  {
+    key: "check-uptime",
+    label: "System Uptime",
+    description: "Show how long the server has been running",
+    icon: <Timer className="h-4 w-4" />,
+    category: "info",
+    autoRun: true,
+  },
+  {
+    key: "check-memory",
+    label: "Memory Details",
+    description: "Show detailed memory (RAM) usage breakdown",
+    icon: <MemoryStick className="h-4 w-4" />,
+    category: "info",
+    autoRun: true,
+  },
+  {
+    key: "check-connections",
+    label: "Network Summary",
+    description: "Show a summary of all active network connections",
+    icon: <Network className="h-4 w-4" />,
     category: "info",
   },
+  {
+    key: "check-docker-version",
+    label: "Docker Version",
+    description: "Show the installed Docker engine version",
+    icon: <Info className="h-4 w-4" />,
+    category: "info",
+    autoRun: true,
+  },
 
-  // ── System ──
+  // System
   {
     key: "restart-docker",
     label: "Restart Docker",
-    description: "Restart the Docker daemon service",
-    icon: <RotateCw className="h-5 w-5" />,
-    confirmTitle: "Restart Docker Service",
-    confirmMessage:
-      "This will restart the Docker daemon. Running containers will be briefly interrupted while the service restarts.",
-    variant: "secondary",
+    description: "Restart the Docker daemon (briefly interrupts all containers)",
+    icon: <RefreshCw className="h-4 w-4" />,
     category: "system",
+    confirmMessage: "Restarting Docker will briefly interrupt all running containers. Continue?",
   },
   {
     key: "restart-server",
     label: "Restart Server",
-    description: "Reboot the entire server",
-    icon: <Power className="h-5 w-5" />,
-    confirmTitle: "⚠ Restart Server",
-    confirmMessage:
-      "This will REBOOT the entire server. All running services and containers will be stopped. The server will be unavailable for 1-2 minutes. Are you absolutely sure?",
-    variant: "danger",
+    description: "Reboot the entire server (all services will restart)",
+    icon: <Server className="h-4 w-4" />,
     category: "system",
+    confirmMessage: "This will reboot the server. All services will be temporarily unavailable. Are you sure?",
   },
 ];
 
@@ -157,137 +190,269 @@ const CATEGORY_LABELS: Record<string, string> = {
   maintenance: "🔧 Maintenance",
   cleanup: "🧹 Cleanup",
   info: "📊 Information",
-  system: "⚙ System",
+  system: "⚙️ System",
 };
 
-const CATEGORY_ORDER = ["maintenance", "cleanup", "info", "system"];
+const CATEGORY_ORDER = ["info", "maintenance", "cleanup", "system"];
+
+/* ── localStorage key for auto-run timestamps ── */
+function autoRunKey(serverId: string): string {
+  return `quickactions-autorun-${serverId}`;
+}
+
+function getLastAutoRun(serverId: string): number {
+  try {
+    const raw = localStorage.getItem(autoRunKey(serverId));
+    return raw ? parseInt(raw, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setLastAutoRun(serverId: string): void {
+  try {
+    localStorage.setItem(autoRunKey(serverId), String(Date.now()));
+  } catch {
+    // Ignore
+  }
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/* ── Main component ── */
+
+interface QuickActionsProps {
+  serverId: string;
+}
 
 export function QuickActions({ serverId }: QuickActionsProps) {
-  const [runningAction, setRunningAction] = useState<string | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
-  const [outputAction, setOutputAction] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [disconnected, setDisconnected] = useState(false);
+  const [results, setResults] = useState<Record<string, ActionResult>>({});
+  const [confirming, setConfirming] = useState<string | null>(null);
 
-  // Confirmation dialog state
-  const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null);
+  const updateResult = useCallback(
+    (key: string, result: ActionResult) => {
+      setResults((prev) => ({ ...prev, [key]: result }));
+    },
+    []
+  );
 
-  const handleConfirm = useCallback(async () => {
-    if (!pendingAction) return;
-    const action = pendingAction;
-    setPendingAction(null);
+  const executeAction = useCallback(
+    async (action: ActionDef) => {
+      updateResult(action.key, { status: "loading" });
 
-    setRunningAction(action.key);
-    setOutput(null);
-    setOutputAction(null);
-    setError(null);
-    setDisconnected(false);
+      try {
+        const res = await fetch(`/api/servers/${serverId}/actions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: action.key }),
+        });
+        const json = await res.json();
 
-    try {
-      const res = await fetch(`/api/servers/${serverId}/actions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: action.key }),
-      });
-      const json = await res.json();
-
-      if (json.code === "DISCONNECTED") {
-        setDisconnected(true);
-        return;
+        if (json.success) {
+          updateResult(action.key, {
+            status: "success",
+            message: json.data?.output || "Done",
+            timestamp: Date.now(),
+          });
+        } else {
+          updateResult(action.key, {
+            status: "error",
+            message: friendlyErrorMessage(json.error || json.data?.output || "Action failed"),
+            timestamp: Date.now(),
+          });
+        }
+      } catch {
+        updateResult(action.key, {
+          status: "error",
+          message: "Network error — could not reach the server.",
+          timestamp: Date.now(),
+        });
       }
+    },
+    [serverId, updateResult]
+  );
 
-      if (!json.success) {
-        setError(json.error || "Action failed");
-        return;
-      }
+  // Auto-run informational actions once per day
+  useEffect(() => {
+    const lastRun = getLastAutoRun(serverId);
+    const now = Date.now();
 
-      setOutput(json.data?.output || "Done (no output)");
-      setOutputAction(action.label);
-    } catch {
-      setError("Failed to connect to server");
-    } finally {
-      setRunningAction(null);
+    if (now - lastRun < ONE_DAY_MS) return; // Already ran today
+
+    const autoActions = ACTIONS.filter((a) => a.autoRun);
+    setLastAutoRun(serverId);
+
+    // Stagger execution to avoid overloading the server
+    autoActions.forEach((action, idx) => {
+      setTimeout(() => executeAction(action), idx * 800);
+    });
+  }, [serverId, executeAction]);
+
+  function handleActionClick(action: ActionDef) {
+    if (action.confirmMessage) {
+      setConfirming(action.key);
+    } else {
+      executeAction(action);
     }
-  }, [pendingAction, serverId]);
+  }
 
-  // Group actions by category
-  const groupedActions = CATEGORY_ORDER.map((cat) => ({
+  function handleConfirm(action: ActionDef) {
+    setConfirming(null);
+    executeAction(action);
+  }
+
+  // Group by category
+  const grouped = CATEGORY_ORDER.map((cat) => ({
     category: cat,
     label: CATEGORY_LABELS[cat],
-    items: ACTIONS.filter((a) => a.category === cat),
+    actions: ACTIONS.filter((a) => a.category === cat),
   }));
 
   return (
     <div className="space-y-6">
-      {disconnected && (
-        <div className="flex items-center gap-3 p-4 bg-gray-800 border border-gray-700 rounded-xl">
-          <WifiOff className="h-5 w-5 text-gray-500" />
-          <p className="text-sm text-gray-400">Server is offline or unreachable</p>
-        </div>
-      )}
-
-      {groupedActions.map((group) => (
-        <div key={group.category} className="space-y-3">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-gray-500">
+      {grouped.map((group) => (
+        <div key={group.category}>
+          <h3 className="text-sm font-medium text-gray-400 mb-3">
             {group.label}
           </h3>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {group.items.map((action) => (
-              <Card key={action.key} className="flex flex-col">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="p-2 rounded-lg bg-gray-700/50 text-gray-300">
-                    {action.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium text-white">{action.label}</h4>
-                    <p className="text-xs text-gray-500 mt-0.5">{action.description}</p>
-                  </div>
-                </div>
-                <Button
-                  variant={action.variant}
-                  size="sm"
-                  loading={runningAction === action.key}
-                  disabled={runningAction !== null}
-                  onClick={() => setPendingAction(action)}
-                  className="w-full mt-auto"
-                >
-                  Run
-                </Button>
-              </Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {group.actions.map((action) => (
+              <ActionCard
+                key={action.key}
+                action={action}
+                result={results[action.key] || { status: "idle" }}
+                confirming={confirming === action.key}
+                onRun={() => handleActionClick(action)}
+                onConfirm={() => handleConfirm(action)}
+                onCancel={() => setConfirming(null)}
+              />
             ))}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
 
-      {/* Command output */}
-      {(output || error) && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm">
-            <Terminal className="h-4 w-4 text-gray-500" />
-            <span className="text-gray-400">
-              {error ? "Error" : `Output: ${outputAction}`}
-            </span>
+/* ── Action Card ── */
+function ActionCard({
+  action,
+  result,
+  confirming,
+  onRun,
+  onConfirm,
+  onCancel,
+}: {
+  action: ActionDef;
+  result: ActionResult;
+  confirming: boolean;
+  onRun: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isLoading = result.status === "loading";
+
+  // Status indicator color
+  const statusIcon = {
+    idle: null,
+    loading: <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-400" />,
+    success: <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />,
+    error: <XCircle className="h-3.5 w-3.5 text-red-400" />,
+  };
+
+  const borderColor = {
+    idle: "border-gray-700",
+    loading: "border-brand-500/40",
+    success: "border-emerald-500/30",
+    error: "border-red-500/30",
+  };
+
+  return (
+    <div
+      className={`bg-gray-900 border ${borderColor[result.status]} rounded-lg p-4 transition-colors`}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 text-gray-300">
+          {action.icon}
+          <span className="text-sm font-medium">{action.label}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {statusIcon[result.status]}
+        </div>
+      </div>
+
+      {/* Description */}
+      <p className="text-xs text-gray-500 mb-3">{action.description}</p>
+
+      {/* Confirm Dialog (inline) */}
+      {confirming && (
+        <div className="mb-3 p-2.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-yellow-300">{action.confirmMessage}</p>
           </div>
-          <pre className="bg-gray-950 border border-gray-800 rounded-lg p-4 text-xs text-gray-300 max-h-[300px] overflow-auto font-mono whitespace-pre-wrap">
-            {error ? (
-              <span className="text-red-400">{error}</span>
-            ) : (
-              output
-            )}
-          </pre>
+          <div className="flex gap-2 mt-2">
+            <Button variant="danger" size="sm" onClick={onConfirm}>
+              Yes, proceed
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* Custom confirm dialog */}
-      <ConfirmDialog
-        open={pendingAction !== null}
-        title={pendingAction?.confirmTitle || ""}
-        message={pendingAction?.confirmMessage || ""}
-        confirmLabel="Run"
-        variant={pendingAction?.variant === "danger" ? "danger" : "primary"}
-        onConfirm={handleConfirm}
-        onCancel={() => setPendingAction(null)}
-      />
+      {/* Result area */}
+      {result.status === "success" && result.message && (
+        <div className="mb-3">
+          <div
+            className="text-xs text-emerald-300/80 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 font-mono leading-relaxed cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <pre className={`whitespace-pre-wrap break-all ${expanded ? "" : "max-h-20 overflow-hidden"}`}>
+              {result.message}
+            </pre>
+            {!expanded && result.message.length > 150 && (
+              <span className="text-emerald-400/60 text-[10px] mt-1 block">Click to expand</span>
+            )}
+          </div>
+          {result.timestamp && (
+            <p className="text-[10px] text-gray-600 mt-1">
+              {new Date(result.timestamp).toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {result.status === "error" && result.message && (
+        <div className="mb-3">
+          <div className="text-xs text-red-300/80 bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
+            {result.message}
+          </div>
+          {result.timestamp && (
+            <p className="text-[10px] text-gray-600 mt-1">
+              {new Date(result.timestamp).toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Run button */}
+      {!confirming && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
+          disabled={isLoading}
+          loading={isLoading}
+          onClick={onRun}
+        >
+          <Zap className="h-3.5 w-3.5 mr-1" />
+          {isLoading ? "Running…" : result.status !== "idle" ? "Run Again" : "Run"}
+        </Button>
+      )}
     </div>
   );
 }

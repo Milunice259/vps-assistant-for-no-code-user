@@ -61,7 +61,12 @@ export function AppResourceChart({
             unit="MB"
             color="#8b5cf6"
           />
-          <InfoCard label="PIDs (Processes)" value={String(liveStats.pids)} />
+          <div className="relative group cursor-help">
+            <InfoCard label="PIDs (Processes)" value={String(liveStats.pids)} />
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              PIDs is the number of running processes inside this container. A typical app has 1–10 processes.
+            </span>
+          </div>
           <InfoCard label="Mem %" value={`${liveStats.memPercent.toFixed(1)}%`} />
         </div>
       )}

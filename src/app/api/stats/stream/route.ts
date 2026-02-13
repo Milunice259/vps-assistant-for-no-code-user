@@ -1,105 +1,105 @@
+/**
+ * SSE stream for system stats — uses the shared SSE protocol.
+ * Sends full snapshot on connect, then delta changes every 2s.
+ *
+ * The CPU sampler is subscribed/unsubscribed per-connection
+ * so it only runs while at least one client is listening.
+ */
+
 import { NextRequest } from "next/server";
 import { getHostStats, subscribeStats } from "@/lib/stats";
+import type { SystemStats } from "@/lib/stats";
+import { computeDelta } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
 
-// ─── Shared broadcaster ───
-// Instead of N independent setInterval timers (one per client),
-// we use a single broadcaster that collects stats once every 2 s
-// and fans out the JSON payload to all connected clients.
-
-type Client = {
-  controller: ReadableStreamDefaultController;
-  encoder: TextEncoder;
-};
-
-const clients = new Set<Client>();
-let broadcastTimer: ReturnType<typeof setInterval> | null = null;
-let unsubscribeStats: (() => void) | null = null;
-
-function broadcast(): void {
-  if (clients.size === 0) return;
-
-  try {
-    const stats = getHostStats();
-    const payload = `data: ${JSON.stringify(stats)}\n\n`;
-
-    for (const client of clients) {
-      try {
-        client.controller.enqueue(client.encoder.encode(payload));
-      } catch {
-        // Client probably disconnected — will be cleaned up by abort handler
-        clients.delete(client);
-      }
-    }
-  } catch {
-    // Stats collection failed — send error event to all
-    const errorPayload = `event: error\ndata: {"error":"Failed to collect stats"}\n\n`;
-    for (const client of clients) {
-      try {
-        client.controller.enqueue(client.encoder.encode(errorPayload));
-      } catch {
-        clients.delete(client);
-      }
-    }
-  }
-}
-
-function startBroadcaster(): void {
-  if (broadcastTimer) return;
-  // Register with the CPU sampler so it starts collecting
-  unsubscribeStats = subscribeStats();
-  broadcastTimer = setInterval(broadcast, 2000);
-  if (broadcastTimer && typeof broadcastTimer === "object" && "unref" in broadcastTimer) {
-    broadcastTimer.unref();
-  }
-}
-
-function stopBroadcasterIfEmpty(): void {
-  if (clients.size > 0) return;
-  if (broadcastTimer) {
-    clearInterval(broadcastTimer);
-    broadcastTimer = null;
-  }
-  if (unsubscribeStats) {
-    unsubscribeStats();
-    unsubscribeStats = null;
-  }
-}
-
-// ─── Route handler ───
+const INTERVAL_MS = 2_000;
+const HEARTBEAT_MS = 30_000;
 
 export async function GET(request: NextRequest): Promise<Response> {
   const encoder = new TextEncoder();
+  let unsubscribe: (() => void) | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
-      const client: Client = { controller, encoder };
+      // Subscribe to the CPU sampler
+      unsubscribe = subscribeStats();
 
-      // Send initial snapshot immediately
-      try {
-        const initial = getHostStats();
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(initial)}\n\n`)
-        );
-      } catch {
-        // Non-critical — the next broadcast will send data
+      let prev: SystemStats | null = null;
+      let lastSendTime = Date.now();
+
+      function send(event: string, data: unknown) {
+        try {
+          const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(encoder.encode(payload));
+          lastSendTime = Date.now();
+        } catch {
+          // Controller closed
+        }
       }
 
-      // Register this client
-      clients.add(client);
-      startBroadcaster();
+      // Send initial snapshot
+      try {
+        const initial = getHostStats();
+        send("snapshot", initial);
+        prev = initial;
+      } catch {
+        send("snapshot", getHostStats());
+      }
 
-      // Clean up when the client disconnects
+      // Periodic delta updates
+      const dataInterval = setInterval(() => {
+        try {
+          const next = getHostStats();
+          if (!prev) {
+            send("snapshot", next);
+          } else {
+            const delta = computeDelta(prev, next);
+            if (delta) {
+              send("delta", delta);
+            }
+          }
+          prev = next;
+        } catch {
+          // Stats collection failed — skip this tick
+        }
+      }, INTERVAL_MS);
+
+      // Heartbeat keepalive
+      const heartbeatInterval = setInterval(() => {
+        if (Date.now() - lastSendTime >= HEARTBEAT_MS) {
+          send("heartbeat", {});
+        }
+      }, HEARTBEAT_MS);
+
+      // Prevent timers from keeping process alive
+      if (dataInterval && typeof dataInterval === "object" && "unref" in dataInterval) {
+        dataInterval.unref();
+      }
+      if (heartbeatInterval && typeof heartbeatInterval === "object" && "unref" in heartbeatInterval) {
+        heartbeatInterval.unref();
+      }
+
+      // Clean up on disconnect
       request.signal.addEventListener("abort", () => {
-        clients.delete(client);
-        stopBroadcasterIfEmpty();
+        clearInterval(dataInterval);
+        clearInterval(heartbeatInterval);
+        if (unsubscribe) {
+          unsubscribe();
+          unsubscribe = null;
+        }
         try {
           controller.close();
         } catch {
           // Already closed
         }
       });
+    },
+    cancel() {
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
     },
   });
 

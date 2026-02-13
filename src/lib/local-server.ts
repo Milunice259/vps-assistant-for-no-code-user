@@ -235,3 +235,180 @@ export function localQuickAction(
     return { success: false, output: msg };
   }
 }
+
+// ─── Local App ID Helpers ───
+
+/**
+ * Local containers have IDs like `local::abc123` or `local:abc123`.
+ * Check if an ID is a local container reference.
+ */
+export function isLocalAppId(id: string): boolean {
+  return id.startsWith("local::");
+}
+
+/**
+ * Extract the Docker container ID from a local app ID.
+ * `local::abc123def` → `abc123def`
+ */
+export function parseLocalContainerId(id: string): string {
+  return id.replace(/^local::/, "");
+}
+
+/**
+ * Get detailed info for a local Docker container by container ID.
+ * Uses `docker inspect` for metadata + `docker ps` for status.
+ */
+export function getLocalContainerDetail(containerId: string): {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  ports: string;
+  createdAt: string;
+} | null {
+  try {
+    const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
+    if (!safeId) return null;
+
+    const raw = execLocal(
+      `docker inspect --format "{{.Id}}\\t{{.Name}}\\t{{.Config.Image}}\\t{{.State.Status}}\\t{{.Created}}\\t{{.HostConfig.RestartPolicy.Name}}" ${safeId}`,
+      10_000
+    );
+    if (!raw.trim()) return null;
+
+    const [fullId, name, image, state, created, restartPolicy] = raw.trim().split("\t");
+
+    // Get ports from docker ps
+    let ports = "";
+    try {
+      ports = execLocal(
+        `docker ps -a --filter "id=${safeId}" --format "{{.Ports}}"`,
+        5_000
+      );
+    } catch { /* ignore */ }
+
+    // Get status text from docker ps
+    let status = state || "unknown";
+    try {
+      const statusRaw = execLocal(
+        `docker ps -a --filter "id=${safeId}" --format "{{.Status}}"`,
+        5_000
+      );
+      if (statusRaw) status = statusRaw;
+    } catch { /* ignore */ }
+
+    return {
+      id: fullId || containerId,
+      name: (name || "").replace(/^\//, ""), // Remove leading /
+      image: image || "",
+      state: state || "unknown",
+      status,
+      ports: ports.trim(),
+      createdAt: created || new Date().toISOString(),
+    };
+  } catch (err) {
+    console.warn(
+      "[local-server] Container detail failed:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+// ─── Local Network Topology ───
+
+/**
+ * Get Docker networks with attached containers (local).
+ */
+export function getLocalDockerNetworks(): Array<{
+  id: string; name: string; driver: string;
+  containers: Array<{ id: string; name: string; ipv4: string; image?: string; state?: string; ports?: string }>;
+}> {
+  try {
+    // List networks
+    const netRaw = execLocal(
+      'docker network ls --format "{{.ID}}\\t{{.Name}}\\t{{.Driver}}"',
+      10_000
+    );
+    if (!netRaw.trim()) return [];
+
+    const networks = netRaw.trim().split("\n").filter(Boolean).map((line) => {
+      const [id, name, driver] = line.split("\t");
+      return { id: id || "", name: name || "", driver: driver || "", containers: [] as Array<{ id: string; name: string; ipv4: string; image?: string; state?: string; ports?: string }> };
+    });
+
+    // For each network, inspect to get containers
+    for (const net of networks) {
+      try {
+        const inspectRaw = execLocal(
+          `docker network inspect ${net.id} --format "{{range .Containers}}{{.Name}}\\t{{.IPv4Address}}\\n{{end}}"`,
+          5_000
+        );
+        if (inspectRaw.trim()) {
+          for (const cLine of inspectRaw.trim().split("\n").filter(Boolean)) {
+            const [cName, ipv4] = cLine.split("\t");
+            if (cName) {
+              net.containers.push({
+                id: "", // Inspect doesn't give container ID easily in this format
+                name: cName,
+                ipv4: (ipv4 || "").replace(/\/\d+$/, ""), // Remove CIDR
+              });
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    return networks;
+  } catch (err) {
+    console.warn("[local-server] Docker network discovery failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+/**
+ * Get listening ports on the local host via `ss`.
+ */
+export function getLocalHostPorts(): Array<{
+  protocol: string; localAddress: string; localPort: number;
+  foreignAddress: string; foreignPort: number; state: string; process: string;
+}> {
+  try {
+    const raw = execLocal("ss -tlnp 2>/dev/null || echo ''", 10_000);
+    if (!raw.trim()) return [];
+
+    const lines = raw.trim().split("\n").filter(Boolean);
+    // Skip header line
+    return lines.slice(1).map((line) => {
+      const parts = line.split(/\s+/);
+      const state = parts[0] || "LISTEN";
+      const local = parts[3] || "";
+      const foreign = parts[4] || "";
+      const process = parts[5] || "";
+
+      // Parse local address:port
+      const lastColon = local.lastIndexOf(":");
+      const localAddress = local.slice(0, lastColon) || "*";
+      const localPort = parseInt(local.slice(lastColon + 1), 10) || 0;
+
+      const fLastColon = foreign.lastIndexOf(":");
+      const foreignAddress = foreign.slice(0, fLastColon) || "*";
+      const foreignPort = parseInt(foreign.slice(fLastColon + 1), 10) || 0;
+
+      return { protocol: "tcp", localAddress, localPort, foreignAddress, foreignPort, state, process };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get full local network topology (Docker networks + host ports).
+ */
+export function getLocalNetworkTopology() {
+  return {
+    networks: getLocalDockerNetworks(),
+    hostPorts: getLocalHostPorts(),
+  };
+}

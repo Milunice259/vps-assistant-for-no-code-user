@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { validateHealthCheck, validateDomain } from "@/lib/validation";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import { isLocalAppId, parseLocalContainerId, getLocalContainerDetail, execLocal } from "@/lib/local-server";
 import type {
   ApiResponse,
   AppDetailInfo,
@@ -122,6 +123,61 @@ export async function GET(
     const url = new URL(request.url);
     const includeStats = url.searchParams.get("stats") === "true";
     const includeMetrics = url.searchParams.get("metrics") === "true";
+
+    // ── Local container: build virtual AppDetailInfo from Docker ──
+    if (isLocalAppId(id)) {
+      const containerId = parseLocalContainerId(id);
+      const container = getLocalContainerDetail(containerId);
+      if (!container) {
+        return NextResponse.json(
+          { success: false, error: "Local container not found" },
+          { status: 404 }
+        );
+      }
+
+      const stateMap: Record<string, AppStatusType> = {
+        running: "RUNNING", exited: "STOPPED", dead: "STOPPED",
+        created: "STOPPED", restarting: "RESTARTING", paused: "UNHEALTHY",
+      };
+
+      const detail: AppDetailInfo = {
+        id,
+        name: container.name || container.image || containerId,
+        containerId: containerId,
+        containerName: container.name,
+        image: container.image,
+        serverId: "local",
+        serverName: "This Server",
+        status: stateMap[container.state] || "UNKNOWN",
+        domain: null,
+        cpuLimit: null,
+        memoryLimit: null,
+        storageLimit: null,
+        restartPolicy: null,
+        healthCheck: null,
+        volumes: null,
+        ports: container.ports || null,
+        createdAt: container.createdAt,
+        updatedAt: container.createdAt,
+      };
+
+      let liveStats: ContainerStats | null = null;
+      if (includeStats) {
+        try {
+          const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
+          const raw = execLocal(
+            `docker stats --no-stream --format '{{.CPUPerc}} {{.MemUsage}} {{.MemPerc}} {{.NetIO}} {{.PIDs}}' ${safeId} 2>/dev/null`,
+            10_000
+          );
+          liveStats = parseDockerStats(raw.replace(/%/g, ""));
+        } catch { /* stats unavailable */ }
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: { ...detail, liveStats, metrics: [] },
+      });
+    }
 
     const app = await prisma.app.findUnique({
       where: { id },

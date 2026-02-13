@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteDockerNetworks, getRemoteHostPorts, closeSSH } from "@/lib/ssh";
+import { isLocalServer, getLocalNetworkTopology } from "@/lib/local-server";
 import type { ApiResponse, NetworkTopology } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,39 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+
+    // ── Local server: use Docker socket + ss (no SSH) ──
+    if (isLocalServer(id)) {
+      const topo = getLocalNetworkTopology();
+      return NextResponse.json({
+        success: true,
+        data: {
+          networks: topo.networks.map((n) => ({
+            id: n.id,
+            name: n.name,
+            driver: n.driver,
+            containers: n.containers.map((c) => ({
+              id: c.id,
+              name: c.name,
+              ipv4: c.ipv4,
+              image: c.image,
+              state: c.state,
+              ports: c.ports,
+            })),
+          })),
+          hostPorts: topo.hostPorts.map((p) => ({
+            protocol: p.protocol,
+            localAddress: p.localAddress,
+            localPort: p.localPort,
+            foreignAddress: p.foreignAddress,
+            foreignPort: p.foreignPort,
+            state: p.state,
+            process: p.process,
+          })),
+        },
+      });
+    }
+
     const result = await connectToServer(id);
     ssh = result.ssh;
 
@@ -72,3 +106,4 @@ export async function GET(
     await closeSSH(ssh);
   }
 }
+

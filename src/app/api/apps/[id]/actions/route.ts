@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import { isLocalAppId, parseLocalContainerId, execLocal } from "@/lib/local-server";
 import type { ApiResponse, AppActionType } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,56 @@ export async function POST(
         { success: false, error: `Invalid action: ${action}` },
         { status: 400 }
       );
+    }
+
+    // ── Local container: use Docker socket directly (no SSH) ──
+    if (isLocalAppId(id)) {
+      const containerId = parseLocalContainerId(id);
+      const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
+      if (!safeId) {
+        return NextResponse.json(
+          { success: false, error: "Invalid container ID" },
+          { status: 400 }
+        );
+      }
+
+      try {
+        let output = "";
+        switch (action) {
+          case "start":
+          case "stop":
+          case "restart":
+            output = execLocal(`docker ${action} ${safeId} 2>&1`, 30_000);
+            break;
+          case "pull": {
+            // Get image name from container
+            const image = execLocal(
+              `docker inspect --format "{{.Config.Image}}" ${safeId}`,
+              5_000
+            ).trim();
+            if (!image) {
+              return NextResponse.json(
+                { success: false, error: "No image found for this container" },
+                { status: 400 }
+              );
+            }
+            output = execLocal(`docker pull ${image} 2>&1`, 120_000);
+            break;
+          }
+          default:
+            return NextResponse.json(
+              { success: false, error: `Action '${action}' not supported for local containers` },
+              { status: 400 }
+            );
+        }
+        return NextResponse.json({
+          success: true,
+          data: { output: output.trim() || `${action} completed` },
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Action failed";
+        return NextResponse.json({ success: false, error: msg }, { status: 500 });
+      }
     }
 
     const app = await prisma.app.findUnique({

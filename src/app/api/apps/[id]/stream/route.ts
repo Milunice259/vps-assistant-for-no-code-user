@@ -1,11 +1,6 @@
-/**
- * SSE stream for app detail + live stats — replaces 10s polling.
- * Sends full snapshot on connect, then only delta changes every 10s.
- */
-
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { execLocal } from "@/lib/local-server";
+import { isLocalAppId, parseLocalContainerId, execLocal } from "@/lib/local-server";
 import { createSSEResponse } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
@@ -29,26 +24,39 @@ export async function GET(
 
   return createSSEResponse<AppStreamData>(
     async () => {
-      const app = await prisma.app.findUnique({
-        where: { id: appId },
-        select: { containerId: true, status: true },
-      });
+      // Resolve container ID — from DB or from local:: prefix
+      let containerId: string | null = null;
+      let status = "UNKNOWN";
 
-      if (!app || !app.containerId) {
-        return {
-          status: app?.status ?? "UNKNOWN",
-          cpuPercent: 0,
-          memUsageMB: 0,
-          memLimitMB: 0,
-          netIn: 0,
-          netOut: 0,
-        };
+      if (isLocalAppId(appId)) {
+        containerId = parseLocalContainerId(appId);
+        // Check if container is running
+        try {
+          const state = execLocal(
+            `docker inspect --format "{{.State.Status}}" ${containerId.replace(/[^a-zA-Z0-9_.-]/g, "")}`,
+            5_000
+          ).trim();
+          status = state === "running" ? "RUNNING" : state === "exited" ? "STOPPED" : state.toUpperCase();
+        } catch {
+          status = "UNKNOWN";
+        }
+      } else {
+        const app = await prisma.app.findUnique({
+          where: { id: appId },
+          select: { containerId: true, status: true },
+        });
+        containerId = app?.containerId ?? null;
+        status = app?.status ?? "UNKNOWN";
+      }
+
+      if (!containerId) {
+        return { status, cpuPercent: 0, memUsageMB: 0, memLimitMB: 0, netIn: 0, netOut: 0 };
       }
 
       // Get live container stats
       try {
         const raw = execLocal(
-          `docker stats ${app.containerId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}"`,
+          `docker stats ${containerId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}"`,
           10_000
         );
         const parts = raw.trim().split("|");
@@ -65,10 +73,10 @@ export async function GET(
         const netIn = parseBytes(netParts[0] || "0");
         const netOut = parseBytes(netParts[1] || "0");
 
-        return { status: app.status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut };
+        return { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut };
       } catch {
         return {
-          status: app.status,
+          status,
           cpuPercent: 0,
           memUsageMB: 0,
           memLimitMB: 0,

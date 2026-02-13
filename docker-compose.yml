@@ -12,12 +12,21 @@ services:
     container_name: vps-control-app
     restart: unless-stopped
     pid: "host"
+    # nsenter requires these capabilities to enter host namespaces
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
     env_file: .env
     environment:
       - DATABASE_URL=file:/app/data/vpscontrol.db
     volumes:
       - app_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host info files — fallback data sources (no nsenter needed)
+      - /etc/os-release:/host/os-release:ro
+      - /etc/hostname:/host/hostname:ro
     labels:
       # --- Enable Traefik discovery ---
       - "traefik.enable=true"

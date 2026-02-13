@@ -113,15 +113,29 @@ export function createSSEResponse<T extends object>(
         }
       }
 
-      // Send initial snapshot
+      // Send initial snapshot (retry up to 3 times on failure)
       let lastData: T;
-      try {
-        lastData = await fetchData();
-        send("snapshot", lastData);
-      } catch (err) {
-        send("error", {
-          message: err instanceof Error ? err.message : "Data fetch failed",
-        });
+      let snapshotSent = false;
+
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
+        try {
+          lastData = await fetchData();
+          send("snapshot", lastData);
+          snapshotSent = true;
+          break;
+        } catch (err) {
+          if (attempt < 2) {
+            // Wait before retry (1s, 2s)
+            await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          } else {
+            send("error", {
+              message: err instanceof Error ? err.message : "Data fetch failed",
+            });
+          }
+        }
+      }
+
+      if (!snapshotSent || cancelled) {
         cleanup();
         return;
       }

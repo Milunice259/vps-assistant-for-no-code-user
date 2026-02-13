@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { execLocal, execOnHost } from "@/lib/local-server";
+import { execLocal, tryExecOnHost, readHostFile } from "@/lib/local-server";
 import type { ApiResponse, DashboardSummary } from "@/types";
+
+// Bind-mount path set by docker-compose
+const HOST_OS_RELEASE = "/host/os-release";
 
 export const dynamic = "force-dynamic";
 
@@ -48,13 +51,18 @@ function getDockerNetworkCount(): number {
 // ─── Helper: count listening ports on HOST ───
 
 function getListeningPortCount(): number {
+  // 1. Try local ss (works if container has host network or pid:host)
   try {
-    // nsenter → host namespace for accurate port listing
-    const raw = execOnHost("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
-    return parseInt(raw, 10) || 0;
+    const raw = execLocal("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
+    const count = parseInt(raw, 10);
+    if (!isNaN(count) && count > 0) return count;
   } catch {
-    return 0;
+    // fall through
   }
+
+  // 2. Try nsenter to host
+  const raw = tryExecOnHost("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
+  return parseInt(raw, 10) || 0;
 }
 
 // ─── Helper: get HOST OS info ───
@@ -70,26 +78,21 @@ function getOSInfo(): OSInfo {
   let kernel = "";
   let arch = "";
 
-  try {
-    // All via nsenter to read the HOST's OS info, not the Alpine container's
-    const raw = execOnHost("cat /etc/os-release 2>/dev/null || echo ''", 5_000);
+  // 1. Try bind-mounted /host/os-release (fastest, no nsenter)
+  const fromFile = readHostFile(HOST_OS_RELEASE);
+  if (fromFile) {
+    const nameMatch = fromFile.match(/^PRETTY_NAME="?([^"\n]+)"?/m);
+    if (nameMatch?.[1]) distro = nameMatch[1];
+  } else {
+    // 2. Fallback: nsenter
+    const raw = tryExecOnHost("cat /etc/os-release 2>/dev/null || echo ''", 5_000);
     const nameMatch = raw.match(/^PRETTY_NAME="?([^"\n]+)"?/m);
     if (nameMatch?.[1]) distro = nameMatch[1];
-  } catch {
-    // fallback
   }
 
-  try {
-    kernel = execOnHost("uname -r", 5_000);
-  } catch {
-    // fallback
-  }
-
-  try {
-    arch = execOnHost("uname -m", 5_000);
-  } catch {
-    // fallback
-  }
+  // Kernel + arch: try nsenter, defaults to empty (UI shows "—")
+  kernel = tryExecOnHost("uname -r", 5_000);
+  arch = tryExecOnHost("uname -m", 5_000);
 
   return { distro, kernel, arch };
 }

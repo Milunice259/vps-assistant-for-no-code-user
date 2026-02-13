@@ -14,7 +14,12 @@
 
 import os from "os";
 import { execSync } from "child_process";
+import { readFileSync, existsSync } from "fs";
 import type { ServerInfo } from "@/types";
+
+// ─── Bind-mount paths (set by docker-compose) ───
+const HOST_OS_RELEASE = "/host/os-release";
+const HOST_HOSTNAME   = "/host/hostname";
 
 /** The sentinel ID for the local server. */
 export const LOCAL_SERVER_ID = "local";
@@ -60,14 +65,52 @@ export function execOnHost(command: string, timeoutMs = 30_000): string {
 }
 
 /**
- * Read the real host hostname via nsenter.
+ * Read a file from the host via bind-mount (/host/...).
+ * Falls back to empty string on failure — never throws.
+ */
+export function readHostFile(path: string): string {
+  try {
+    if (existsSync(path)) {
+      return readFileSync(path, "utf-8").trim();
+    }
+  } catch {
+    // Bind mount missing or unreadable
+  }
+  return "";
+}
+
+/**
+ * Safe wrapper around execOnHost — returns empty string on failure.
+ * Use for non-critical data gathering where failure is acceptable.
+ */
+export function tryExecOnHost(command: string, timeoutMs = 30_000): string {
+  try {
+    return execOnHost(command, timeoutMs);
+  } catch (err) {
+    console.warn(
+      "[local-server] Host command failed:",
+      command.slice(0, 60),
+      err instanceof Error ? err.message.slice(0, 100) : ""
+    );
+    return "";
+  }
+}
+
+/**
+ * Read the real host hostname.
+ * Fallback chain: bind mount → nsenter → os.hostname()
  */
 function getHostHostname(): string {
-  try {
-    return execOnHost("hostname");
-  } catch {
-    return os.hostname();
-  }
+  // 1. Try bind-mounted file (fastest, no nsenter)
+  const fromFile = readHostFile(HOST_HOSTNAME);
+  if (fromFile) return fromFile;
+
+  // 2. Try nsenter
+  const fromNsenter = tryExecOnHost("hostname");
+  if (fromNsenter) return fromNsenter;
+
+  // 3. Fallback to container hostname
+  return os.hostname();
 }
 
 /** Build a virtual ServerInfo for the local machine. */

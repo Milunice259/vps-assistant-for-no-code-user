@@ -146,25 +146,39 @@ function getDiskStats(): SystemStats["disk"] {
  * are read on demand (disk is cached for 5 s).
  */
 export function getHostStats(): SystemStats {
-  const totalMem = os.totalmem();
-  const freeMem = os.freemem();
-  const usedMem = totalMem - freeMem;
+  try {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
 
-  return {
-    hostname: os.hostname(),
-    platform: `${os.type()} ${os.release()}`,
-    uptime: os.uptime(),
-    cpu: {
-      model: os.cpus()[0]?.model || "Unknown",
-      cores: os.cpus().length,
-      usagePercent: latestCpuPercent,
-    },
-    memory: {
-      total: totalMem,
-      used: usedMem,
-      available: freeMem,
-      usagePercent: Math.round((usedMem / totalMem) * 10000) / 100,
-    },
-    disk: getDiskStats(),
-  };
+    return {
+      hostname: os.hostname(),
+      platform: `${os.type()} ${os.release()}`,
+      uptime: os.uptime(),
+      cpu: {
+        model: os.cpus()[0]?.model || "Unknown",
+        cores: os.cpus().length || 1,
+        usagePercent: latestCpuPercent,
+      },
+      memory: {
+        total: totalMem,
+        used: usedMem,
+        available: freeMem,
+        usagePercent: totalMem > 0
+          ? Math.round((usedMem / totalMem) * 10000) / 100
+          : 0,
+      },
+      disk: getDiskStats(),
+    };
+  } catch (err) {
+    console.error("[stats] Failed to collect host stats:", err);
+    return {
+      hostname: "unknown",
+      platform: "Linux",
+      uptime: 0,
+      cpu: { model: "Unknown", cores: 1, usagePercent: 0 },
+      memory: { total: 0, used: 0, available: 0, usagePercent: 0 },
+      disk: { total: 0, used: 0, available: 0, usagePercent: 0 },
+    };
+  }
 }

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["ssh2-promise", "ssh2"],
+  serverExternalPackages: ["ssh2-promise", "ssh2", "typescript"],
 
   // ── Security Headers ──
   async headers() {

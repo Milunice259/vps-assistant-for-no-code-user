@@ -5,7 +5,7 @@
 
 FROM node:20-alpine AS base
 
-# ─── Stage 1: Install Dependencies ───
+# ─── Stage 1: Install ALL Dependencies (dev + prod) ───
 FROM base AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
@@ -21,7 +21,16 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# ─── Stage 3: Production Runner ───
+# ─── Stage 3: Production Dependencies Only ───
+FROM base AS proddeps
+RUN apk add --no-cache libc6-compat python3 make g++
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev
+RUN npx prisma generate
+
+# ─── Stage 4: Production Runner ───
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -37,11 +46,10 @@ RUN apk add --no-cache iproute2 docker-cli util-linux
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-# Copy Prisma schema + full node_modules from builder.
-# NOTE: do not cherry-pick Prisma deps (effect/fast-check/...) because missing transitive deps
-# can break startup in production. Full copy is more robust for this app.
+# Overlay production-only node_modules (Prisma, bcryptjs, ssh2, etc.)
+# This replaces the standalone trace with properly pruned production deps
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=proddeps /app/node_modules ./node_modules
 
 # Copy entrypoint
 COPY docker-entrypoint.sh ./
@@ -54,3 +62,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
+

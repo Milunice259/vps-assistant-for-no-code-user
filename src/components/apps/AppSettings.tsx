@@ -182,6 +182,46 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
         </div>
       </section>
 
+      {/* Logging */}
+      <section>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">Logging</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Docker automatically captures logs from this container. Use the Logs tab to view them in real time.
+        </p>
+        <div className="space-y-3">
+          <Field label="Log Driver" hint="How Docker stores logs. 'json-file' is the default driver that saves logs as JSON files on disk.">
+            <div className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
+              json-file (default)
+            </div>
+          </Field>
+          <Field label="Max Log Size" hint="Maximum size of each log file before Docker rotates it. Prevents logs from filling up disk space.">
+            <div className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
+              10MB (default)
+            </div>
+          </Field>
+        </div>
+      </section>
+
+      {/* Networking */}
+      <section>
+        <h3 className="text-sm font-medium text-gray-300 mb-1">Networking</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Port mappings and network connectivity for this container.
+        </p>
+        <div className="space-y-3">
+          <Field label="Exposed Ports" hint="Ports that this container makes accessible from outside Docker. Format: host:container.">
+            <div className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400 font-mono">
+              {app.ports || "None configured"}
+            </div>
+          </Field>
+          <Field label="Network Mode" hint="How this container connects to the network. 'bridge' is the default isolated mode. 'host' shares the server's network directly.">
+            <div className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400">
+              bridge (default)
+            </div>
+          </Field>
+        </div>
+      </section>
+
       {/* Save */}
       <div className="pt-2">
         <Button variant="primary" loading={saving} onClick={handleSave}>

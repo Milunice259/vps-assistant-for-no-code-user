@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Rocket, Monitor, Server, HelpCircle } from "lucide-react";
+import { Rocket, Monitor, Server, HelpCircle, FolderSearch } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { FileBrowser } from "@/components/ui/FileBrowser";
 import type { ServerInfo } from "@/types";
 
 interface DeployResult {
@@ -37,6 +38,7 @@ export function DeployForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DeployResult | null>(null);
+  const [showBrowser, setShowBrowser] = useState(false);
 
   // Fetch servers for remote deployment selector
   useEffect(() => {
@@ -191,17 +193,43 @@ export function DeployForm() {
           </div>
         )}
 
-        {/* Custom Path */}
+        {/* Custom Path with File Browser */}
         <div>
           <label className="flex items-center text-sm font-medium text-gray-300 mb-1.5">
             Custom Path (optional)
             <Tip text="The directory on the server where your app will be deployed. Leave empty to use the default location (/opt/apps/)." />
           </label>
-          <Input
-            placeholder="/var/www/myapp"
-            value={customPath}
-            onChange={(e) => setCustomPath(e.target.value)}
-          />
+          <div className="flex gap-2">
+            <Input
+              placeholder="/var/www/myapp"
+              value={customPath}
+              onChange={(e) => setCustomPath(e.target.value)}
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => setShowBrowser(!showBrowser)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors ${
+                showBrowser
+                  ? "bg-brand-500/10 border-brand-500/30 text-brand-400"
+                  : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
+              }`}
+            >
+              <FolderSearch className="h-3.5 w-3.5" />
+              Browse
+            </button>
+          </div>
+          {showBrowser && (
+            <div className="mt-2">
+              <FileBrowser
+                serverId={deployTarget === "local" ? "local" : selectedServerId}
+                mode="pick-directory"
+                selectedPath={customPath}
+                onSelect={(path) => setCustomPath(path)}
+                initialPath="/opt"
+              />
+            </div>
+          )}
         </div>
 
         {/* Environment Variables */}

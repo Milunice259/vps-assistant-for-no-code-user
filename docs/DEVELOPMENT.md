@@ -15,17 +15,20 @@ src/components/
 │   ├── Input.tsx          With label, error state, all HTML input attrs
 │   ├── Badge.tsx          Variants: default, success, warning, danger
 │   ├── Tabs.tsx           Tab-based content switching
-│   └── ConfirmDialog.tsx  Modal dialog for destructive action confirmation
+│   ├── ConfirmDialog.tsx  Modal dialog for destructive action confirmation
+│   └── FileBrowser.tsx    Remote file system browser with navigation
 │
 ├── layout/
-│   ├── Sidebar.tsx        Nav: Dashboard, Servers, Network, Apps, Deploy + collapse toggle
+│   ├── Sidebar.tsx        Nav: Dashboard, Servers, Network, Apps, Deploy, Terminal, Audit, Settings
 │   └── Header.tsx         Page title + user info
 │
 ├── dashboard/
 │   ├── StatsCard.tsx      Metric with icon, value, subtitle
 │   ├── CpuGauge.tsx       Circular gauge (green < 60%, yellow 60-80%, red > 80%)
 │   ├── MemoryBar.tsx      Bar chart (used vs total)
-│   └── DiskUsage.tsx      Disk per partition
+│   ├── DiskUsage.tsx      Disk per partition
+│   ├── QuickOverview.tsx  Summary cards for apps, servers, ports, networks, deployments
+│   └── SummaryCard.tsx    Compact summary with count + label
 │
 ├── servers/
 │   ├── ServerList.tsx           Table with actions (View, Edit, Delete)
@@ -33,20 +36,28 @@ src/components/
 │   ├── ServerStats.tsx          Live remote stats via SSH
 │   ├── DockerContainerList.tsx  Remote Docker containers with start/stop/restart
 │   ├── QuickActions.tsx         One-click server maintenance actions
-│   └── ServiceList.tsx          Systemd service units listing
+│   ├── ServiceList.tsx          Systemd service units listing
+│   └── SSLChecker.tsx           SSL/TLS certificate checker per server
 │
 ├── network/
-│   ├── PortTable.tsx      Open ports table (Linux only, friendly warning on Windows)
-│   ├── PackageManager.tsx APT packages + Update/Upgrade (Linux only)
+│   ├── PortTable.tsx      Open ports table with Listening/Established/All tabs
+│   ├── PackageManager.tsx APT packages + Update/Upgrade with tooltips
 │   └── NetworkTopology.tsx Docker networks + container IPs + host ports
 │
 ├── apps/
 │   ├── AppList.tsx        Application list with status indicators
-│   └── AppLogViewer.tsx   Container log viewer for tracked apps
+│   ├── AppLogViewer.tsx   Container log viewer for tracked apps
+│   ├── AppEnvEditor.tsx   Environment variable editor for containers
+│   ├── AppHealthCheck.tsx Health check with auto-run and endpoint monitoring
+│   ├── AppResourceChart.tsx CPU/memory resource charts over time
+│   ├── AppSettings.tsx    Per-app settings (restart policy, limits, logging, networking)
+│   └── WebTerminal.tsx    Per-app web terminal for command execution
 │
 └── deploy/
-    ├── DeployForm.tsx     Repo URL + branch + domain + server + path → POST /api/deploy
-    └── DeployLog.tsx      History with status badges + expandable logs
+    ├── DeployForm.tsx          Git repo deploy with FileBrowser integration
+    ├── DeployLog.tsx           History with status badges + expandable logs
+    ├── DockerImageDeploy.tsx   Docker image deploy with Local/Remote toggle
+    └── DockerComposeDeploy.tsx Docker Compose deploy with Local/Remote toggle
 ```
 
 ### Library Map (`src/lib/`)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { HeartPulse, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import type { ApiResponse } from "@/types";
@@ -39,6 +39,11 @@ export function AppHealthCheck({ appId }: AppHealthCheckProps) {
     }
   }, [appId]);
 
+  // Auto-run health check on mount
+  useEffect(() => {
+    runCheck();
+  }, [runCheck]);
+
   const statusColor = {
     healthy: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
     unhealthy: "text-red-400 bg-red-500/10 border-red-500/20",
@@ -54,6 +59,10 @@ export function AppHealthCheck({ appId }: AppHealthCheckProps) {
           <RefreshCw className="h-3.5 w-3.5 mr-1" /> Check Now
         </Button>
       </div>
+
+      <p className="text-xs text-gray-500">
+        Health checks verify your app is responding correctly. A &quot;healthy&quot; status means the container is running and passing its configured health test.
+      </p>
 
       {error && (
         <div className="text-xs text-red-400 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
@@ -74,8 +83,8 @@ export function AppHealthCheck({ appId }: AppHealthCheckProps) {
         </div>
       )}
 
-      {!result && !error && !loading && (
-        <p className="text-xs text-gray-500">Click &quot;Check Now&quot; to run a health check</p>
+      {!result && !error && loading && (
+        <p className="text-xs text-gray-500">Running health check…</p>
       )}
     </div>
   );

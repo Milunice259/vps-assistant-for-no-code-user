@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Play, HelpCircle, FolderSearch } from "lucide-react";
+import { Play, HelpCircle, FolderSearch, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { FileBrowser } from "@/components/ui/FileBrowser";
 import type { ApiResponse, ServerInfo } from "@/types";
@@ -27,6 +27,7 @@ export function DockerComposeDeploy() {
   const [deploying, setDeploying] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [deployTarget, setDeployTarget] = useState<"local" | "remote">("local");
 
   const fetchServers = useCallback(async () => {
     try {
@@ -92,6 +93,37 @@ export function DockerComposeDeploy() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Deploy Target Selector */}
+        <Field label="Deploy Target" tooltip="Choose where to deploy this compose stack — on this server (Local) or on a connected remote server.">
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setDeployTarget("local"); setServerId("local"); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
+                deployTarget === "local"
+                  ? "border-brand-500 bg-brand-500/10 text-white"
+                  : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+              }`}
+            >
+              <Monitor className="h-4 w-4" />
+              Local
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDeployTarget("remote"); setServerId(""); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
+                deployTarget === "remote"
+                  ? "border-brand-500 bg-brand-500/10 text-white"
+                  : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+              }`}
+            >
+              <Server className="h-4 w-4" />
+              Remote Server
+            </button>
+          </div>
+        </Field>
+
+        {deployTarget === "remote" && (
         <Field label="Target Server" required tooltip="The server where this compose stack will be deployed and run.">
           <select
             value={serverId}
@@ -99,13 +131,14 @@ export function DockerComposeDeploy() {
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none"
           >
             <option value="">Select server</option>
-            {servers.map((s) => (
+            {servers.filter((s) => s.id !== "local").map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} ({s.host})
               </option>
             ))}
           </select>
         </Field>
+        )}
 
         <Field label="Project Name" tooltip="An optional name for this Docker Compose project. Used to group containers together. If empty, the directory name is used.">
           <input

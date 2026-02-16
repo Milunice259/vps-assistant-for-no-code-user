@@ -11,6 +11,7 @@ export function PortTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [platformError, setPlatformError] = useState<string | null>(null);
+  const [view, setView] = useState<"listening" | "established" | "all">("listening");
 
   const fetchPorts = useCallback(async () => {
     setLoading(true);
@@ -62,9 +63,9 @@ export function PortTable() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">Open Ports</h2>
+          <h2 className="text-lg font-semibold text-white">Network Ports</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Ports currently in use on this server. Each port represents a service accepting connections.
+            Active ports on this server — services accepting connections and established traffic.
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={fetchPorts} loading={loading}>
@@ -72,6 +73,25 @@ export function PortTable() {
           Refresh
         </Button>
       </div>
+
+      {/* View filter tabs */}
+      {!platformError && (
+        <div className="flex gap-2">
+          {(["listening", "established", "all"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors capitalize ${
+                view === v
+                  ? "border-brand-500 bg-brand-500/10 text-white"
+                  : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+              }`}
+            >
+              {v === "listening" ? "Listening Ports" : v === "established" ? "Established Connections" : "All"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Friendly platform warning */}
       {platformError && (
@@ -86,7 +106,7 @@ export function PortTable() {
             </p>
             <p className="mt-2 text-xs text-yellow-200/50">
               Port scanning uses the <code className="bg-yellow-500/10 px-1 rounded">ss</code> command which is only available on Linux servers.
-              When deployed on a VPS, this section will show all active connections.
+              When this app is deployed on a VPS, this section will show all listening services and active connections.
             </p>
           </div>
         </div>
@@ -150,14 +170,26 @@ export function PortTable() {
                   Loading ports...
                 </td>
               </tr>
-            ) : ports.length === 0 ? (
+            ) : ports.filter((p) => {
+              if (view === "listening") return p.state.toUpperCase() === "LISTEN";
+              if (view === "established") return p.state.toUpperCase() !== "LISTEN";
+              return true;
+            }).length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  No ports found.
+                  {view === "listening"
+                    ? "No listening ports found."
+                    : view === "established"
+                      ? "No established connections found."
+                      : "No ports found."}
                 </td>
               </tr>
             ) : (
-              ports.map((port, idx) => (
+              ports.filter((p) => {
+                if (view === "listening") return p.state.toUpperCase() === "LISTEN";
+                if (view === "established") return p.state.toUpperCase() !== "LISTEN";
+                return true;
+              }).map((port, idx) => (
                 <tr key={idx} className="bg-gray-800 transition-colors hover:bg-gray-750">
                   <td className="px-4 py-2 font-mono text-xs uppercase text-gray-300">
                     {port.protocol}

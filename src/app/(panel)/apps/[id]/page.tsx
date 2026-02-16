@@ -59,6 +59,7 @@ interface AppStreamData {
   memLimitMB: number;
   netIn: number;
   netOut: number;
+  pids: number;
 }
 
 export default function AppDetailPage() {
@@ -90,7 +91,7 @@ export default function AppDetailPage() {
           : 0,
         netIn: streamStats.netIn,
         netOut: streamStats.netOut,
-        pids: 0,
+        pids: streamStats.pids ?? 0,
       }
     : null;
 

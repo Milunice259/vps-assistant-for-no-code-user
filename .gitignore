@@ -24,6 +24,7 @@ dist/
 
 # ─── IDE & Editor ───
 .agent/
+.gemini/
 .cursor/
 .vscode/
 .idea/

@@ -28,14 +28,17 @@ Managing a VPS shouldn't require SSH expertise. This app gives you a **web-based
 
 | Feature                      | Description                                                                                                           |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Real-Time Dashboard**      | Live CPU, RAM, and disk monitoring via Server-Sent Events (SSE). No page refresh needed.                              |
+| **Real-Time Dashboard**      | Live CPU, RAM, and disk monitoring via Server-Sent Events (SSE). Quick Overview with app/server/port counts.          |
 | **Remote Server Management** | Add multiple VPS connections. Monitor stats, Docker containers, systemd services, and network topology — all via SSH. |
-| **App Tracking**             | Auto-discover Docker containers across servers. Track, monitor status, and view logs from one panel.                  |
-| **Network Manager**          | View open ports, Docker network topology, and manage Ubuntu packages directly from the browser.                       |
-| **GitHub Deployer**          | Paste a repo URL — deploy locally for stack detection or remotely via SSH with `docker compose`.                      |
-| **Web Terminal**             | Browser-based terminal for executing commands on managed servers via SSH.                                             |
-| **Audit Log**                | Track all administrative actions — server changes, deployments, container operations — with timestamps and details.   |
+| **App Tracking**             | Auto-discover Docker containers across servers. Health checks, resource charts, env editor, per-app terminal.         |
+| **Network Manager**          | View open ports (Listening/Established tabs), Docker network topology, and manage packages from the browser.          |
+| **Multi-Mode Deployer**      | Deploy via Git repo, Docker image, or Docker Compose — locally or to a remote server. FileBrowser for path selection. |
+| **Web Terminal**             | Browser-based terminal with server selector, command history, and relaxed allowlist for 30+ Linux commands.           |
+| **Audit Log**                | Search, filter by action/date range, and export to CSV. Track all admin actions with timestamps and details.          |
+| **Notifications**            | Webhook-based notification channels with configurable alert rules (CPU, memory, disk thresholds).                     |
+| **Settings**                 | Manage notifications, Docker defaults, security settings, general config, and backup schedules.                       |
 | **Quick Actions**            | One-click server maintenance: `apt update`, `docker prune`, `restart docker` on any managed server.                   |
+| **SSL Checker**              | Verify SSL/TLS certificate status for each managed server.                                                            |
 | **One-Click Deploy**         | A single `deploy.sh` script that detects Traefik, generates secrets, and brings everything up.                        |
 | **Encrypted Credentials**    | SSH passwords and private keys are encrypted with **AES-256-GCM** before touching the database.                       |
 | **JWT Authentication**       | Session-based auth with bcrypt password hashing and HttpOnly cookies.                                                 |
@@ -183,13 +186,13 @@ Open [http://localhost:3000](http://localhost:3000).
     │   ├── stats.ts            # Host system stats (os module)
     │   └── validation.ts       # Input validation for all user inputs
     ├── components/             # UI components (dark theme)
-    │   ├── ui/                 # Button, Card, Input, Badge, Tabs, ConfirmDialog
+    │   ├── ui/                 # Button, Card, Input, Badge, Tabs, ConfirmDialog, FileBrowser
     │   ├── layout/             # Sidebar, Header
-    │   ├── dashboard/          # StatsCard, CpuGauge, MemoryBar, DiskUsage
-    │   ├── servers/            # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList
+    │   ├── dashboard/          # StatsCard, CpuGauge, MemoryBar, DiskUsage, QuickOverview, SummaryCard
+    │   ├── servers/            # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList, SSLChecker
     │   ├── network/            # PortTable, PackageManager, NetworkTopology
-    │   ├── apps/               # AppList, AppLogViewer
-    │   └── deploy/             # DeployForm, DeployLog
+    │   ├── apps/               # AppList, AppLogViewer, AppEnvEditor, AppHealthCheck, AppResourceChart, AppSettings, WebTerminal
+    │   └── deploy/             # DeployForm, DeployLog, DockerImageDeploy, DockerComposeDeploy
     ├── hooks/                  # useSSE, useAuth
     └── types/                  # Shared TypeScript interfaces
 ```

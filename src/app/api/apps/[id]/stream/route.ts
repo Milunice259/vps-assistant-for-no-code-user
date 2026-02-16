@@ -14,6 +14,7 @@ interface AppStreamData {
   memLimitMB: number;
   netIn: number;
   netOut: number;
+  pids: number;
 }
 
 export async function GET(
@@ -50,13 +51,13 @@ export async function GET(
       }
 
       if (!containerId) {
-        return { status, cpuPercent: 0, memUsageMB: 0, memLimitMB: 0, netIn: 0, netOut: 0 };
+        return { status, cpuPercent: 0, memUsageMB: 0, memLimitMB: 0, netIn: 0, netOut: 0, pids: 0 };
       }
 
       // Get live container stats
       try {
         const raw = execLocal(
-          `docker stats ${containerId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}"`,
+          `docker stats ${containerId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.PIDs}}"`,
           10_000
         );
         const parts = raw.trim().split("|");
@@ -73,7 +74,10 @@ export async function GET(
         const netIn = parseBytes(netParts[0] || "0");
         const netOut = parseBytes(netParts[1] || "0");
 
-        return { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut };
+        // Parse PIDs count
+        const pids = parseInt(parts[3]?.trim() || "0", 10) || 0;
+
+        return { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut, pids };
       } catch {
         return {
           status,
@@ -82,6 +86,7 @@ export async function GET(
           memLimitMB: 0,
           netIn: 0,
           netOut: 0,
+          pids: 0,
         };
       }
     },

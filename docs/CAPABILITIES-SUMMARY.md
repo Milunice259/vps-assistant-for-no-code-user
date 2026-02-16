@@ -88,6 +88,11 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Manually add tracked applications with container/domain info
 - Live status sync (RUNNING, STOPPED, RESTARTING, UNHEALTHY, UNKNOWN)
 - Container log viewer (`/api/apps/[id]/logs`)
+- **Health check auto-run** with endpoint monitoring
+- **Container PIDs** displayed in SSE stream and detail page
+- **Environment variable editor** for tracked containers
+- **Resource charts** (CPU/memory over time)
+- **Per-app settings** (restart policy, resource limits, logging, networking)
 
 **Constraints**
 
@@ -100,10 +105,13 @@ It is designed for single-team/single-admin operation with a simple deployment m
 
 - Submit Git repository deployment requests from panel (`/api/deploy`)
 - Stack detection for common frameworks (Next.js, React, Vue, Nuxt, Node, Python, Go, Rust, static)
-- **Dual mode**: local clone for detection, or remote SSH deployment (`git clone` + `docker compose`)
+- **Three deploy modes**: Git Repo, Docker Image, Docker Compose
+- **Local/Remote toggle**: deploy locally or to a remote server via SSH
 - Remote deployments support custom path, environment variables, and target server selection
+- **FileBrowser integration** for visual path selection on deploy forms
 - Deployment history with status and logs
 - Persistent deployment log records in DB
+- **Real-time deploy logs via SSE** (`/api/deploy/stream`)
 
 **Constraints**
 
@@ -181,20 +189,28 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Records administrative actions (server changes, deployments, container operations)
 - Timestamped entries with action type and details
 - Viewable from the panel UI (`/audit`)
-- API endpoint (`/api/audit`)
+- API endpoint (`/api/audit`) with pagination
+- **Full-text search** across user, target, IP, and action fields
+- **Action type filter** dropdown
+- **Date range filter** (From/To date pickers)
+- **CSV export** of filtered audit entries
+- Expandable row detail view
 
 **Constraints**
 
 - Audit log is stored in SQLite alongside app data
-- No export functionality yet
 
 ---
 
 ## 12) Web Terminal
 
 - Browser-based command execution on managed servers
-- Runs commands via SSH through the panel
-- Output streamed to the UI
+- **Server selector dropdown** to choose target server
+- Runs commands via SSH through the panel (or `nsenter` for local server)
+- Output streamed to the UI with command history
+- **Relaxed allowlist** supporting 30+ common Linux commands
+- Command history navigation (↑/↓ arrows)
+- Clear command (`clear`) support
 
 **Constraints**
 
@@ -217,21 +233,25 @@ It is designed for single-team/single-admin operation with a simple deployment m
 | Area                         | Implemented | Notes                                    |
 | ---------------------------- | ----------- | ---------------------------------------- |
 | Auth + sessions              | Yes         | JWT cookie, single-admin model           |
-| Dashboard monitoring         | Yes         | Host metrics + SSE                       |
+| Dashboard monitoring         | Yes         | Host metrics + SSE + Quick Overview      |
 | Remote SSH server stats      | Yes         | Linux commands over SSH                  |
 | Server profile CRUD          | Yes         | Encrypted secrets                        |
 | Docker container management  | Yes         | List, start, stop, restart via SSH       |
 | Systemd service viewer       | Yes         | Read-only service listing                |
 | Quick server actions         | Yes         | apt-update, docker-prune, restart-docker |
-| Application tracking         | Yes         | DB + live discovery merge                |
+| Application tracking         | Yes         | DB + live discovery + health check       |
 | Host port/package management | Yes         | Linux/apt only                           |
-| Panel-driven repo deployment | Yes         | Local detection + remote SSH deploy      |
+| Panel-driven deployment      | Yes         | Git, Docker Image, Docker Compose modes  |
 | VPS bootstrap automation     | Yes         | deploy.sh end-to-end                     |
 | Traefik HTTPS routing        | Yes         | Requires correct DNS/resolver            |
 | SQLite persistence           | Yes         | Volume-backed                            |
-| Audit log                    | Yes         | Action tracking with timestamps          |
-| Web terminal                 | Yes         | Command execution via SSH                |
+| Audit log                    | Yes         | Search, filter, date range, CSV export   |
+| Web terminal                 | Yes         | Server selector, command history         |
 | SSE real-time streams        | Yes         | Dashboard, apps, deploy log streams      |
+| Notification channels        | Yes         | Webhook-based alerts with rules          |
+| Settings management          | Yes         | General, Docker, Security, Backup        |
+| SSL certificate checker      | Yes         | Per-server SSL/TLS verification          |
+| File browser                 | Yes         | Remote file system navigation            |
 
 ---
 

@@ -136,10 +136,22 @@ export function validateContainerId(id: unknown): ValidationResult {
 
 const DANGEROUS_CMD_CHARS = /[$`|&;\n\r><]/;
 const ALLOWED_CMD_PREFIXES = [
-  "ls", "cat", "pwd", "echo", "npm", "node", "yarn",
-  "pnpm", "pip", "python", "env", "printenv", "whoami",
-  "df", "du", "free", "top", "ps", "uname", "date",
-  "head", "tail", "wc", "grep", "find", "which",
+  // File & navigation
+  "ls", "cat", "pwd", "echo", "head", "tail", "wc", "grep", "find", "which",
+  "less", "more", "sort", "uniq", "awk", "sed", "xargs",
+  "mkdir", "rm", "cp", "mv", "touch", "chmod", "chown", "ln",
+  // System info
+  "env", "printenv", "whoami", "id", "hostname", "uname", "date",
+  "df", "du", "free", "top", "ps", "uptime", "kill",
+  // Package managers (inside container)
+  "apt", "apt-get", "apk", "yum", "dnf", "pip", "pip3",
+  // Runtime / dev tools
+  "npm", "npx", "node", "yarn", "pnpm", "python", "python3",
+  "curl", "wget", "tar", "gzip", "gunzip", "zip", "unzip",
+  // Shells & editors (inside container)
+  "sh", "bash", "vi", "nano",
+  // Services (inside container)
+  "service", "systemctl",
 ] as const;
 
 export function validateTerminalCommand(cmd: unknown): ValidationResult {

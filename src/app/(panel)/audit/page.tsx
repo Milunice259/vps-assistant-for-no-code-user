@@ -60,6 +60,8 @@ export default function AuditPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const perPage = 25;
 
   const fetchAudit = useCallback(async () => {
@@ -84,19 +86,31 @@ export default function AuditPage() {
 
   const totalPages = Math.ceil(total / perPage) || 1;
 
-  // Client-side text search across target, details, username, action
-  const filtered = searchQuery.trim()
-    ? entries.filter((e) => {
-        const q = searchQuery.toLowerCase();
-        return (
-          e.action.toLowerCase().includes(q) ||
-          e.username.toLowerCase().includes(q) ||
-          (e.target?.toLowerCase().includes(q)) ||
-          (e.details?.toLowerCase().includes(q)) ||
-          (e.ip?.toLowerCase().includes(q))
-        );
-      })
-    : entries;
+  const filtered = entries.filter((e) => {
+    // Date range filter
+    if (dateFrom) {
+      const entryDate = new Date(e.createdAt);
+      const fromDate = new Date(dateFrom);
+      if (entryDate < fromDate) return false;
+    }
+    if (dateTo) {
+      const entryDate = new Date(e.createdAt);
+      const toDate = new Date(dateTo + "T23:59:59");
+      if (entryDate > toDate) return false;
+    }
+    // Text search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return (
+        e.action.toLowerCase().includes(q) ||
+        e.username.toLowerCase().includes(q) ||
+        (e.target?.toLowerCase().includes(q)) ||
+        (e.details?.toLowerCase().includes(q)) ||
+        (e.ip?.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
 
   // Export visible entries as CSV
   function exportCSV() {
@@ -164,6 +178,23 @@ export default function AuditPage() {
             <option value="system_reboot">System Reboot</option>
             <option value="service_stop">Service Stop</option>
           </select>
+        </div>
+
+        {/* Date range */}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white [color-scheme:dark]"
+          />
+          <span className="text-xs text-gray-500">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white [color-scheme:dark]"
+          />
         </div>
 
         {/* Export */}

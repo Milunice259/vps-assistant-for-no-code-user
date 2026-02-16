@@ -237,8 +237,33 @@ export function localQuickAction(
     return { success: true, output: output || "Done (no output)" };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    return { success: false, output: msg };
+    return { success: false, output: friendlyErrorMessage(msg) };
   }
+}
+
+/**
+ * Map raw technical error messages to human-readable explanations.
+ * Used by Quick Actions and any host command output.
+ */
+export function friendlyErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("nsenter") && lower.includes("operation not permitted"))
+    return "Host access unavailable — the app needs Docker 'pid:host' mode to run system commands. Check your docker-compose.yml settings.";
+  if (lower.includes("nsenter") && lower.includes("no such file"))
+    return "The nsenter tool is not available inside this container. Ensure the Docker image supports host access.";
+  if (lower.includes("econnrefused"))
+    return "Connection refused — the service is not responding. It may be stopped or still starting up.";
+  if (lower.includes("permission denied"))
+    return "Permission denied — this command requires elevated privileges that are not available.";
+  if (lower.includes("command not found") || lower.includes("not found"))
+    return `Command not available in this environment: ${raw.split(":").pop()?.trim() || raw}`;
+  if (lower.includes("timed out") || lower.includes("etimedout") || lower.includes("timeout"))
+    return "The command timed out — the server may be under heavy load. Please try again.";
+  if (lower.includes("docker.sock") || lower.includes("cannot connect to the docker"))
+    return "Cannot connect to Docker — make sure the Docker socket is mounted and Docker is running.";
+  if (lower.includes("enotfound") || lower.includes("getaddrinfo"))
+    return "DNS resolution failed — check your network connection and server hostname.";
+  return raw;
 }
 
 // ─── Local App ID Helpers ───

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
-  MessageSquare, Hash, Bot, Shield
+  MessageSquare, Hash, Bot, Shield,
+  Settings, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -345,6 +346,85 @@ export default function SettingsPage() {
                 className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
               />
               <span className="text-xs text-gray-500">attempts before lockout</span>
+            </div>
+          </SettingsField>
+        </div>
+      </section>
+
+      {/* ── General ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <Settings className="h-5 w-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-white">General</h2>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Basic application preferences and display settings.
+        </p>
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+          <SettingsField
+            label="Application Name"
+            hint="The name displayed in the browser tab and login page. Useful if you manage multiple servers."
+          >
+            <input
+              type="text"
+              defaultValue="VPS Control"
+              className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
+            />
+          </SettingsField>
+          <SettingsField
+            label="Language"
+            hint="The language used for the admin interface. Currently only English is supported."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="en">English</option>
+            </select>
+          </SettingsField>
+          <SettingsField
+            label="Theme"
+            hint="Choose between dark and light mode for the admin panel."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="dark">Dark (default)</option>
+              <option value="light">Light</option>
+              <option value="system">Use system preference</option>
+            </select>
+          </SettingsField>
+        </div>
+      </section>
+
+      {/* ── Backup ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <Database className="h-5 w-5 text-emerald-400" />
+          <h2 className="text-lg font-semibold text-white">Backup</h2>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Configure automatic backups of your app settings, database, and configuration files.
+        </p>
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+          <SettingsField
+            label="Auto-Backup Schedule"
+            hint="How often the system automatically saves a backup of your settings and database."
+          >
+            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="daily">Daily (recommended)</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="never">Disabled</option>
+            </select>
+          </SettingsField>
+          <SettingsField
+            label="Retention Period"
+            hint="How long to keep old backups before they are automatically deleted to save disk space."
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                defaultValue={30}
+                min={1}
+                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+              <span className="text-xs text-gray-500">days</span>
             </div>
           </SettingsField>
         </div>

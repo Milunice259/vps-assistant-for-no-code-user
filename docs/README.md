@@ -106,25 +106,32 @@ src/
 │   │   ├── servers/      # VPS management + detail view
 │   │   ├── network/      # Ports + package management
 │   │   ├── apps/         # Application tracking
-│   │   └── deploy/       # GitHub deployer
+│   │   ├── deploy/       # GitHub deployer
+│   │   ├── audit/        # Audit log with search, filter, export
+│   │   ├── settings/     # Notifications, Docker, Security, General, Backup
+│   │   └── terminal/     # Web terminal for server commands
 │   ├── api/              # API Routes (backend)
 │   │   ├── auth/         # Login, logout, session
 │   │   ├── stats/        # Host stats + SSE stream
-│   │   ├── servers/      # CRUD, sub-routes: stats, docker, services, actions, network
-│   │   ├── apps/         # App CRUD + container logs
+│   │   ├── servers/      # CRUD, sub-routes: stats, docker, services, actions, network, cron, files, ssl
+│   │   ├── apps/         # App CRUD + logs, env, health, stream, terminal, actions
 │   │   ├── network/      # Host ports + packages
-│   │   └── deploy/       # Clone + detect + deploy (local & remote)
+│   │   ├── deploy/       # Clone + detect + deploy (local & remote) + docker + stream
+│   │   ├── audit/        # Audit log API
+│   │   ├── backup/       # Database backup
+│   │   ├── dashboard/    # Summary + SSE stream
+│   │   └── notifications/ # Notification channels + alert rules
 │   ├── layout.tsx        # Root layout (dark theme)
 │   └── globals.css       # Global styles + Tailwind
 │
 ├── components/           # React components
-│   ├── ui/               # Button, Card, Input, Badge, Tabs, ConfirmDialog
+│   ├── ui/               # Button, Card, Input, Badge, Tabs, ConfirmDialog, FileBrowser
 │   ├── layout/           # Sidebar, Header
-│   ├── dashboard/        # StatsCard, CpuGauge, MemoryBar, DiskUsage
-│   ├── servers/          # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList
+│   ├── dashboard/        # StatsCard, CpuGauge, MemoryBar, DiskUsage, QuickOverview, SummaryCard
+│   ├── servers/          # ServerList/Form/Stats, DockerContainerList, QuickActions, ServiceList, SSLChecker
 │   ├── network/          # PortTable, PackageManager, NetworkTopology
-│   ├── apps/             # AppList, AppLogViewer
-│   └── deploy/           # DeployForm, DeployLog
+│   ├── apps/             # AppList, AppLogViewer, AppEnvEditor, AppHealthCheck, AppResourceChart, AppSettings, WebTerminal
+│   └── deploy/           # DeployForm, DeployLog, DockerImageDeploy, DockerComposeDeploy
 │
 ├── hooks/                # useAuth, useSSE
 ├── lib/                  # auth, crypto, db, deployer, server-ssh, ssh, stats
@@ -188,15 +195,19 @@ npm run dev
 
 ### URL Map
 
-| URL             | Description                | Auth? |
-| --------------- | -------------------------- | ----- |
-| `/login`        | Login page                 | No    |
-| `/dashboard`    | Real-time stats dashboard  | Yes   |
-| `/servers`      | VPS server management      | Yes   |
-| `/servers/[id]` | Server detail + live stats | Yes   |
-| `/network`      | Port & package management  | Yes   |
-| `/apps`         | Application tracking       | Yes   |
-| `/deploy`       | GitHub deployer            | Yes   |
+| URL             | Description                     | Auth? |
+| --------------- | ------------------------------- | ----- |
+| `/login`        | Login page                      | No    |
+| `/dashboard`    | Real-time stats dashboard       | Yes   |
+| `/servers`      | VPS server management           | Yes   |
+| `/servers/[id]` | Server detail + live stats      | Yes   |
+| `/network`      | Port & package management       | Yes   |
+| `/apps`         | Application tracking            | Yes   |
+| `/apps/[id]`    | App detail + logs/env/health    | Yes   |
+| `/deploy`       | GitHub + Docker deployer        | Yes   |
+| `/audit`        | Audit log viewer                | Yes   |
+| `/settings`     | Notifications & system settings | Yes   |
+| `/terminal`     | Web terminal                    | Yes   |
 
 ### Troubleshooting
 

@@ -169,6 +169,26 @@ Run a quick maintenance action on a remote server.
 
 **Valid actions:** `apt-update`, `docker-prune`, `restart-docker`
 
+### GET `/api/servers/[id]/cron`
+
+List scheduled cron jobs on a remote server.
+
+### POST `/api/servers/[id]/cron`
+
+Create or update a cron job on a remote server.
+
+### GET `/api/servers/[id]/files`
+
+Browse the file system on a remote server. Query: `?path=/home`
+
+### POST `/api/servers/[id]/files`
+
+Perform file operations (read, create, delete) on a remote server.
+
+### GET `/api/servers/[id]/ssl`
+
+Check SSL/TLS certificate status for a remote server.
+
 ---
 
 ## Apps Endpoints
@@ -193,6 +213,50 @@ Manually add a tracked application.
 ### GET `/api/apps/[id]/logs`
 
 Fetch container logs for a tracked application.
+
+### GET `/api/apps/[id]`
+
+Get a single tracked application by ID.
+
+### PATCH `/api/apps/[id]`
+
+Update a tracked application's properties.
+
+### DELETE `/api/apps/[id]`
+
+Remove a tracked application.
+
+### POST `/api/apps/[id]/actions`
+
+Perform a Docker container action for a tracked app.
+
+```json
+{ "action": "start" | "stop" | "restart" }
+```
+
+### GET `/api/apps/[id]/env`
+
+Get environment variables for a tracked container.
+
+### PUT `/api/apps/[id]/env`
+
+Update environment variables for a tracked container.
+
+### GET `/api/apps/[id]/health`
+
+Run a health check on a tracked application. Returns status, response time, and endpoint info.
+
+### GET `/api/apps/[id]/stream`
+
+**Server-Sent Events** — streams real-time stats (CPU, memory, PIDs) for a tracked app.
+
+### POST `/api/apps/[id]/terminal`
+
+Execute a command inside a tracked app's container.
+
+```json
+{ "command": "ls -la /app" }
+```
 
 ---
 
@@ -240,6 +304,82 @@ Run `apt update` or `apt upgrade`.
 
 ---
 
+## Audit Endpoint
+
+### GET `/api/audit`
+
+List audit log entries with pagination.
+
+```json
+// Query params: ?page=1&perPage=25&action=login
+{
+  "success": true,
+  "data": {
+    "entries": [
+      {
+        "id": "...",
+        "action": "login",
+        "username": "admin",
+        "target": null,
+        "details": null,
+        "ip": "::1",
+        "createdAt": "2026-02-16T08:20:00.000Z"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+---
+
+## Backup Endpoint
+
+### POST `/api/backup`
+
+Create a backup of the SQLite database. Returns the backup file.
+
+---
+
+## Notification Endpoints
+
+### GET `/api/notifications`
+
+List all notification channels and their alert rules.
+
+### POST `/api/notifications`
+
+Create a new notification channel.
+
+```json
+{
+  "name": "Slack Alerts",
+  "type": "webhook",
+  "webhookUrl": "https://hooks.slack.com/...",
+  "alertRules": [
+    { "metric": "cpu", "operator": ">", "threshold": 80, "cooldownMin": 5 }
+  ]
+}
+```
+
+### DELETE `/api/notifications/[id]`
+
+Delete a notification channel.
+
+---
+
+## Dashboard Endpoints
+
+### GET `/api/dashboard/stream`
+
+**Server-Sent Events** — streams dashboard-level stats (host metrics + container summary).
+
+### GET `/api/dashboard/summary`
+
+Quick summary counts (apps, servers, ports, networks, deployments).
+
+---
+
 ## Deploy Endpoints
 
 ### GET `/api/deploy`
@@ -275,6 +415,22 @@ Start a new deployment.
 ```
 
 **Detected stacks:** `nextjs`, `react`, `vue`, `nuxt`, `python`, `go`, `rust`, `node`, `static`, `unknown`
+
+### POST `/api/deploy/docker`
+
+Deploy a Docker image or Docker Compose stack.
+
+```json
+// Docker Image mode
+{ "mode": "image", "image": "nginx:latest", "containerName": "my-nginx", "ports": "80:80" }
+
+// Docker Compose mode
+{ "mode": "compose", "composeContent": "version: '3'\nservices:...", "projectName": "my-stack" }
+```
+
+### GET `/api/deploy/stream`
+
+**Server-Sent Events** — streams real-time deployment logs.
 
 ---
 
@@ -451,7 +607,6 @@ const original = decrypt(encrypted); // → plaintext
 | ------------------------ | -------- | ------------------------------- |
 | No rate limiting         | Medium   | Add rate limiter middleware     |
 | No 2FA                   | Medium   | Add TOTP (Google Authenticator) |
-| No audit log             | Low      | Log actions to DB               |
 | SSH host keys not stored | Low      | Store known_hosts               |
 | No CORS/CSP headers      | Low      | Add security headers            |
 

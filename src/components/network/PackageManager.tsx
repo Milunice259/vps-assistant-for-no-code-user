@@ -195,9 +195,12 @@ export function PackageManager() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">Server System Packages</h2>
+          <h2 className="text-lg font-semibold text-white">
+            Server System Packages
+            <Tip text="Packages are software programs installed on your server. Keeping them updated helps with security and stability." />
+          </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Software installed on the host server operating system
+            Software installed on the host server operating system. Update regularly to keep your server secure.
           </p>
         </div>
         {!platformError && (
@@ -279,7 +282,10 @@ export function PackageManager() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-gray-500">
               <Package className="h-10 w-10" />
-              <p>No packages found.</p>
+              <p>No packages match your filter.</p>
+              <p className="text-xs text-gray-600 max-w-sm text-center">
+                Try a different search term, or click &quot;Update List&quot; to refresh the package database from the server.
+              </p>
             </div>
           ) : (
             <div className="max-h-[400px] overflow-y-auto rounded-xl border border-gray-700">

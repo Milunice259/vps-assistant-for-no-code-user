@@ -106,6 +106,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
   const [filter, setFilter] = useState<FilterMode>("active");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -113,6 +114,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
   const fetchServices = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setWarning(null);
     setDisconnected(false);
     try {
       const res = await fetch(`/api/servers/${serverId}/services`);
@@ -125,6 +127,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
         throw new Error(json.error || "Failed to load services");
       }
       setServices(json.data || []);
+      if (json.warning) setWarning(json.warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -215,6 +218,17 @@ export function ServiceList({ serverId }: ServiceListProps) {
 
   return (
     <div className="space-y-4">
+      {/* Warning banner (host access unavailable) */}
+      {warning && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-amber-300 font-medium">Host Access Unavailable</p>
+            <p className="text-xs text-gray-400 mt-1">{warning}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header with ownership label */}
       <div className="flex justify-between items-start">
         <div>

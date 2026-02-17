@@ -29,6 +29,19 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 RUN npm ci --omit=dev
 RUN npx prisma generate
+# Remove packages already tree-shaken into standalone build
+# Only @prisma/client, .prisma, ssh2-promise, ssh2, bcryptjs needed at runtime
+RUN rm -rf node_modules/lucide-react \
+    node_modules/recharts \
+    node_modules/clsx \
+    node_modules/jose \
+    node_modules/react \
+    node_modules/react-dom \
+    node_modules/d3-* \
+    node_modules/js-yaml \
+    node_modules/typescript \
+    node_modules/effect \
+    node_modules/.cache
 
 # ─── Stage 4: Production Runner ───
 FROM base AS runner

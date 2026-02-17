@@ -19,6 +19,10 @@ const VALID_ACTIONS = [
   "docker-stats",
   "sync-time",
   "restart-server",
+  "check-uptime",
+  "check-memory",
+  "check-connections",
+  "check-docker-version",
 ] as const;
 
 /**
@@ -30,9 +34,11 @@ const VALID_ACTIONS = [
  */
 export async function POST(
   request: NextRequest,
-  context: RouteContext
+  context: RouteContext,
 ): Promise<NextResponse<ApiResponse<{ output: string }>>> {
-  let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
+  let ssh: Awaited<
+    ReturnType<typeof import("@/lib/ssh").createSSHConnection>
+  > | null = null;
 
   try {
     const { id } = await context.params;
@@ -42,14 +48,17 @@ export async function POST(
     if (!action) {
       return NextResponse.json(
         { success: false, error: "action is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!VALID_ACTIONS.includes(action as (typeof VALID_ACTIONS)[number])) {
       return NextResponse.json(
-        { success: false, error: `Invalid action. Must be one of: ${VALID_ACTIONS.join(", ")}` },
-        { status: 400 }
+        {
+          success: false,
+          error: `Invalid action. Must be one of: ${VALID_ACTIONS.join(", ")}`,
+        },
+        { status: 400 },
       );
     }
 
@@ -59,7 +68,7 @@ export async function POST(
       if (!result.success) {
         return NextResponse.json(
           { success: false, error: result.output },
-          { status: 500 }
+          { status: 500 },
         );
       }
       return NextResponse.json({
@@ -77,7 +86,7 @@ export async function POST(
     if (!actionResult.success) {
       return NextResponse.json(
         { success: false, error: actionResult.output },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -88,8 +97,12 @@ export async function POST(
   } catch (error) {
     if (isDisconnectedError(error)) {
       return NextResponse.json(
-        { success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" },
-        { status: 503 }
+        {
+          success: false,
+          error: "Server is offline or unreachable",
+          code: "DISCONNECTED",
+        },
+        { status: 503 },
       );
     }
 

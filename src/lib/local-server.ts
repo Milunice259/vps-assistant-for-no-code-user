@@ -21,6 +21,34 @@ import type { ServerInfo } from "@/types";
 const HOST_OS_RELEASE = "/host/os-release";
 const HOST_HOSTNAME   = "/host/hostname";
 
+// ─── Host access detection (cached) ───
+let hostAccessAvailable: boolean | null = null;
+let hostAccessCheckedAt = 0;
+const HOST_ACCESS_CHECK_INTERVAL = 60_000; // Re-check every 60 s
+
+/**
+ * Test whether nsenter can reach the host PID namespace.
+ * Result is cached for 60 s so repeated calls are cheap.
+ */
+export function canAccessHost(): boolean {
+  const now = Date.now();
+  if (hostAccessAvailable !== null && now - hostAccessCheckedAt < HOST_ACCESS_CHECK_INTERVAL) {
+    return hostAccessAvailable;
+  }
+  try {
+    execSync('nsenter -t 1 -m -u -i -n -- echo ok', {
+      encoding: 'utf-8',
+      timeout: 5_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    hostAccessAvailable = true;
+  } catch {
+    hostAccessAvailable = false;
+  }
+  hostAccessCheckedAt = now;
+  return hostAccessAvailable;
+}
+
 /** The sentinel ID for the local server. */
 export const LOCAL_SERVER_ID = "local";
 
@@ -165,15 +193,20 @@ export function getLocalContainers() {
 
 /**
  * Get local systemd services via nsenter (runs on the host).
+ * Returns empty array when host access is unavailable (no throw).
  */
-export function getLocalServices() {
+export function getLocalServices(): { services: Array<{ name: string; loadState: string; activeState: string; subState: string; description: string }>; hostAccess: boolean } {
+  if (!canAccessHost()) {
+    return { services: [], hostAccess: false };
+  }
+
   try {
     const raw = execOnHost(
       "systemctl list-units --type=service --all --no-pager --plain --no-legend"
     );
-    if (!raw) return [];
+    if (!raw) return { services: [], hostAccess: true };
 
-    return raw.split("\n").filter(Boolean).map((line) => {
+    const services = raw.split("\n").filter(Boolean).map((line) => {
       const parts = line.trim().split(/\s+/);
       return {
         name: (parts[0] || "").replace(".service", ""),
@@ -183,12 +216,13 @@ export function getLocalServices() {
         description: parts.slice(4).join(" ") || "",
       };
     });
+    return { services, hostAccess: true };
   } catch (err) {
     console.warn(
       "[local-server] Service discovery failed:",
       err instanceof Error ? err.message : err
     );
-    return [];
+    return { services: [], hostAccess: true };
   }
 }
 
@@ -231,8 +265,18 @@ export function localQuickAction(
     return { success: false, output: `Unknown action: ${action}` };
   }
 
+  const isDockerAction = DOCKER_ACTIONS.has(action);
+
+  // Check host access before attempting nsenter commands
+  if (!isDockerAction && !canAccessHost()) {
+    return {
+      success: false,
+      output: "Host access unavailable — this action requires nsenter (pid:host mode in Docker). This feature only works when the app is deployed on a Linux VPS.",
+    };
+  }
+
   try {
-    const exec = DOCKER_ACTIONS.has(action) ? execLocal : execOnHost;
+    const exec = isDockerAction ? execLocal : execOnHost;
     const output = exec(command, 120_000);
     return { success: true, output: output || "Done (no output)" };
   } catch (error) {

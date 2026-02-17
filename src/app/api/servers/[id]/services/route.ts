@@ -24,7 +24,7 @@ export async function GET(
 
     // Local server — use local systemctl
     if (isLocalServer(id)) {
-      const services = getLocalServices();
+      const { services, hostAccess } = getLocalServices();
       const data: ServiceInfo[] = services.map((s) => ({
         name: s.name,
         loadState: s.loadState,
@@ -32,7 +32,13 @@ export async function GET(
         subState: s.subState,
         description: s.description,
       }));
-      return NextResponse.json({ success: true, data });
+      return NextResponse.json({
+        success: true,
+        data,
+        ...(!hostAccess && {
+          warning: "Host access unavailable — system services require Docker pid:host mode. This feature works when deployed on a Linux VPS.",
+        }),
+      });
     }
 
     const result = await connectToServer(id);

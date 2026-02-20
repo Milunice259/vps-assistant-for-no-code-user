@@ -7,9 +7,7 @@ FROM node:20-alpine AS base
 
 # ─── Stage 1: Install ALL Dependencies (dev + prod) ───
 FROM base AS deps
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf && \
-    apk add --no-cache libc6-compat python3 make g++
+RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
@@ -25,9 +23,7 @@ RUN npm run build
 
 # ─── Stage 3: Production Dependencies Only ───
 FROM base AS proddeps
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf && \
-    apk add --no-cache libc6-compat python3 make g++
+RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
@@ -56,9 +52,7 @@ RUN mkdir -p /app/data
 
 # Network/ports feature needs `ss` (iproute2)
 # iproute2 = ss (ports), docker-cli = docker ps, util-linux = nsenter (host commands)
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf && \
-    apk add --no-cache iproute2 docker-cli util-linux
+RUN apk add --no-cache iproute2 docker-cli util-linux
 
 # Copy Next.js standalone build (includes minimal node_modules)
 COPY --from=builder /app/.next/standalone ./

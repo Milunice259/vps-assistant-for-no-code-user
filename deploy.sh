@@ -720,7 +720,52 @@ deploy_application() {
     fi
 
     export DOCKER_BUILDKIT=1
-    $COMPOSE_CMD build $USE_NO_CACHE 2>&1 | tail -15
+
+    # ── Build with progress bar ──
+    BUILD_LOG=$(mktemp)
+    $COMPOSE_CMD build $USE_NO_CACHE > "$BUILD_LOG" 2>&1 &
+    BUILD_PID=$!
+
+    SPINNER='⣾⣽⣻⢿⡿⣟⣯⣷'
+    START_TIME=$(date +%s)
+    SPIN_IDX=0
+
+    while kill -0 "$BUILD_PID" 2>/dev/null; do
+        NOW=$(date +%s)
+        ELAPSED=$((NOW - START_TIME))
+        MINS=$((ELAPSED / 60))
+        SECS=$((ELAPSED % 60))
+
+        # Parse current build step from log
+        CURRENT_STEP=$(grep -oP '^\#\d+ \[app \K[^\]]+' "$BUILD_LOG" 2>/dev/null | tail -1)
+        if [ -z "$CURRENT_STEP" ]; then
+            CURRENT_STEP="preparing..."
+        fi
+
+        CHAR="${SPINNER:$SPIN_IDX:1}"
+        SPIN_IDX=$(( (SPIN_IDX + 1) % ${#SPINNER} ))
+
+        printf "\r${CYAN}  %s Building...  ${NC}%02d:%02d  ${BLUE}%s${NC}     " "$CHAR" "$MINS" "$SECS" "$CURRENT_STEP"
+        sleep 1
+    done
+
+    # Check build result
+    wait "$BUILD_PID"
+    BUILD_EXIT=$?
+    printf "\r%-80s\r" " "  # Clear the progress line
+
+    if [ $BUILD_EXIT -ne 0 ]; then
+        print_error "Build failed! Last 20 lines:"
+        tail -20 "$BUILD_LOG"
+        rm -f "$BUILD_LOG"
+        exit 1
+    fi
+
+    TOTAL_TIME=$(($(date +%s) - START_TIME))
+    TOTAL_MINS=$((TOTAL_TIME / 60))
+    TOTAL_SECS=$((TOTAL_TIME % 60))
+    print_success "Build completed in ${TOTAL_MINS}m ${TOTAL_SECS}s"
+    rm -f "$BUILD_LOG"
 
     print_info "Starting containers..."
     $COMPOSE_CMD up -d

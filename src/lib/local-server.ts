@@ -340,18 +340,22 @@ export function getLocalContainerDetail(containerId: string): {
   status: string;
   ports: string;
   createdAt: string;
+  restartPolicy: string;
+  volumes: string;
+  domain: string | null;
+  env: string[];
 } | null {
   try {
     const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
     if (!safeId) return null;
 
     const raw = execLocal(
-      `docker inspect --format "{{.Id}}\\t{{.Name}}\\t{{.Config.Image}}\\t{{.State.Status}}\\t{{.Created}}\\t{{.HostConfig.RestartPolicy.Name}}" ${safeId}`,
+      `docker inspect --format "{{.Id}}|||{{.Name}}|||{{.Config.Image}}|||{{.State.Status}}|||{{.Created}}|||{{.HostConfig.RestartPolicy.Name}}" ${safeId}`,
       10_000
     );
     if (!raw.trim()) return null;
 
-    const [fullId, name, image, state, created, restartPolicy] = raw.trim().split("\t");
+    const [fullId, name, image, state, created, restartPolicy] = raw.trim().split("|||");
 
     // Get ports from docker ps
     let ports = "";
@@ -372,6 +376,42 @@ export function getLocalContainerDetail(containerId: string): {
       if (statusRaw) status = statusRaw;
     } catch { /* ignore */ }
 
+    // Get volumes (bind mounts + named volumes)
+    let volumes = "";
+    try {
+      volumes = execLocal(
+        `docker inspect --format '{{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}' ${safeId}`,
+        5_000
+      ).trim();
+    } catch { /* ignore */ }
+
+    // Get labels for domain detection (traefik, caddy, nginx-proxy)
+    let domain: string | null = null;
+    try {
+      const labelRaw = execLocal(
+        `docker inspect --format '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}\\n{{end}}' ${safeId}`,
+        5_000
+      );
+      // Check for traefik Host rule
+      const traefikMatch = labelRaw.match(/traefik\.http\.routers\.\w+\.rule=Host\(`([^`]+)`\)/);
+      if (traefikMatch) domain = traefikMatch[1];
+      // Check for VIRTUAL_HOST (nginx-proxy)
+      if (!domain) {
+        const vhMatch = labelRaw.match(/VIRTUAL_HOST=([^\s\n]+)/);
+        if (vhMatch) domain = vhMatch[1];
+      }
+    } catch { /* ignore */ }
+
+    // Get environment variables from container config
+    let env: string[] = [];
+    try {
+      const envRaw = execLocal(
+        `docker inspect --format '{{range .Config.Env}}{{.}}\\n{{end}}' ${safeId}`,
+        5_000
+      );
+      env = envRaw.trim().split("\n").filter(Boolean);
+    } catch { /* ignore */ }
+
     return {
       id: fullId || containerId,
       name: (name || "").replace(/^\//, ""), // Remove leading /
@@ -380,6 +420,10 @@ export function getLocalContainerDetail(containerId: string): {
       status,
       ports: ports.trim(),
       createdAt: created || new Date().toISOString(),
+      restartPolicy: restartPolicy || "no",
+      volumes,
+      domain,
+      env,
     };
   } catch (err) {
     console.warn(

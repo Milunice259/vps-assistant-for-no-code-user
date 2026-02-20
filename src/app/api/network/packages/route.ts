@@ -1,41 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
-import os from "os";
+import { canAccessHost, execOnHost } from "@/lib/local-server";
 import type { ApiResponse, PackageInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-type PackageManager = "apt" | "apk";
+type PkgMgr = "apt" | "apk";
 
-/**
- * Detect which package manager is available on this system.
- * Returns "apt" (Debian/Ubuntu), "apk" (Alpine), or null.
- */
-function detectPackageManager(): PackageManager | null {
-  if (os.platform() !== "linux") return null;
+/* ── Detect package manager ── */
 
-  try {
-    execSync("which apk 2>/dev/null", { encoding: "utf-8", timeout: 3_000 });
-    return "apk";
-  } catch {
-    // not Alpine
+function detectPackageManager(): PkgMgr | null {
+  // Try host first via nsenter
+  if (canAccessHost()) {
+    try {
+      execOnHost("which apt 2>/dev/null", 5_000);
+      return "apt";
+    } catch { /* not apt */ }
+    try {
+      execOnHost("which apk 2>/dev/null", 5_000);
+      return "apk";
+    } catch { /* not apk */ }
   }
 
+  // Fallback: check inside the container
   try {
     execSync("which apt 2>/dev/null", { encoding: "utf-8", timeout: 3_000 });
     return "apt";
-  } catch {
-    // not Debian/Ubuntu
-  }
+  } catch { /* */ }
+  try {
+    execSync("which apk 2>/dev/null", { encoding: "utf-8", timeout: 3_000 });
+    return "apk";
+  } catch { /* */ }
 
   return null;
 }
 
-/**
- * Parse `apt list --installed` output into PackageInfo[].
- * Format: "package/source version arch [installed,upgradable to: x.y.z]"
- */
-function parseAptOutput(raw: string): PackageInfo[] {
+/** Run a command adaptively: host (nsenter) first, then container. */
+function runCmd(cmd: string, timeout = 30_000): string {
+  if (canAccessHost()) {
+    try {
+      return execOnHost(cmd, timeout);
+    } catch { /* fall through */ }
+  }
+  return execSync(cmd, {
+    encoding: "utf-8",
+    timeout,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
+
+/* ── Parsers ── */
+
+function parseAptInstalled(raw: string): PackageInfo[] {
   return raw
     .trim()
     .split("\n")
@@ -44,7 +60,6 @@ function parseAptOutput(raw: string): PackageInfo[] {
       const match = line.match(
         /^([^\s/]+)\/\S+\s+(\S+)\s+\S+\s*(?:\[([^\]]*)\])?/
       );
-
       const name = match?.[1] ?? line.split("/")[0] ?? line;
       const version = match?.[2] ?? "unknown";
       const statusPart = match?.[3] ?? "installed";
@@ -61,104 +76,127 @@ function parseAptOutput(raw: string): PackageInfo[] {
     });
 }
 
-/**
- * Parse `apk list --installed` output into PackageInfo[].
- * Format: "name-version-rN description"
- * Example: "busybox-1.36.1-r15 x86_64 {busybox} (GPL-2.0-only) [installed]"
- */
-function parseApkOutput(raw: string): PackageInfo[] {
+function parseApkInstalled(raw: string): PackageInfo[] {
   return raw
     .trim()
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      // apk format: "name-version arch {origin} (license) [status]"
       const match = line.match(
         /^(.+?)-(\d[\w.]*(?:-r\d+)?)\s+\S+\s+\{.*?\}\s+\(.*?\)\s+\[(.+?)\]/
       );
-
       if (match) {
-        const name = match[1];
-        const version = match[2];
-        const statusStr = match[3] ?? "installed";
-        const upgradable = statusStr.includes("upgradable");
-
+        const upgradable = (match[3] ?? "").includes("upgradable");
         return {
-          name,
-          version,
+          name: match[1],
+          version: match[2],
           status: upgradable ? "upgradable" : "installed",
           upgradable,
         } satisfies PackageInfo;
       }
-
-      // Fallback: simpler parse
+      // Fallback
       const parts = line.split(/\s+/);
-      const nameVersion = parts[0] ?? line;
-      const lastDash = nameVersion.lastIndexOf("-");
-      const name = lastDash > 0 ? nameVersion.substring(0, lastDash) : nameVersion;
-      const version = lastDash > 0 ? nameVersion.substring(lastDash + 1) : "unknown";
-
+      const nv = parts[0] ?? line;
+      const lastDash = nv.lastIndexOf("-");
       return {
-        name,
-        version,
-        status: "installed" as const,
+        name: lastDash > 0 ? nv.substring(0, lastDash) : nv,
+        version: lastDash > 0 ? nv.substring(lastDash + 1) : "unknown",
+        status: "installed",
         upgradable: false,
       } satisfies PackageInfo;
     });
 }
 
-/**
- * GET /api/network/packages - List installed packages.
- * Auto-detects apt (Debian/Ubuntu) or apk (Alpine).
- */
-export async function GET(): Promise<NextResponse<ApiResponse<PackageInfo[]>>> {
-  try {
-    // ── Platform check ──
-    if (os.platform() !== "linux") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "UNSUPPORTED_PLATFORM",
-          message:
-            "This feature requires a Linux server with a supported package manager. " +
-            "You are currently running on " +
-            os.platform().toUpperCase() +
-            ". Package management will work automatically when deployed to your Linux VPS.",
-        },
-        { status: 422 }
-      );
+/** Parse `apt list --upgradable` and merge into an existing package list. */
+function mergeAptUpgradable(packages: PackageInfo[], raw: string): PackageInfo[] {
+  const upgradableMap = new Map<string, string>();
+  for (const line of raw.trim().split("\n")) {
+    if (!line.trim() || line.startsWith("Listing")) continue;
+    // Format: "pkg/source newVer arch [upgradable from: oldVer]"
+    const match = line.match(/^([^\s/]+)\/\S+\s+(\S+)/);
+    if (match) {
+      upgradableMap.set(match[1], match[2]);
     }
+  }
 
-    // ── Detect package manager ──
+  if (upgradableMap.size === 0) return packages;
+
+  return packages.map((pkg) => {
+    const newVer = upgradableMap.get(pkg.name);
+    if (newVer) {
+      return { ...pkg, upgradable: true, status: "upgradable", newVersion: newVer };
+    }
+    return pkg;
+  });
+}
+
+/** Parse `apk version -l '<'` and merge into package list. */
+function mergeApkUpgradable(packages: PackageInfo[], raw: string): PackageInfo[] {
+  const upgradableSet = new Set<string>();
+  for (const line of raw.trim().split("\n")) {
+    // Format: "pkg-oldVer < newVer"
+    const match = line.match(/^(.+?)-\d[\w.]*(?:-r\d+)?\s+</);
+    if (match) upgradableSet.add(match[1]);
+  }
+
+  if (upgradableSet.size === 0) return packages;
+
+  return packages.map((pkg) => {
+    if (upgradableSet.has(pkg.name)) {
+      return { ...pkg, upgradable: true, status: "upgradable" };
+    }
+    return pkg;
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GET /api/network/packages — List installed packages + check upgrades.
+   Query param: ?check=1 — also check for upgradable packages.
+   ══════════════════════════════════════════════════════════════ */
+export async function GET(
+  request: NextRequest
+): Promise<NextResponse<ApiResponse<PackageInfo[]>>> {
+  try {
     const pkgMgr = detectPackageManager();
 
     if (!pkgMgr) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "NO_PACKAGE_MANAGER",
-          message:
-            "No supported package manager found (apt or apk). " +
-            "This feature requires a Linux system with apt (Debian/Ubuntu) or apk (Alpine).",
-        },
-        { status: 422 }
-      );
+      // No package manager available — return empty list gracefully
+      return NextResponse.json({
+        success: true,
+        data: [],
+        packageManager: "none",
+      } as ApiResponse<PackageInfo[]> & { packageManager: string });
     }
 
     // ── List installed packages ──
-    const command =
+    const listCmd =
       pkgMgr === "apt"
         ? "apt list --installed 2>/dev/null | tail -n +2"
         : "apk list --installed 2>/dev/null";
 
-    const raw = execSync(command, {
-      encoding: "utf-8",
-      timeout: 30_000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    const raw = runCmd(listCmd);
+    let packages =
+      pkgMgr === "apt" ? parseAptInstalled(raw) : parseApkInstalled(raw);
 
-    const packages =
-      pkgMgr === "apt" ? parseAptOutput(raw) : parseApkOutput(raw);
+    // ── Check for upgradable packages if requested ──
+    const checkUpgrades = request.nextUrl.searchParams.get("check") === "1";
+    if (checkUpgrades) {
+      try {
+        if (pkgMgr === "apt") {
+          // apt update first to refresh index, then list upgradable
+          try { runCmd("apt update -qq 2>/dev/null", 120_000); } catch { /* ok */ }
+          const upgRaw = runCmd("apt list --upgradable 2>/dev/null | tail -n +2");
+          packages = mergeAptUpgradable(packages, upgRaw);
+        } else {
+          // apk update + check
+          try { runCmd("apk update -q 2>/dev/null", 60_000); } catch { /* ok */ }
+          const upgRaw = runCmd("apk version -l '<' 2>/dev/null");
+          packages = mergeApkUpgradable(packages, upgRaw);
+        }
+      } catch {
+        // Upgrade check failed — return packages without upgrade info
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -175,13 +213,16 @@ export async function GET(): Promise<NextResponse<ApiResponse<PackageInfo[]>>> {
   }
 }
 
-/**
- * POST /api/network/packages - Run package update or upgrade.
- * Auto-detects apt or apk and runs the appropriate command.
- */
+/* ══════════════════════════════════════════════════════════════
+   POST /api/network/packages — Run package operations.
+   Body: { action: "update" | "upgrade", packages?: string[] }
+   - action "update": refresh package index
+   - action "upgrade" + no packages: upgrade ALL upgradable
+   - action "upgrade" + packages[]: upgrade specific packages
+   ══════════════════════════════════════════════════════════════ */
 export async function POST(
   request: NextRequest
-): Promise<NextResponse<ApiResponse<{ logs: string }>>> {
+): Promise<NextResponse<ApiResponse<{ logs: string; upgradedCount?: number }>>> {
   try {
     const body = (await request.json()) as {
       action: "update" | "upgrade";
@@ -189,22 +230,6 @@ export async function POST(
     };
 
     const { action, packages } = body;
-
-    // ── Platform check ──
-    if (os.platform() !== "linux") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "UNSUPPORTED_PLATFORM",
-          message:
-            "Package operations require a Linux server. " +
-            "You are running on " +
-            os.platform().toUpperCase() +
-            ".",
-        },
-        { status: 422 }
-      );
-    }
 
     if (!action || !["update", "upgrade"].includes(action)) {
       return NextResponse.json(
@@ -219,8 +244,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "NO_PACKAGE_MANAGER",
-          message: "No apt or apk found on this system.",
+          error: "No supported package manager found (apt or apk).",
         },
         { status: 422 }
       );
@@ -241,9 +265,9 @@ export async function POST(
             { status: 400 }
           );
         }
-        command = `apt install -y ${safePackages.join(" ")} 2>&1`;
+        command = `DEBIAN_FRONTEND=noninteractive apt install -y ${safePackages.join(" ")} 2>&1`;
       } else {
-        command = "apt upgrade -y 2>&1";
+        command = "DEBIAN_FRONTEND=noninteractive apt upgrade -y 2>&1";
       }
     } else {
       // apk
@@ -265,15 +289,23 @@ export async function POST(
       }
     }
 
-    const output = execSync(command, {
-      encoding: "utf-8",
-      timeout: 300_000,
-      maxBuffer: 50 * 1024 * 1024,
-    });
+    const output = runCmd(command, 300_000);
+
+    // Count upgraded packages from output
+    let upgradedCount = 0;
+    if (action === "upgrade") {
+      if (pkgMgr === "apt") {
+        const match = output.match(/(\d+) upgraded/);
+        upgradedCount = match ? parseInt(match[1], 10) : 0;
+      } else {
+        const lines = output.split("\n").filter((l) => l.includes("Upgrading") || l.includes("Installing"));
+        upgradedCount = lines.length;
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      data: { logs: output },
+      data: { logs: output, upgradedCount },
     });
   } catch (error) {
     const message =

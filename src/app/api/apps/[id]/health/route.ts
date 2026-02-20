@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
-import { isLocalServer, execLocal } from "@/lib/local-server";
+import { isLocalServer, isLocalAppId, parseLocalContainerId, execLocal } from "@/lib/local-server";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +28,62 @@ export async function GET(
   try {
     const { id } = await context.params;
 
+    // ── Local container: run health check directly ──
+    if (isLocalAppId(id)) {
+      const containerId = parseLocalContainerId(id);
+      const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
+
+      try {
+        const stateOutput = execLocal(
+          `docker inspect --format '{{.State.Status}}' ${safeId} 2>&1`,
+          10_000
+        );
+        const containerState = stateOutput.trim();
+
+        let status: HealthResult["status"] = "unknown";
+        let output = "";
+
+        if (containerState !== "running") {
+          status = "unhealthy";
+          output = `Container is ${containerState}`;
+        } else {
+          // Check Docker-native health
+          const healthOutput = execLocal(
+            `docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${safeId} 2>&1`,
+            10_000
+          );
+          const dockerHealth = healthOutput.trim();
+
+          if (dockerHealth === "healthy") {
+            status = "healthy";
+            output = "Docker health check: healthy";
+          } else if (dockerHealth === "unhealthy") {
+            status = "unhealthy";
+            output = "Docker health check: unhealthy";
+          } else {
+            status = "healthy";
+            output = "Container is running (no health check configured)";
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          data: { status, output, checkedAt: new Date().toISOString(), containerState },
+        });
+      } catch {
+        return NextResponse.json({
+          success: true,
+          data: {
+            status: "unknown" as const,
+            output: "Could not inspect container",
+            checkedAt: new Date().toISOString(),
+            containerState: "unknown",
+          },
+        });
+      }
+    }
+
+    // ── DB-backed app ──
     const app = await prisma.app.findUnique({
       where: { id },
       include: { server: true },

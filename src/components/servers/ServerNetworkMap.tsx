@@ -184,7 +184,7 @@ function computeLayout(
         color: colors.dot,
         bgColor: colors.bg,
         state: cont.state,
-        ip: cont.ipv4,
+        ip: cont.ipv4?.trim(),
         image: cont.image,
         ports: cont.ports,
         networkIdx: i,
@@ -447,6 +447,56 @@ function ContainerNode({ node, hovered, onHover }: {
 }
 
 /* ══════════════════════════════════════════════════════════
+   Edge-snap geometry helpers
+   ══════════════════════════════════════════════════════════ */
+
+// Node dimensions (must match the SVG renderers)
+const NODE_DIMS: Record<string, { w: number; h: number; r?: number }> = {
+  server:    { w: 0, h: 0, r: 34 },   // circle
+  network:   { w: 140, h: 50 },        // rect
+  container: { w: 130, h: 46 },        // rect
+};
+
+/** Point where a ray from (cx,cy)→(tx,ty) exits a rectangle centered at (cx,cy). */
+function rectEdgePoint(
+  cx: number, cy: number,
+  halfW: number, halfH: number,
+  tx: number, ty: number,
+): { x: number; y: number } {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+
+  // Scale factor at which the ray hits each edge
+  const sx = halfW / Math.abs(dx || 1e-6);
+  const sy = halfH / Math.abs(dy || 1e-6);
+  const s = Math.min(sx, sy);
+
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+
+/** Point where a ray from (cx,cy)→(tx,ty) exits a circle centered at (cx,cy). */
+function circleEdgePoint(
+  cx: number, cy: number, r: number,
+  tx: number, ty: number,
+): { x: number; y: number } {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist === 0) return { x: cx + r, y: cy };
+  return { x: cx + (dx / dist) * r, y: cy + (dy / dist) * r };
+}
+
+/** Compute the edge-snapped point for a node toward a target. */
+function nodeEdgePoint(node: LayoutNode, target: LayoutNode): { x: number; y: number } {
+  const dims = NODE_DIMS[node.type] || NODE_DIMS.container;
+  if (dims.r) {
+    return circleEdgePoint(node.x, node.y, dims.r, target.x, target.y);
+  }
+  return rectEdgePoint(node.x, node.y, dims.w / 2, dims.h / 2, target.x, target.y);
+}
+
+/* ══════════════════════════════════════════════════════════
    Animated edge
    ══════════════════════════════════════════════════════════ */
 
@@ -455,18 +505,19 @@ function AnimatedEdge({ from, to, color }: {
   to: LayoutNode;
   color: string;
 }) {
-  // Curved bezier path
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2;
-  // Offset control point slightly
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const cp1x = from.x + dx * 0.3 - dy * 0.1;
-  const cp1y = from.y + dy * 0.3 + dx * 0.1;
-  const cp2x = from.x + dx * 0.7 + dy * 0.1;
-  const cp2y = from.y + dy * 0.7 - dx * 0.1;
+  // Snap endpoints to card borders
+  const start = nodeEdgePoint(from, to);
+  const end   = nodeEdgePoint(to, from);
 
-  const pathD = `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+  // Curved bezier path between edge-snapped points
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const cp1x = start.x + dx * 0.3 - dy * 0.1;
+  const cp1y = start.y + dy * 0.3 + dx * 0.1;
+  const cp2x = start.x + dx * 0.7 + dy * 0.1;
+  const cp2y = start.y + dy * 0.7 - dx * 0.1;
+
+  const pathD = `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${end.x} ${end.y}`;
 
   return (
     <g>
@@ -493,8 +544,10 @@ function AnimatedEdge({ from, to, color }: {
           repeatCount="indefinite"
         />
       </path>
-      {/* Connection dot at target */}
-      <circle cx={to.x} cy={to.y} r={3} fill={color} opacity={0.5} />
+      {/* Connection dot at source edge */}
+      <circle cx={start.x} cy={start.y} r={3} fill={color} opacity={0.4} />
+      {/* Connection dot at target edge */}
+      <circle cx={end.x} cy={end.y} r={3} fill={color} opacity={0.7} />
     </g>
   );
 }
@@ -943,7 +996,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                             </span>
                             {cont.ipv4 && (
                               <span className="text-[10px] text-gray-600 font-mono">
-                                {cont.ipv4}
+                                {cont.ipv4?.trim()}
                               </span>
                             )}
                           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Monitor } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type { PortInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -10,30 +10,18 @@ export function PortTable() {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [platformError, setPlatformError] = useState<string | null>(null);
+  const [source, setSource] = useState<string>("none");
   const [view, setView] = useState<"listening" | "established" | "all">("listening");
 
   const fetchPorts = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setPlatformError(null);
     try {
       const res = await fetch("/api/network/ports");
       const json = await res.json();
-
-      // Handle platform-specific error with friendly message
-      if (json.error === "UNSUPPORTED_PLATFORM") {
-        setPlatformError(json.message);
-        return;
-      }
-      // Port listing unavailable (e.g. ss not found in container)
-      if (json.error === "COMMAND_FAILED") {
-        setPlatformError(json.message ?? "Port listing is not available in this environment.");
-        return;
-      }
-
       if (!res.ok) throw new Error(json.error || json.message || "Failed to load ports");
       setPorts(json.data ?? []);
+      setSource(json.source ?? "none");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -75,7 +63,7 @@ export function PortTable() {
       </div>
 
       {/* View filter tabs */}
-      {!platformError && (
+      <div className="flex items-center gap-2">
         <div className="flex gap-2">
           {(["listening", "established", "all"] as const).map((v) => (
             <button
@@ -91,35 +79,21 @@ export function PortTable() {
             </button>
           ))}
         </div>
-      )}
-
-      {/* Friendly platform warning */}
-      {platformError && (
-        <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-4">
-          <Monitor className="mt-0.5 h-5 w-5 flex-shrink-0 text-yellow-400" />
-          <div>
-            <p className="font-medium text-yellow-300">
-              Linux Server Required
-            </p>
-            <p className="mt-1 text-sm text-yellow-200/70">
-              {platformError}
-            </p>
-            <p className="mt-2 text-xs text-yellow-200/50">
-              Port scanning uses the <code className="bg-yellow-500/10 px-1 rounded">ss</code> command which is only available on Linux servers.
-              When this app is deployed on a VPS, this section will show all listening services and active connections.
-            </p>
-          </div>
-        </div>
-      )}
+        {/* Source indicator */}
+        {source && source !== "none" && !loading && (
+          <Badge variant={source === "ss" ? "success" : source === "docker" ? "info" : "default"}>
+            {source === "ss" ? "Host" : source === "container" ? "Container" : source === "docker" ? "Docker" : source}
+          </Badge>
+        )}
+      </div>
 
       {/* Regular errors */}
-      {error && !platformError && (
+      {error && (
         <p className="rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
           {error}
         </p>
       )}
 
-      {!platformError && (
       <div className="overflow-x-auto rounded-xl border border-gray-700">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-gray-700 bg-gray-800/50 text-xs uppercase text-gray-400">
@@ -215,7 +189,7 @@ export function PortTable() {
           </tbody>
         </table>
       </div>
-      )}
     </div>
   );
 }
+

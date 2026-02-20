@@ -6,11 +6,12 @@ import {
   RefreshCw,
   Search,
   ArrowUpCircle,
-  Monitor,
   CheckCircle2,
   AlertCircle,
   HelpCircle,
   Loader2,
+  ShieldCheck,
+  Download,
 } from "lucide-react";
 import type { PackageInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -68,9 +69,7 @@ const PACKAGE_DESCRIPTIONS: Record<string, string> = {
 };
 
 function getPackageDescription(name: string): string | null {
-  // Exact match
   if (PACKAGE_DESCRIPTIONS[name]) return PACKAGE_DESCRIPTIONS[name];
-  // Try without version suffix (e.g., python3.11 → python3)
   const base = name.replace(/[0-9.]+$/, "");
   if (PACKAGE_DESCRIPTIONS[base]) return PACKAGE_DESCRIPTIONS[base];
   return null;
@@ -113,31 +112,32 @@ export function PackageManager() {
   const [packages, setPackages] = useState<PackageInfo[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [upgradingPkg, setUpgradingPkg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [platformError, setPlatformError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [hasChecked, setHasChecked] = useState(false);
 
-  const fetchPackages = useCallback(async () => {
-    setLoading(true);
+  const fetchPackages = useCallback(async (check = false) => {
+    if (check) {
+      setChecking(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
-    setPlatformError(null);
     try {
-      const res = await fetch("/api/network/packages");
+      const url = check ? "/api/network/packages?check=1" : "/api/network/packages";
+      const res = await fetch(url);
       const json = await res.json();
-
-      // Handle platform-specific error with friendly message
-      if (json.error === "UNSUPPORTED_PLATFORM") {
-        setPlatformError(json.message);
-        return;
-      }
-
       if (!res.ok) throw new Error(json.error || "Failed to load packages");
       setPackages(json.data ?? []);
+      if (check) setHasChecked(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+      setChecking(false);
     }
   }, []);
 
@@ -145,6 +145,10 @@ export function PackageManager() {
     fetchPackages();
   }, [fetchPackages]);
 
+  /* ── Check for updates ── */
+  const checkUpdates = () => fetchPackages(true);
+
+  /* ── Bulk actions ── */
   const runAction = async (action: "update" | "upgrade") => {
     setActionLoading(true);
     setActionResult(null);
@@ -161,13 +165,14 @@ export function PackageManager() {
           setActionResult({ type: "success", message: "Package list updated successfully." });
           fetchPackages();
         } else {
-          const upgradeCount = json.data?.upgradedCount;
+          const ct = json.data?.upgradedCount;
           setActionResult({
             type: "success",
-            message: upgradeCount
-              ? `${upgradeCount} package(s) upgraded successfully.`
+            message: ct
+              ? `${ct} package(s) upgraded successfully.`
               : "All packages are up to date — nothing to upgrade.",
           });
+          fetchPackages(true); // Refresh with upgrade check
         }
       } else {
         setActionResult({
@@ -185,11 +190,47 @@ export function PackageManager() {
     }
   };
 
+  /* ── Per-package upgrade ── */
+  const upgradePackage = async (pkgName: string) => {
+    setUpgradingPkg(pkgName);
+    setActionResult(null);
+    try {
+      const res = await fetch("/api/network/packages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "upgrade", packages: [pkgName] }),
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        setActionResult({
+          type: "success",
+          message: `${pkgName} upgraded successfully.`,
+        });
+        // Refresh package list
+        fetchPackages(true);
+      } else {
+        setActionResult({
+          type: "error",
+          message: json.error || `Failed to upgrade ${pkgName}.`,
+        });
+      }
+    } catch {
+      setActionResult({
+        type: "error",
+        message: `Connection error — could not upgrade ${pkgName}.`,
+      });
+    } finally {
+      setUpgradingPkg(null);
+    }
+  };
+
   const filtered = packages.filter((pkg) =>
     pkg.name.toLowerCase().includes(filter.toLowerCase())
   );
 
   const upgradableCount = packages.filter((p) => p.upgradable).length;
+  const totalCount = packages.length;
 
   return (
     <div className="space-y-4">
@@ -203,17 +244,26 @@ export function PackageManager() {
             Software installed on the host server operating system. Update regularly to keep your server secure.
           </p>
         </div>
-        {!platformError && (
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={actionLoading}
-              onClick={() => runAction("update")}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Update List
-            </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={loading && !checking}
+            onClick={() => fetchPackages()}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={checking}
+            onClick={checkUpdates}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Check Updates
+          </Button>
+          {upgradableCount > 0 && (
             <Button
               variant="primary"
               size="sm"
@@ -222,32 +272,42 @@ export function PackageManager() {
             >
               <ArrowUpCircle className="h-4 w-4" />
               Upgrade All
-              {upgradableCount > 0 && (
-                <span className="ml-1 bg-yellow-500/20 text-yellow-300 text-xs px-1.5 py-0.5 rounded-full">
-                  {upgradableCount}
-                </span>
-              )}
+              <span className="ml-1 bg-yellow-500/20 text-yellow-300 text-xs px-1.5 py-0.5 rounded-full">
+                {upgradableCount}
+              </span>
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Friendly platform warning */}
-      {platformError && (
-        <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-4">
-          <Monitor className="mt-0.5 h-5 w-5 flex-shrink-0 text-yellow-400" />
-          <div>
-            <p className="font-medium text-yellow-300">
-              Linux Server Required
-            </p>
-            <p className="mt-1 text-sm text-yellow-200/70">
-              {platformError}
-            </p>
-          </div>
+      {/* Summary stats */}
+      {!loading && totalCount > 0 && (
+        <div className="flex gap-3 text-xs">
+          <span className="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 text-gray-300">
+            📦 {totalCount} packages
+          </span>
+          {hasChecked && (
+            <>
+              {upgradableCount > 0 ? (
+                <span className="px-3 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/5 text-yellow-300">
+                  ⬆️ {upgradableCount} upgradable
+                </span>
+              ) : (
+                <span className="px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-emerald-300">
+                  ✅ All up to date
+                </span>
+              )}
+            </>
+          )}
+          {!hasChecked && (
+            <span className="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 text-gray-500 italic">
+              Click &quot;Check Updates&quot; to scan for upgradable packages
+            </span>
+          )}
         </div>
       )}
 
-      {/* Action result — friendly visual feedback instead of raw output */}
+      {/* Action result */}
       {actionResult && (
         <StatusMessage type={actionResult.type} message={actionResult.message} />
       )}
@@ -256,86 +316,117 @@ export function PackageManager() {
       )}
 
       {/* Regular errors */}
-      {error && !platformError && (
+      {error && (
         <StatusMessage type="error" message={error} />
       )}
 
-      {/* Content -- hidden when platform not supported */}
-      {!platformError && (
-        <>
-          {/* Search bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-            <Input
-              placeholder="Filter packages..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+        <Input
+          placeholder="Filter packages..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
-          {/* Package list */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-gray-500">
-              <Package className="h-10 w-10" />
-              <p>No packages match your filter.</p>
-              <p className="text-xs text-gray-600 max-w-sm text-center">
-                Try a different search term, or click &quot;Update List&quot; to refresh the package database from the server.
-              </p>
-            </div>
-          ) : (
-            <div className="max-h-[400px] overflow-y-auto rounded-xl border border-gray-700">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 border-b border-gray-700 bg-gray-800 text-xs uppercase text-gray-400">
-                  <tr>
-                    <th className="px-4 py-3">Package</th>
-                    <th className="px-4 py-3">Description</th>
-                    <th className="px-4 py-3">Version</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Upgrade</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-700">
-                  {filtered.map((pkg) => {
-                    const desc = getPackageDescription(pkg.name);
-                    return (
-                      <tr
-                        key={pkg.name}
-                        className="bg-gray-800 transition-colors hover:bg-gray-750"
-                      >
-                        <td className="px-4 py-2">
-                          <span className="font-mono text-white">{pkg.name}</span>
-                        </td>
-                        <td className="px-4 py-2 text-xs text-gray-400 max-w-[200px]">
-                          {desc || <span className="text-gray-600">—</span>}
-                        </td>
-                        <td className="px-4 py-2 font-mono text-gray-400">
-                          {pkg.version}
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant={pkg.upgradable ? "warning" : "success"}>
-                            {pkg.status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2 text-gray-400">
-                          {pkg.upgradable && pkg.newVersion ? (
-                            <span className="text-yellow-400">{pkg.newVersion}</span>
-                          ) : (
-                            <span className="text-gray-600">&mdash;</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+      {/* Package list */}
+      {loading && packages.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-gray-500">
+          <Package className="h-10 w-10" />
+          <p>
+            {packages.length === 0
+              ? "No packages found. Package manager may not be available."
+              : "No packages match your filter."}
+          </p>
+          {packages.length > 0 && (
+            <p className="text-xs text-gray-600 max-w-sm text-center">
+              Try a different search term.
+            </p>
           )}
-        </>
+        </div>
+      ) : (
+        <div className="max-h-[400px] overflow-y-auto rounded-xl border border-gray-700">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 border-b border-gray-700 bg-gray-800 text-xs uppercase text-gray-400">
+              <tr>
+                <th className="px-4 py-3">Package</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Version</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">New Version</th>
+                <th className="px-4 py-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-700">
+              {filtered.map((pkg) => {
+                const desc = getPackageDescription(pkg.name);
+                const isUpgrading = upgradingPkg === pkg.name;
+                return (
+                  <tr
+                    key={pkg.name}
+                    className={`transition-colors ${
+                      pkg.upgradable
+                        ? "bg-yellow-500/[0.03] hover:bg-yellow-500/[0.06]"
+                        : "bg-gray-800 hover:bg-gray-750"
+                    }`}
+                  >
+                    <td className="px-4 py-2">
+                      <span className="font-mono text-white">{pkg.name}</span>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-400 max-w-[200px]">
+                      {desc || <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-gray-400">
+                      {pkg.version}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge variant={pkg.upgradable ? "warning" : "success"}>
+                        {pkg.upgradable ? "upgradable" : "installed"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2">
+                      {pkg.upgradable && pkg.newVersion ? (
+                        <span className="font-mono text-yellow-400">{pkg.newVersion}</span>
+                      ) : hasChecked ? (
+                        <span className="text-gray-600">—</span>
+                      ) : (
+                        <span className="text-gray-600 italic text-xs">unchecked</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {pkg.upgradable ? (
+                        <button
+                          onClick={() => upgradePackage(pkg.name)}
+                          disabled={isUpgrading || actionLoading}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
+                            bg-yellow-500/10 text-yellow-300 border border-yellow-500/30
+                            hover:bg-yellow-500/20 hover:border-yellow-500/50
+                            disabled:opacity-40 disabled:cursor-not-allowed
+                            transition-all duration-200"
+                        >
+                          {isUpgrading ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Download className="h-3 w-3" />
+                          )}
+                          {isUpgrading ? "Upgrading..." : "Upgrade"}
+                        </button>
+                      ) : (
+                        <span className="text-gray-600 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

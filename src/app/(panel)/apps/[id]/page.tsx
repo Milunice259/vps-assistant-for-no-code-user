@@ -15,6 +15,7 @@ import {
   Download,
   Trash2,
   Terminal,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -43,6 +44,36 @@ function statusBadgeVariant(status: AppStatusType) {
   }
 }
 
+/** Derive a human-friendly app name from container metadata. */
+function deriveAppName(app: AppDetailInfo): string {
+  // 1. If name exists and isn't just a container ID (64-char hex), use it
+  if (app.name && !/^[a-f0-9]{12,64}$/.test(app.name)) {
+    // Clean up Docker container naming conventions
+    return app.name
+      .replace(/^\//, "")           // Leading slash
+      .replace(/_1$/, "")           // Docker Compose suffix _1
+      .replace(/[-_]/g, " ")        // Dashes/underscores to spaces
+      .replace(/\b\w/g, (c) => c.toUpperCase()); // Title case
+  }
+  // 2. Try container name
+  if (app.containerName && !/^[a-f0-9]{12,64}$/.test(app.containerName)) {
+    return app.containerName
+      .replace(/^\//, "")
+      .replace(/_1$/, "")
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  // 3. Try image name (without tag/registry)
+  if (app.image) {
+    const imageName = app.image.split(":")[0].split("/").pop() || app.image;
+    return imageName
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  // 4. Fallback: truncated container ID
+  return app.containerId ? `Container ${app.containerId.substring(0, 12)}` : "Unknown App";
+}
+
 const APP_TABS = [
   { key: "overview", label: "Overview", icon: <Activity className="h-4 w-4" /> },
   { key: "terminal", label: "Terminal", icon: <Terminal className="h-4 w-4" /> },
@@ -51,6 +82,16 @@ const APP_TABS = [
   { key: "env", label: "Env Vars", icon: <Key className="h-4 w-4" /> },
   { key: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
 ];
+
+/** Tab descriptions for user guidance */
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  overview: "Container configuration, metadata, and health status at a glance.",
+  terminal: "Open an interactive shell session inside this container.",
+  logs: "Live-stream stdout/stderr output from this container.",
+  resources: "CPU, memory, and network usage charts with historical data.",
+  env: "Environment variables configured inside this container. For local containers, these are read directly from Docker and are read-only.",
+  settings: "Update application settings like resource limits, domain, and restart policy.",
+};
 
 interface AppStreamData {
   status: string;
@@ -161,6 +202,8 @@ export default function AppDetailPage() {
     );
   }
 
+  const displayName = deriveAppName(app);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -173,10 +216,22 @@ export default function AppDetailPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-xl font-semibold text-white">{app.name}</h2>
-            <p className="text-sm text-gray-400">
-              {app.image || "No image"} • {app.serverName}
-            </p>
+            <h2 className="text-xl font-semibold text-white">{displayName}</h2>
+            <div className="flex items-center gap-2 text-sm text-gray-400 mt-0.5">
+              {app.image && (
+                <span className="font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">
+                  {app.image}
+                </span>
+              )}
+              <span>•</span>
+              <span>{app.serverName}</span>
+              {app.domain && (
+                <>
+                  <span>•</span>
+                  <span className="text-brand-400">{app.domain}</span>
+                </>
+              )}
+            </div>
           </div>
           <Badge variant={statusBadgeVariant(app.status)}>{app.status}</Badge>
         </div>
@@ -248,6 +303,13 @@ export default function AppDetailPage() {
       {/* Tabs */}
       <Tabs tabs={APP_TABS} activeTab={activeTab} onChange={setActiveTab} />
 
+      {/* Tab description */}
+      {TAB_DESCRIPTIONS[activeTab] && (
+        <p className="text-xs text-gray-500 -mt-3">
+          {TAB_DESCRIPTIONS[activeTab]}
+        </p>
+      )}
+
       {/* Tab Content */}
       {activeTab === "overview" && (
         <div className="space-y-6">
@@ -258,7 +320,7 @@ export default function AppDetailPage() {
       {activeTab === "terminal" && app.containerId && (
         <WebTerminal
           appId={app.id}
-          appName={app.name}
+          appName={displayName}
           containerId={app.containerId}
           onClose={() => setActiveTab("overview")}
         />
@@ -266,7 +328,7 @@ export default function AppDetailPage() {
       {activeTab === "logs" && app.containerId && (
         <AppLogViewer
           appId={app.id}
-          appName={app.name}
+          appName={displayName}
           onClose={() => setActiveTab("overview")}
         />
       )}
@@ -309,16 +371,45 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 }
 
 function OverviewPanel({ app }: { app: AppDetailInfo }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyId = () => {
+    if (app.containerId) {
+      navigator.clipboard.writeText(app.containerId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   const details = [
-    { label: "Container ID", value: app.containerId || "—" },
+    {
+      label: "Container ID",
+      value: app.containerId ? (
+        <span className="flex items-center gap-2">
+          <code className="text-xs bg-gray-800 px-2 py-0.5 rounded font-mono">
+            {app.containerId.substring(0, 12)}
+          </code>
+          <button
+            onClick={copyId}
+            className="text-gray-500 hover:text-gray-300 transition-colors"
+            title="Copy full ID"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          {copied && <span className="text-xs text-emerald-400">Copied!</span>}
+        </span>
+      ) : "—",
+    },
     { label: "Container Name", value: app.containerName || "—" },
     { label: "Image", value: app.image || "—" },
-    { label: "Domain", value: app.domain || "—" },
+    { label: "Domain", value: app.domain || <span className="text-gray-600 italic">Not configured</span> },
     { label: "Server", value: app.serverName },
     { label: "Restart Policy", value: app.restartPolicy || "none" },
     { label: "CPU Limit", value: app.cpuLimit ? `${app.cpuLimit} cores` : "Unlimited" },
     { label: "Memory Limit", value: app.memoryLimit ? `${app.memoryLimit} MB` : "Unlimited" },
-    { label: "Health Check", value: app.healthCheck || "None" },
+    { label: "Volumes", value: app.volumes || <span className="text-gray-600 italic">None</span> },
+    { label: "Ports", value: app.ports || <span className="text-gray-600 italic">None</span> },
+    { label: "Health Check", value: app.healthCheck || <span className="text-gray-600 italic">Not configured</span> },
     { label: "Created", value: new Date(app.createdAt).toLocaleString() },
     { label: "Updated", value: new Date(app.updatedAt).toLocaleString() },
   ];
@@ -329,7 +420,7 @@ function OverviewPanel({ app }: { app: AppDetailInfo }) {
         <tbody className="divide-y divide-gray-800">
           {details.map((d) => (
             <tr key={d.label} className="hover:bg-gray-800/50">
-              <td className="py-3 pr-8 text-gray-400 font-medium whitespace-nowrap">{d.label}</td>
+              <td className="py-3 pr-8 text-gray-400 font-medium whitespace-nowrap w-40">{d.label}</td>
               <td className="py-3 text-white break-all">{d.value}</td>
             </tr>
           ))}

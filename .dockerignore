@@ -25,3 +25,6 @@ __tests__
 *.log
 tsconfig.tsbuildinfo
 docker-data/
+docs
+deploy.sh
+docker-compose.yml

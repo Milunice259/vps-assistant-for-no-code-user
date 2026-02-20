@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   ArrowLeft,
   Activity,
@@ -21,13 +22,34 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
 import { AppLogViewer } from "@/components/apps/AppLogViewer";
-import { AppResourceChart } from "@/components/apps/AppResourceChart";
 import { AppEnvEditor } from "@/components/apps/AppEnvEditor";
 import { AppSettings } from "@/components/apps/AppSettings";
 import { WebTerminal } from "@/components/apps/WebTerminal";
 import { AppHealthCheck } from "@/components/apps/AppHealthCheck";
 import { useSSE } from "@/hooks/useSSE";
-import type { AppDetailInfo, ContainerStats, AppMetricInfo, ApiResponse, AppStatusType } from "@/types";
+import type {
+  AppDetailInfo,
+  ContainerStats,
+  AppMetricInfo,
+  ApiResponse,
+  AppStatusType,
+} from "@/types";
+
+// Lazy-load recharts bundle (~180KB gzipped) — only loads when Resources tab is active
+const AppResourceChart = dynamic(
+  () =>
+    import("@/components/apps/AppResourceChart").then((m) => ({
+      default: m.AppResourceChart,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    ),
+  },
+);
 
 function statusBadgeVariant(status: AppStatusType) {
   switch (status) {
@@ -50,9 +72,9 @@ function deriveAppName(app: AppDetailInfo): string {
   if (app.name && !/^[a-f0-9]{12,64}$/.test(app.name)) {
     // Clean up Docker container naming conventions
     return app.name
-      .replace(/^\//, "")           // Leading slash
-      .replace(/_1$/, "")           // Docker Compose suffix _1
-      .replace(/[-_]/g, " ")        // Dashes/underscores to spaces
+      .replace(/^\//, "") // Leading slash
+      .replace(/_1$/, "") // Docker Compose suffix _1
+      .replace(/[-_]/g, " ") // Dashes/underscores to spaces
       .replace(/\b\w/g, (c) => c.toUpperCase()); // Title case
   }
   // 2. Try container name
@@ -71,16 +93,30 @@ function deriveAppName(app: AppDetailInfo): string {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
   // 4. Fallback: truncated container ID
-  return app.containerId ? `Container ${app.containerId.substring(0, 12)}` : "Unknown App";
+  return app.containerId
+    ? `Container ${app.containerId.substring(0, 12)}`
+    : "Unknown App";
 }
 
 const APP_TABS = [
-  { key: "overview", label: "Overview", icon: <Activity className="h-4 w-4" /> },
-  { key: "terminal", label: "Terminal", icon: <Terminal className="h-4 w-4" /> },
+  {
+    key: "overview",
+    label: "Overview",
+    icon: <Activity className="h-4 w-4" />,
+  },
+  {
+    key: "terminal",
+    label: "Terminal",
+    icon: <Terminal className="h-4 w-4" />,
+  },
   { key: "logs", label: "Logs", icon: <FileText className="h-4 w-4" /> },
   { key: "resources", label: "Resources", icon: <Cpu className="h-4 w-4" /> },
   { key: "env", label: "Env Vars", icon: <Key className="h-4 w-4" /> },
-  { key: "settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+  {
+    key: "settings",
+    label: "Settings",
+    icon: <Settings className="h-4 w-4" />,
+  },
 ];
 
 /** Tab descriptions for user guidance */
@@ -90,7 +126,8 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   logs: "Live-stream stdout/stderr output from this container.",
   resources: "CPU, memory, and network usage charts with historical data.",
   env: "Environment variables configured inside this container. For local containers, these are read directly from Docker and are read-only.",
-  settings: "Update application settings like resource limits, domain, and restart policy.",
+  settings:
+    "Update application settings like resource limits, domain, and restart policy.",
 };
 
 interface AppStreamData {
@@ -118,7 +155,7 @@ export default function AppDetailPage() {
   const isStatsTab = activeTab === "overview" || activeTab === "resources";
   const { data: streamStats } = useSSE<AppStreamData>(
     `/api/apps/${appId}/stream`,
-    { enabled: isStatsTab, fallbackPollMs: 10_000 }
+    { enabled: isStatsTab, fallbackPollMs: 10_000 },
   );
 
   // Compute liveStats from SSE stream
@@ -127,32 +164,41 @@ export default function AppDetailPage() {
         cpuPercent: streamStats.cpuPercent,
         memUsageMB: streamStats.memUsageMB,
         memLimitMB: streamStats.memLimitMB,
-        memPercent: streamStats.memLimitMB > 0
-          ? (streamStats.memUsageMB / streamStats.memLimitMB) * 100
-          : 0,
+        memPercent:
+          streamStats.memLimitMB > 0
+            ? (streamStats.memUsageMB / streamStats.memLimitMB) * 100
+            : 0,
         netIn: streamStats.netIn,
         netOut: streamStats.netOut,
         pids: streamStats.pids ?? 0,
       }
     : null;
 
-  const fetchApp = useCallback(async (includeStats = false, includeMetrics = false) => {
-    try {
-      const params = new URLSearchParams();
-      if (includeStats) params.set("stats", "true");
-      if (includeMetrics) params.set("metrics", "true");
-      const res = await fetch(`/api/apps/${appId}?${params}`);
-      const json: ApiResponse<AppDetailInfo & { liveStats?: ContainerStats; metrics?: AppMetricInfo[] }> = await res.json();
-      if (json.success && json.data) {
-        setApp(json.data);
-        if (json.data.metrics) setMetrics(json.data.metrics);
+  const fetchApp = useCallback(
+    async (includeStats = false, includeMetrics = false) => {
+      try {
+        const params = new URLSearchParams();
+        if (includeStats) params.set("stats", "true");
+        if (includeMetrics) params.set("metrics", "true");
+        const res = await fetch(`/api/apps/${appId}?${params}`);
+        const json: ApiResponse<
+          AppDetailInfo & {
+            liveStats?: ContainerStats;
+            metrics?: AppMetricInfo[];
+          }
+        > = await res.json();
+        if (json.success && json.data) {
+          setApp(json.data);
+          if (json.data.metrics) setMetrics(json.data.metrics);
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [appId]);
+    },
+    [appId],
+  );
 
   useEffect(() => {
     fetchApp(false, true);
@@ -198,7 +244,9 @@ export default function AppDetailPage() {
 
   if (!app) {
     return (
-      <div className="text-center py-12 text-gray-400">Application not found.</div>
+      <div className="text-center py-12 text-gray-400">
+        Application not found.
+      </div>
     );
   }
 
@@ -288,15 +336,27 @@ export default function AppDetailPage() {
       {/* Live Stats Summary */}
       {liveStats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard label="CPU" value={`${liveStats.cpuPercent.toFixed(1)}%`} color="blue" />
+          <StatCard
+            label="CPU"
+            value={`${liveStats.cpuPercent.toFixed(1)}%`}
+            color="blue"
+          />
           <StatCard
             label="Memory"
             value={`${liveStats.memUsageMB.toFixed(0)} MB`}
             sub={`/ ${liveStats.memLimitMB.toFixed(0)} MB`}
             color="purple"
           />
-          <StatCard label="Net In" value={formatBytes(liveStats.netIn)} color="emerald" />
-          <StatCard label="Net Out" value={formatBytes(liveStats.netOut)} color="amber" />
+          <StatCard
+            label="Net In"
+            value={formatBytes(liveStats.netIn)}
+            color="emerald"
+          />
+          <StatCard
+            label="Net Out"
+            value={formatBytes(liveStats.netOut)}
+            color="amber"
+          />
         </div>
       )}
 
@@ -351,7 +411,17 @@ export default function AppDetailPage() {
 
 // ─── Sub-components ───
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color: string;
+}) {
   const colorMap: Record<string, string> = {
     blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
     purple: "text-purple-400 bg-purple-500/10 border-purple-500/20",
@@ -360,7 +430,9 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   };
 
   return (
-    <div className={`rounded-lg border p-4 ${colorMap[color] || colorMap.blue}`}>
+    <div
+      className={`rounded-lg border p-4 ${colorMap[color] || colorMap.blue}`}
+    >
       <p className="text-xs text-gray-400 uppercase tracking-wider">{label}</p>
       <p className="text-lg font-semibold mt-1">
         {value}
@@ -398,18 +470,42 @@ function OverviewPanel({ app }: { app: AppDetailInfo }) {
           </button>
           {copied && <span className="text-xs text-emerald-400">Copied!</span>}
         </span>
-      ) : "—",
+      ) : (
+        "—"
+      ),
     },
     { label: "Container Name", value: app.containerName || "—" },
     { label: "Image", value: app.image || "—" },
-    { label: "Domain", value: app.domain || <span className="text-gray-600 italic">Not configured</span> },
+    {
+      label: "Domain",
+      value: app.domain || (
+        <span className="text-gray-600 italic">Not configured</span>
+      ),
+    },
     { label: "Server", value: app.serverName },
     { label: "Restart Policy", value: app.restartPolicy || "none" },
-    { label: "CPU Limit", value: app.cpuLimit ? `${app.cpuLimit} cores` : "Unlimited" },
-    { label: "Memory Limit", value: app.memoryLimit ? `${app.memoryLimit} MB` : "Unlimited" },
-    { label: "Volumes", value: app.volumes || <span className="text-gray-600 italic">None</span> },
-    { label: "Ports", value: app.ports || <span className="text-gray-600 italic">None</span> },
-    { label: "Health Check", value: app.healthCheck || <span className="text-gray-600 italic">Not configured</span> },
+    {
+      label: "CPU Limit",
+      value: app.cpuLimit ? `${app.cpuLimit} cores` : "Unlimited",
+    },
+    {
+      label: "Memory Limit",
+      value: app.memoryLimit ? `${app.memoryLimit} MB` : "Unlimited",
+    },
+    {
+      label: "Volumes",
+      value: app.volumes || <span className="text-gray-600 italic">None</span>,
+    },
+    {
+      label: "Ports",
+      value: app.ports || <span className="text-gray-600 italic">None</span>,
+    },
+    {
+      label: "Health Check",
+      value: app.healthCheck || (
+        <span className="text-gray-600 italic">Not configured</span>
+      ),
+    },
     { label: "Created", value: new Date(app.createdAt).toLocaleString() },
     { label: "Updated", value: new Date(app.updatedAt).toLocaleString() },
   ];
@@ -420,7 +516,9 @@ function OverviewPanel({ app }: { app: AppDetailInfo }) {
         <tbody className="divide-y divide-gray-800">
           {details.map((d) => (
             <tr key={d.label} className="hover:bg-gray-800/50">
-              <td className="py-3 pr-8 text-gray-400 font-medium whitespace-nowrap w-40">{d.label}</td>
+              <td className="py-3 pr-8 text-gray-400 font-medium whitespace-nowrap w-40">
+                {d.label}
+              </td>
               <td className="py-3 text-white break-all">{d.value}</td>
             </tr>
           ))}

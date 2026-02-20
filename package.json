@@ -20,6 +20,7 @@
     "js-yaml": "^4.1.1",
     "lucide-react": "^0.500.0",
     "next": "latest",
+    "prisma": "^6.19.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
@@ -33,7 +34,6 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "prisma": "^6.19.2",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.55.0"

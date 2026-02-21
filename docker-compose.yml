@@ -12,12 +12,9 @@ services:
     container_name: vps-control-app
     restart: unless-stopped
     pid: "host"
-    # nsenter requires these capabilities to enter host namespaces
-    cap_add:
-      - SYS_PTRACE
-      - SYS_ADMIN
-    security_opt:
-      - seccomp:unconfined
+    # Full host access for nsenter, Docker socket, and system management
+    # (same security model as Portainer and similar VPS management tools)
+    privileged: true
     env_file: .env
     environment:
       - DATABASE_URL=file:/app/data/vpscontrol.db

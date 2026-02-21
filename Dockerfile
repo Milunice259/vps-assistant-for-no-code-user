@@ -22,15 +22,10 @@ RUN npx prisma generate
 RUN npm run build
 
 # ─── Stage 3: Production-only Dependencies ───
-# Separate stage with ONLY production deps (no typescript, eslint, etc.)
-# This ensures prisma CLI and ALL its transitive deps are included automatically
-# without manually tracking each sub-dependency.
-FROM base AS prod-deps
-RUN apk add --no-cache libc6-compat python3 make g++
-WORKDIR /app
-COPY package.json package-lock.json* ./
-COPY prisma ./prisma
-RUN npm ci --omit=dev
+# Derived FROM deps (no second npm ci = no double network download)
+# npm prune removes devDependencies, keeping only production deps
+FROM deps AS prod-deps
+RUN npm prune --omit=dev
 
 # ─── Stage 4: Production Runner ───
 FROM base AS runner

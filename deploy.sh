@@ -720,13 +720,16 @@ deploy_application() {
     fi
 
     export DOCKER_BUILDKIT=1
+    export BUILDKIT_PROGRESS=plain
+    export PROGRESS_NO_TRUNC=1
 
     # ── Build with visual progress bar ──
     BUILD_LOG=$(mktemp)
     START_TIME=$(date +%s)
 
-    # Run build in background with --progress=plain for parseable output
-    $COMPOSE_CMD build $USE_NO_CACHE --progress=plain > "$BUILD_LOG" 2>&1 &
+    # Docker BuildKit writes directly to /dev/tty, bypassing shell redirection.
+    # Use 'script' to capture ALL output including direct TTY writes.
+    script -q -c "$COMPOSE_CMD build $USE_NO_CACHE --progress=plain" "$BUILD_LOG" > /dev/null 2>&1 &
     BUILD_PID=$!
 
     SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -739,26 +742,24 @@ deploy_application() {
         SECS=$((ELAPSED % 60))
 
         # Parse BuildKit --progress=plain format:
-        #   "#5 [deps 2/4] RUN apk add ..."   → step="deps 2/4 · RUN apk add ..."
-        #   "#12 [builder 1/3] COPY . ."       → step="builder 1/3 · COPY . ."
-        #   "#5 DONE 3.2s"                     → (skip, use previous)
-        CURRENT_STEP=$(grep -oE '^#[0-9]+ \[[a-z_-]+ [0-9]+/[0-9]+\] .+' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/^#[0-9]* \[\([^]]*\)\] /\1 · /' | cut -c1-60)
+        #   "#5 [deps 2/4] RUN apk add ..."
+        #   "#12 [builder 1/3] COPY . ."
+        CURRENT_STEP=$(grep -oE '#[0-9]+ \[[a-z_-]+ [0-9]+/[0-9]+\] .+' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/#[0-9]* \[\([^]]*\)\] /\1 · /' | cut -c1-60)
 
         if [ -z "$CURRENT_STEP" ]; then
-            # Fallback: any step marker
-            CURRENT_STEP=$(grep -oE '^#[0-9]+ \[.+\]' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/^#[0-9]* //' | cut -c1-50)
+            CURRENT_STEP=$(grep -oE '#[0-9]+ \[.+\]' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/#[0-9]* //' | cut -c1-50)
         fi
         if [ -z "$CURRENT_STEP" ]; then
             CURRENT_STEP="preparing..."
         fi
 
         # Count completed steps
-        DONE_COUNT=$(grep -c '^#[0-9]* DONE' "$BUILD_LOG" 2>/dev/null || echo "0")
+        DONE_COUNT=$(grep -c 'DONE' "$BUILD_LOG" 2>/dev/null || echo "0")
 
         CHAR="${SPINNER:$SPIN_IDX:1}"
         SPIN_IDX=$(( (SPIN_IDX + 1) % ${#SPINNER} ))
 
-        printf "\r  ${CYAN}%s${NC} Building (%s steps) ${NC}%02d:%02d  ${BLUE}%s${NC}%-20s" \
+        printf "\r  ${CYAN}%s${NC} Building (%s done) ${NC}%02d:%02d  ${BLUE}%s${NC}%-20s" \
             "$CHAR" "$DONE_COUNT" "$MINS" "$SECS" "$CURRENT_STEP" " "
         sleep 1
     done

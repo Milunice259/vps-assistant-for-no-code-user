@@ -721,40 +721,69 @@ deploy_application() {
 
     export DOCKER_BUILDKIT=1
 
-    # ── Build with real-time streaming output ──
+    # ── Build with visual progress bar ──
     BUILD_LOG=$(mktemp)
     START_TIME=$(date +%s)
 
-    echo ""
-    echo -e "${CYAN}  ┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}  │       Docker Build — Real-time Output           │${NC}"
-    echo -e "${CYAN}  └─────────────────────────────────────────────────┘${NC}"
-    echo ""
+    # Run build in background with --progress=plain for parseable output
+    $COMPOSE_CMD build $USE_NO_CACHE --progress=plain > "$BUILD_LOG" 2>&1 &
+    BUILD_PID=$!
 
-    # --progress=plain gives readable line-by-line output (not BuildKit's fancy UI)
-    # tee streams to terminal AND saves to log for error analysis
-    set +e
-    $COMPOSE_CMD build $USE_NO_CACHE --progress=plain 2>&1 | tee "$BUILD_LOG"
-    BUILD_EXIT=${PIPESTATUS[0]}
-    set -e
+    SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    SPIN_IDX=0
 
-    echo ""
+    while kill -0 "$BUILD_PID" 2>/dev/null; do
+        NOW=$(date +%s)
+        ELAPSED=$((NOW - START_TIME))
+        MINS=$((ELAPSED / 60))
+        SECS=$((ELAPSED % 60))
+
+        # Parse BuildKit --progress=plain format:
+        #   "#5 [deps 2/4] RUN apk add ..."   → step="deps 2/4 · RUN apk add ..."
+        #   "#12 [builder 1/3] COPY . ."       → step="builder 1/3 · COPY . ."
+        #   "#5 DONE 3.2s"                     → (skip, use previous)
+        CURRENT_STEP=$(grep -oE '^#[0-9]+ \[[a-z_-]+ [0-9]+/[0-9]+\] .+' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/^#[0-9]* \[\([^]]*\)\] /\1 · /' | cut -c1-60)
+
+        if [ -z "$CURRENT_STEP" ]; then
+            # Fallback: any step marker
+            CURRENT_STEP=$(grep -oE '^#[0-9]+ \[.+\]' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/^#[0-9]* //' | cut -c1-50)
+        fi
+        if [ -z "$CURRENT_STEP" ]; then
+            CURRENT_STEP="preparing..."
+        fi
+
+        # Count completed steps
+        DONE_COUNT=$(grep -c '^#[0-9]* DONE' "$BUILD_LOG" 2>/dev/null || echo "0")
+
+        CHAR="${SPINNER:$SPIN_IDX:1}"
+        SPIN_IDX=$(( (SPIN_IDX + 1) % ${#SPINNER} ))
+
+        printf "\r  ${CYAN}%s${NC} Building (%s steps) ${NC}%02d:%02d  ${BLUE}%s${NC}%-20s" \
+            "$CHAR" "$DONE_COUNT" "$MINS" "$SECS" "$CURRENT_STEP" " "
+        sleep 1
+    done
+
+    # Check build result
+    wait "$BUILD_PID"
+    BUILD_EXIT=$?
+    printf "\r%-100s\r" " "  # Clear the progress line
 
     if [ $BUILD_EXIT -ne 0 ]; then
         echo ""
-        print_error "Build failed! Scroll up to see the error, or check the last 30 lines:"
+        print_error "Build failed! Error details:"
         echo ""
-        echo -e "${RED}─── Build Error Log (last 30 lines) ───${NC}"
-        tail -30 "$BUILD_LOG"
+        echo -e "${RED}─── Build Error Log (last 40 lines) ───${NC}"
+        tail -40 "$BUILD_LOG"
         echo -e "${RED}───────────────────────────────────────${NC}"
-        rm -f "$BUILD_LOG"
+        echo ""
+        print_info "Full log: $BUILD_LOG"
         exit 1
     fi
 
     TOTAL_TIME=$(($(date +%s) - START_TIME))
     TOTAL_MINS=$((TOTAL_TIME / 60))
     TOTAL_SECS=$((TOTAL_TIME % 60))
-    print_success "Build completed in ${TOTAL_MINS}m ${TOTAL_SECS}s"
+    print_success "Build completed in ${TOTAL_MINS}m ${TOTAL_SECS}s (${DONE_COUNT} steps)"
     rm -f "$BUILD_LOG"
 
     print_info "Starting containers..."

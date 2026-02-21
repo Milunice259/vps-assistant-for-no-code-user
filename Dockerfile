@@ -43,6 +43,26 @@ COPY --from=deps /app/node_modules/prisma ./node_modules/prisma
 COPY --from=deps /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 
+# Prisma 6.19+ transitive deps (@prisma/config → effect, c12, deepmerge-ts, empathic)
+COPY --from=deps /app/node_modules/effect ./node_modules/effect
+COPY --from=deps /app/node_modules/c12 ./node_modules/c12
+COPY --from=deps /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
+COPY --from=deps /app/node_modules/empathic ./node_modules/empathic
+
+# c12 transitive deps (config loader used by @prisma/config)
+COPY --from=deps /app/node_modules/chokidar ./node_modules/chokidar
+COPY --from=deps /app/node_modules/confbox ./node_modules/confbox
+COPY --from=deps /app/node_modules/defu ./node_modules/defu
+COPY --from=deps /app/node_modules/dotenv ./node_modules/dotenv
+COPY --from=deps /app/node_modules/exsolve ./node_modules/exsolve
+COPY --from=deps /app/node_modules/giget ./node_modules/giget
+COPY --from=deps /app/node_modules/jiti ./node_modules/jiti
+COPY --from=deps /app/node_modules/ohash ./node_modules/ohash
+COPY --from=deps /app/node_modules/pathe ./node_modules/pathe
+COPY --from=deps /app/node_modules/perfect-debounce ./node_modules/perfect-debounce
+COPY --from=deps /app/node_modules/pkg-types ./node_modules/pkg-types
+COPY --from=deps /app/node_modules/rc9 ./node_modules/rc9
+
 # Copy SSH runtime deps (not traced by standalone)
 COPY --from=deps /app/node_modules/ssh2-promise ./node_modules/ssh2-promise
 COPY --from=deps /app/node_modules/ssh2 ./node_modules/ssh2

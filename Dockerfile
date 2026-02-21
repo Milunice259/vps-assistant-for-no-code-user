@@ -21,7 +21,18 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# ─── Stage 3: Production Runner ───
+# ─── Stage 3: Production-only Dependencies ───
+# Separate stage with ONLY production deps (no typescript, eslint, etc.)
+# This ensures prisma CLI and ALL its transitive deps are included automatically
+# without manually tracking each sub-dependency.
+FROM base AS prod-deps
+RUN apk add --no-cache libc6-compat python3 make g++
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev
+
+# ─── Stage 4: Production Runner ───
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -33,45 +44,20 @@ RUN mkdir -p /app/data
 # iproute2 = ss (ports), docker-cli = docker ps, util-linux = nsenter (host commands)
 RUN apk add --no-cache iproute2 docker-cli util-linux
 
-# Copy Next.js standalone build (includes minimal node_modules)
+# 1. First, copy ALL production deps (prisma + its full transitive tree)
+#    npm handles dependency resolution — no more manual package copying
+COPY --from=prod-deps /app/node_modules ./node_modules
+
+# 2. Copy Prisma generated client (built in builder stage)
+COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
+
+# 3. Copy Next.js standalone build ON TOP — its traced modules override
+#    where needed; prisma/ssh deps from step 1 remain untouched
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-# Copy Prisma schema + CLI for entrypoint (prisma db push)
+# 4. Copy Prisma schema for entrypoint (prisma db push)
 COPY --from=builder /app/prisma ./prisma
-COPY --from=deps /app/node_modules/prisma ./node_modules/prisma
-COPY --from=deps /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
-
-# Prisma 6.19+ transitive deps (@prisma/config → effect, c12, deepmerge-ts, empathic)
-COPY --from=deps /app/node_modules/effect ./node_modules/effect
-COPY --from=deps /app/node_modules/c12 ./node_modules/c12
-COPY --from=deps /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
-COPY --from=deps /app/node_modules/empathic ./node_modules/empathic
-
-# c12 transitive deps (config loader used by @prisma/config)
-COPY --from=deps /app/node_modules/chokidar ./node_modules/chokidar
-COPY --from=deps /app/node_modules/confbox ./node_modules/confbox
-COPY --from=deps /app/node_modules/defu ./node_modules/defu
-COPY --from=deps /app/node_modules/dotenv ./node_modules/dotenv
-COPY --from=deps /app/node_modules/exsolve ./node_modules/exsolve
-COPY --from=deps /app/node_modules/giget ./node_modules/giget
-COPY --from=deps /app/node_modules/jiti ./node_modules/jiti
-COPY --from=deps /app/node_modules/ohash ./node_modules/ohash
-COPY --from=deps /app/node_modules/pathe ./node_modules/pathe
-COPY --from=deps /app/node_modules/perfect-debounce ./node_modules/perfect-debounce
-COPY --from=deps /app/node_modules/pkg-types ./node_modules/pkg-types
-COPY --from=deps /app/node_modules/rc9 ./node_modules/rc9
-
-# Copy SSH runtime deps (not traced by standalone)
-COPY --from=deps /app/node_modules/ssh2-promise ./node_modules/ssh2-promise
-COPY --from=deps /app/node_modules/ssh2 ./node_modules/ssh2
-COPY --from=deps /app/node_modules/asn1 ./node_modules/asn1
-COPY --from=deps /app/node_modules/bcrypt-pbkdf ./node_modules/bcrypt-pbkdf
-COPY --from=deps /app/node_modules/tweetnacl ./node_modules/tweetnacl
-
-# Copy bcryptjs (password hashing at runtime)
-COPY --from=deps /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
 # Copy entrypoint
 COPY docker-entrypoint.sh ./

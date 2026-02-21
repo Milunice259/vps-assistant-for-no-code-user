@@ -721,42 +721,32 @@ deploy_application() {
 
     export DOCKER_BUILDKIT=1
 
-    # ── Build with progress bar ──
+    # ── Build with real-time streaming output ──
     BUILD_LOG=$(mktemp)
-    $COMPOSE_CMD build $USE_NO_CACHE > "$BUILD_LOG" 2>&1 &
-    BUILD_PID=$!
-
-    SPINNER='⣾⣽⣻⢿⡿⣟⣯⣷'
     START_TIME=$(date +%s)
-    SPIN_IDX=0
 
-    while kill -0 "$BUILD_PID" 2>/dev/null; do
-        NOW=$(date +%s)
-        ELAPSED=$((NOW - START_TIME))
-        MINS=$((ELAPSED / 60))
-        SECS=$((ELAPSED % 60))
+    echo ""
+    echo -e "${CYAN}  ┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}  │       Docker Build — Real-time Output           │${NC}"
+    echo -e "${CYAN}  └─────────────────────────────────────────────────┘${NC}"
+    echo ""
 
-        # Parse current build step from log
-        CURRENT_STEP=$(grep -oP '^\#\d+ \[app \K[^\]]+' "$BUILD_LOG" 2>/dev/null | tail -1)
-        if [ -z "$CURRENT_STEP" ]; then
-            CURRENT_STEP="preparing..."
-        fi
+    # --progress=plain gives readable line-by-line output (not BuildKit's fancy UI)
+    # tee streams to terminal AND saves to log for error analysis
+    set +e
+    $COMPOSE_CMD build $USE_NO_CACHE --progress=plain 2>&1 | tee "$BUILD_LOG"
+    BUILD_EXIT=${PIPESTATUS[0]}
+    set -e
 
-        CHAR="${SPINNER:$SPIN_IDX:1}"
-        SPIN_IDX=$(( (SPIN_IDX + 1) % ${#SPINNER} ))
-
-        printf "\r${CYAN}  %s Building...  ${NC}%02d:%02d  ${BLUE}%s${NC}     " "$CHAR" "$MINS" "$SECS" "$CURRENT_STEP"
-        sleep 1
-    done
-
-    # Check build result
-    wait "$BUILD_PID"
-    BUILD_EXIT=$?
-    printf "\r%-80s\r" " "  # Clear the progress line
+    echo ""
 
     if [ $BUILD_EXIT -ne 0 ]; then
-        print_error "Build failed! Last 20 lines:"
-        tail -20 "$BUILD_LOG"
+        echo ""
+        print_error "Build failed! Scroll up to see the error, or check the last 30 lines:"
+        echo ""
+        echo -e "${RED}─── Build Error Log (last 30 lines) ───${NC}"
+        tail -30 "$BUILD_LOG"
+        echo -e "${RED}───────────────────────────────────────${NC}"
         rm -f "$BUILD_LOG"
         exit 1
     fi

@@ -12,528 +12,257 @@ import {
   ZoomOut,
   Maximize2,
   Server,
-  Wifi,
   Info,
+  Container,
 } from "lucide-react";
 import type {
   NetworkTopology,
   ApiResponse,
   DockerNetworkInfo,
-  DockerNetworkContainer,
+  PortInfo,
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
 /* ══════════════════════════════════════════════════════════
-   Color helpers
+   Color palettes
    ══════════════════════════════════════════════════════════ */
 
 const NETWORK_PALETTE = [
-  { bg: "#7c3aed", bgFade: "#7c3aed25", text: "#c4b5fd", label: "purple" },
-  { bg: "#3b82f6", bgFade: "#3b82f625", text: "#93c5fd", label: "blue" },
-  { bg: "#06b6d4", bgFade: "#06b6d425", text: "#67e8f9", label: "cyan" },
-  { bg: "#14b8a6", bgFade: "#14b8a625", text: "#5eead4", label: "teal" },
-  { bg: "#f59e0b", bgFade: "#f59e0b25", text: "#fde68a", label: "amber" },
-  { bg: "#ec4899", bgFade: "#ec489925", text: "#f9a8d4", label: "pink" },
+  { bg: "#7c3aed", bgFade: "rgba(124,58,237,0.12)", border: "rgba(124,58,237,0.4)", text: "#c4b5fd" },
+  { bg: "#3b82f6", bgFade: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.4)", text: "#93c5fd" },
+  { bg: "#06b6d4", bgFade: "rgba(6,182,212,0.12)", border: "rgba(6,182,212,0.4)", text: "#67e8f9" },
+  { bg: "#14b8a6", bgFade: "rgba(20,184,166,0.12)", border: "rgba(20,184,166,0.4)", text: "#5eead4" },
+  { bg: "#f59e0b", bgFade: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.4)", text: "#fde68a" },
+  { bg: "#ec4899", bgFade: "rgba(236,72,153,0.12)", border: "rgba(236,72,153,0.4)", text: "#f9a8d4" },
 ];
 
-function containerColor(state?: string) {
+function containerStatusColor(state?: string) {
   switch (state?.toLowerCase()) {
-    case "running":
-      return { dot: "#34d399", ring: "#059669", bg: "#064e3b" };
-    case "exited":
-    case "dead":
-      return { dot: "#f87171", ring: "#dc2626", bg: "#450a0a" };
-    case "restarting":
-      return { dot: "#fbbf24", ring: "#d97706", bg: "#451a03" };
-    case "paused":
-      return { dot: "#fb923c", ring: "#ea580c", bg: "#431407" };
-    default:
-      return { dot: "#9ca3af", ring: "#6b7280", bg: "#1f2937" };
-  }
-}
-
-function stateEmoji(state?: string) {
-  switch (state?.toLowerCase()) {
-    case "running": return "✅";
-    case "exited": case "dead": return "⛔";
-    case "restarting": return "🔄";
-    case "paused": return "⏸️";
-    default: return "❓";
-  }
-}
-
-function stateLabel(state?: string) {
-  switch (state?.toLowerCase()) {
-    case "running": return "Đang chạy";
-    case "exited": case "dead": return "Đã dừng";
-    case "restarting": return "Đang khởi động lại";
-    case "paused": return "Tạm dừng";
-    case "created": return "Đã tạo";
-    default: return state || "Không rõ";
+    case "running": return { dot: "#34d399", bg: "rgba(5,150,105,0.15)", border: "rgba(52,211,153,0.3)", label: "Running" };
+    case "exited": case "dead": return { dot: "#f87171", bg: "rgba(220,38,38,0.12)", border: "rgba(248,113,113,0.3)", label: "Stopped" };
+    case "restarting": return { dot: "#fbbf24", bg: "rgba(217,119,6,0.12)", border: "rgba(251,191,36,0.3)", label: "Restarting" };
+    case "paused": return { dot: "#fb923c", bg: "rgba(234,88,12,0.12)", border: "rgba(251,146,60,0.3)", label: "Paused" };
+    default: return { dot: "#9ca3af", bg: "rgba(107,114,128,0.12)", border: "rgba(156,163,175,0.3)", label: state || "Unknown" };
   }
 }
 
 /* ══════════════════════════════════════════════════════════
-   Layout computation — radial tree
+   Port helpers
    ══════════════════════════════════════════════════════════ */
 
-interface LayoutNode {
-  id: string;
-  type: "server" | "network" | "container";
-  label: string;
-  sublabel?: string;
-  x: number;
-  y: number;
-  color: string;
-  bgColor: string;
-  state?: string;
-  ip?: string;
-  image?: string;
-  ports?: string;
-  networkIdx?: number;
-  parentId?: string;
+/** Parse port string like "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp" */
+function parsePortString(ports?: string): { host: number; container: number; proto: string }[] {
+  if (!ports) return [];
+  const results: { host: number; container: number; proto: string }[] = [];
+  const parts = ports.split(",").map(s => s.trim());
+  for (const part of parts) {
+    const match = part.match(/:(\d+)->(\d+)\/(tcp|udp)/i);
+    if (match) {
+      results.push({ host: parseInt(match[1]), container: parseInt(match[2]), proto: match[3] });
+    }
+  }
+  return results;
 }
 
-interface LayoutEdge {
-  from: string;
-  to: string;
+function formatPortsBadge(ports?: string): string {
+  const parsed = parsePortString(ports);
+  if (parsed.length === 0) return "";
+  return parsed.map(p => `:${p.host}`).join(", ");
+}
+
+/* ══════════════════════════════════════════════════════════
+   Layout computation — top-down tree
+   ══════════════════════════════════════════════════════════ */
+
+interface CardRect {
+  id: string;
+  type: "internet" | "server" | "network" | "container";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface EdgeDef {
+  fromId: string;
+  toId: string;
   color: string;
+  label?: string;
+}
+
+const INTERNET_W = 160;
+const INTERNET_H = 60;
+const SERVER_W = 180;
+const SERVER_H = 70;
+const NETWORK_W = 200;
+const NETWORK_H = 64;
+const CONTAINER_W = 200;
+const CONTAINER_H = 90;
+
+const ROW_GAP = 80;
+const COL_GAP = 24;
+
+interface LayoutResult {
+  cards: CardRect[];
+  edges: EdgeDef[];
+  canvasW: number;
+  canvasH: number;
 }
 
 function computeLayout(
   networks: DockerNetworkInfo[],
-  width: number,
-  height: number
-): { nodes: LayoutNode[]; edges: LayoutEdge[] } {
-  const nodes: LayoutNode[] = [];
-  const edges: LayoutEdge[] = [];
+  hostPorts: PortInfo[],
+): LayoutResult {
+  const cards: CardRect[] = [];
+  const edges: EdgeDef[] = [];
 
-  const centerX = width / 2;
-  const centerY = height / 2;
+  const PADDING = 60;
+  let row0Y = PADDING;
 
-  // Server node at center
-  nodes.push({
-    id: "server",
-    type: "server",
-    label: "Server",
-    x: centerX,
-    y: centerY,
-    color: "#60a5fa",
-    bgColor: "#1e3a5f",
+  // Row 0: Internet
+  const internetId = "internet";
+
+  // Row 1: Server
+  const serverId = "server";
+  const row1Y = row0Y + INTERNET_H + ROW_GAP;
+
+  // Row 2: Networks
+  const netsWithContainers = networks.filter(n => n.containers.length > 0);
+  const emptyNets = networks.filter(n => n.containers.length === 0);
+  const orderedNets = [...netsWithContainers, ...emptyNets];
+  const row2Y = row1Y + SERVER_H + ROW_GAP;
+
+  // Row 3: Containers (per network column)
+  const row3Y = row2Y + NETWORK_H + ROW_GAP;
+
+  // Calculate widths needed for each network column (based on container count)
+  const netColumnWidths: number[] = orderedNets.map(net => {
+    const contCount = net.containers.length;
+    if (contCount === 0) return NETWORK_W;
+    return Math.max(NETWORK_W, contCount * (CONTAINER_W + COL_GAP) - COL_GAP);
   });
 
-  const networksWithContainers = networks.filter((n) => n.containers.length > 0);
-  const emptyNetworks = networks.filter((n) => n.containers.length === 0);
+  const totalNetsWidth = netColumnWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, orderedNets.length - 1) * COL_GAP * 2;
+  const canvasW = Math.max(totalNetsWidth + PADDING * 2, 600);
 
-  if (networksWithContainers.length === 0 && emptyNetworks.length === 0) {
-    return { nodes, edges };
-  }
+  // Place Internet card
+  cards.push({
+    id: internetId,
+    type: "internet",
+    x: canvasW / 2 - INTERNET_W / 2,
+    y: row0Y,
+    w: INTERNET_W,
+    h: INTERNET_H,
+  });
 
-  // Place networks in a ring around the server
-  const allNets = [...networksWithContainers, ...emptyNetworks];
-  const netCount = allNets.length;
-  const netRadius = Math.min(width, height) * 0.3;
-  const startAngle = -Math.PI / 2; // Start from top
+  // Place Server card
+  cards.push({
+    id: serverId,
+    type: "server",
+    x: canvasW / 2 - SERVER_W / 2,
+    y: row1Y,
+    w: SERVER_W,
+    h: SERVER_H,
+  });
 
-  allNets.forEach((net, i) => {
+  // Edge: Internet → Server
+  const openPorts = hostPorts.filter(p => p.localPort > 0 && p.process);
+  const portLabels = openPorts.length > 0
+    ? openPorts.slice(0, 5).map(p => `:${p.localPort}`).join("  ") + (openPorts.length > 5 ? ` +${openPorts.length - 5}` : "")
+    : "";
+  edges.push({ fromId: internetId, toId: serverId, color: "#f59e0b", label: portLabels || undefined });
+
+  // Place Network cards
+  let netStartX = (canvasW - totalNetsWidth) / 2;
+
+  orderedNets.forEach((net, i) => {
     const palette = NETWORK_PALETTE[i % NETWORK_PALETTE.length];
-    const angle = startAngle + (2 * Math.PI * i) / netCount;
-    const nx = centerX + netRadius * Math.cos(angle);
-    const ny = centerY + netRadius * Math.sin(angle);
-
+    const colW = netColumnWidths[i];
+    const netX = netStartX + colW / 2 - NETWORK_W / 2;
     const netId = `net-${net.id}`;
-    nodes.push({
+
+    cards.push({
       id: netId,
       type: "network",
-      label: net.name,
-      sublabel: `${net.driver} · ${net.containers.length} app${net.containers.length !== 1 ? "s" : ""}`,
-      x: nx,
-      y: ny,
-      color: palette.bg,
-      bgColor: palette.bgFade,
-      networkIdx: i,
+      x: netX,
+      y: row2Y,
+      w: NETWORK_W,
+      h: NETWORK_H,
     });
-    edges.push({ from: "server", to: netId, color: palette.bg });
 
-    // Place containers around this network
+    edges.push({ fromId: serverId, toId: netId, color: palette.bg });
+
+    // Place containers in this column
     const contCount = net.containers.length;
-    if (contCount === 0) return;
+    if (contCount > 0) {
+      const contsWidth = contCount * (CONTAINER_W + COL_GAP) - COL_GAP;
+      let contStartX = netStartX + colW / 2 - contsWidth / 2;
 
-    const contRadius = Math.min(width, height) * 0.18;
-    // Spread containers in an arc facing outward from center
-    const arcSpread = Math.min(Math.PI * 0.6, (Math.PI * 0.4 * contCount) / Math.max(contCount, 1));
-    const contStartAngle = angle - arcSpread / 2;
+      net.containers.forEach((cont, ci) => {
+        const contId = `cont-${cont.id || cont.name}-${i}`;
+        const cx = contStartX + ci * (CONTAINER_W + COL_GAP);
 
-    net.containers.forEach((cont, ci) => {
-      const contAngle = contCount === 1
-        ? angle
-        : contStartAngle + (arcSpread * ci) / (contCount - 1);
-      const cx = nx + contRadius * Math.cos(contAngle);
-      const cy = ny + contRadius * Math.sin(contAngle);
+        cards.push({
+          id: contId,
+          type: "container",
+          x: cx,
+          y: row3Y,
+          w: CONTAINER_W,
+          h: CONTAINER_H,
+        });
 
-      const contId = `cont-${cont.id || cont.name}-${i}`;
-      const colors = containerColor(cont.state);
-      nodes.push({
-        id: contId,
-        type: "container",
-        label: cont.name,
-        sublabel: cont.image?.split(":")[0]?.split("/").pop() || "",
-        x: cx,
-        y: cy,
-        color: colors.dot,
-        bgColor: colors.bg,
-        state: cont.state,
-        ip: cont.ipv4?.trim(),
-        image: cont.image,
-        ports: cont.ports,
-        networkIdx: i,
-        parentId: netId,
+        const portStr = formatPortsBadge(cont.ports);
+        edges.push({ fromId: netId, toId: contId, color: palette.bg, label: portStr || undefined });
       });
-      edges.push({ from: netId, to: contId, color: palette.bg });
-    });
+    }
+
+    netStartX += colW + COL_GAP * 2;
   });
 
-  return { nodes, edges };
+  // Calculate canvas height
+  const hasContainers = orderedNets.some(n => n.containers.length > 0);
+  const canvasH = (hasContainers ? row3Y + CONTAINER_H : row2Y + NETWORK_H) + PADDING;
+
+  return { cards, edges, canvasW, canvasH };
 }
 
 /* ══════════════════════════════════════════════════════════
-   SVG Tooltip (appears on hover)
+   SVG edge with port label
    ══════════════════════════════════════════════════════════ */
 
-function SvgTooltip({
-  node,
-  visible,
+function SvgEdge({
+  from,
+  to,
+  color,
+  label,
 }: {
-  node: LayoutNode;
-  visible: boolean;
-}) {
-  if (!visible) return null;
-
-  const lines: string[] = [];
-
-  if (node.type === "server") {
-    lines.push("🖥️ Đây là máy chủ (server) của bạn");
-    lines.push("Tất cả ứng dụng đều chạy bên trong máy này");
-  } else if (node.type === "network") {
-    lines.push(`🌐 Mạng nội bộ "${node.label}"`);
-    lines.push("Mạng là 'đường dây' kết nối các ứng dụng");
-    lines.push("giúp chúng giao tiếp được với nhau");
-    if (node.sublabel) lines.push(`📋 ${node.sublabel}`);
-  } else if (node.type === "container") {
-    lines.push(`📦 Ứng dụng "${node.label}"`);
-    lines.push(`Trạng thái: ${stateEmoji(node.state)} ${stateLabel(node.state)}`);
-    if (node.ip) lines.push(`🔗 Địa chỉ nội bộ: ${node.ip}`);
-    if (node.image) lines.push(`📀 Image: ${node.image}`);
-    if (node.ports) lines.push(`🚪 Cổng: ${node.ports}`);
-  }
-
-  const maxLen = Math.max(...lines.map((l) => l.length));
-  const boxW = Math.min(maxLen * 7.5 + 20, 280);
-  const boxH = lines.length * 18 + 16;
-  const tx = node.x - boxW / 2;
-  const ty = node.y - (node.type === "server" ? 60 : 50) - boxH;
-
-  return (
-    <g style={{ pointerEvents: "none" }}>
-      <rect
-        x={tx}
-        y={ty}
-        width={boxW}
-        height={boxH}
-        rx={8}
-        fill="#1f2937"
-        stroke="#374151"
-        strokeWidth={1}
-        opacity={0.97}
-      />
-      {/* Arrow */}
-      <polygon
-        points={`${node.x - 6},${ty + boxH} ${node.x + 6},${ty + boxH} ${node.x},${ty + boxH + 8}`}
-        fill="#1f2937"
-        stroke="#374151"
-        strokeWidth={1}
-      />
-      {lines.map((line, i) => (
-        <text
-          key={i}
-          x={tx + 10}
-          y={ty + 18 + i * 18}
-          fill={i === 0 ? "#e5e7eb" : "#9ca3af"}
-          fontSize={11}
-          fontFamily="system-ui, sans-serif"
-        >
-          {line}
-        </text>
-      ))}
-    </g>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════
-   SVG Node renderers
-   ══════════════════════════════════════════════════════════ */
-
-function ServerNode({ node, hovered, onHover }: {
-  node: LayoutNode;
-  hovered: boolean;
-  onHover: (id: string | null) => void;
-}) {
-  return (
-    <g
-      onMouseEnter={() => onHover(node.id)}
-      onMouseLeave={() => onHover(null)}
-      style={{ cursor: "pointer" }}
-    >
-      {/* Pulse ring */}
-      <circle cx={node.x} cy={node.y} r={40} fill="#3b82f610" stroke="none">
-        <animate attributeName="r" values="38;44;38" dur="3s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.5;0.2;0.5" dur="3s" repeatCount="indefinite" />
-      </circle>
-      {/* Main circle */}
-      <circle
-        cx={node.x}
-        cy={node.y}
-        r={32}
-        fill="#1e293b"
-        stroke={hovered ? "#60a5fa" : "#334155"}
-        strokeWidth={hovered ? 3 : 2}
-      />
-      {/* Server icon text */}
-      <text
-        x={node.x}
-        y={node.y - 4}
-        textAnchor="middle"
-        fontSize={22}
-        fill="white"
-      >
-        🖥️
-      </text>
-      <text
-        x={node.x}
-        y={node.y + 18}
-        textAnchor="middle"
-        fill="#94a3b8"
-        fontSize={10}
-        fontWeight={600}
-        fontFamily="system-ui"
-      >
-        SERVER
-      </text>
-    </g>
-  );
-}
-
-function NetworkNode({ node, hovered, onHover }: {
-  node: LayoutNode;
-  hovered: boolean;
-  onHover: (id: string | null) => void;
-}) {
-  const w = 140;
-  const h = 50;
-  return (
-    <g
-      onMouseEnter={() => onHover(node.id)}
-      onMouseLeave={() => onHover(null)}
-      style={{ cursor: "pointer" }}
-    >
-      <rect
-        x={node.x - w / 2}
-        y={node.y - h / 2}
-        width={w}
-        height={h}
-        rx={12}
-        fill={node.bgColor}
-        stroke={hovered ? node.color : `${node.color}60`}
-        strokeWidth={hovered ? 2.5 : 1.5}
-        style={{ transition: "all 0.2s" }}
-      />
-      {/* Network icon */}
-      <text
-        x={node.x - w / 2 + 16}
-        y={node.y - 2}
-        fontSize={14}
-      >
-        🌐
-      </text>
-      {/* Name */}
-      <text
-        x={node.x - w / 2 + 32}
-        y={node.y - 4}
-        fill="white"
-        fontSize={12}
-        fontWeight={600}
-        fontFamily="system-ui"
-      >
-        {node.label.length > 12 ? node.label.slice(0, 11) + "…" : node.label}
-      </text>
-      {/* Sublabel */}
-      {node.sublabel && (
-        <text
-          x={node.x - w / 2 + 32}
-          y={node.y + 12}
-          fill="#9ca3af"
-          fontSize={9}
-          fontFamily="system-ui"
-        >
-          {node.sublabel}
-        </text>
-      )}
-    </g>
-  );
-}
-
-function ContainerNode({ node, hovered, onHover }: {
-  node: LayoutNode;
-  hovered: boolean;
-  onHover: (id: string | null) => void;
-}) {
-  const colors = containerColor(node.state);
-  const w = 130;
-  const h = 46;
-  return (
-    <g
-      onMouseEnter={() => onHover(node.id)}
-      onMouseLeave={() => onHover(null)}
-      style={{ cursor: "pointer" }}
-    >
-      <rect
-        x={node.x - w / 2}
-        y={node.y - h / 2}
-        width={w}
-        height={h}
-        rx={10}
-        fill={colors.bg}
-        stroke={hovered ? colors.dot : `${colors.ring}50`}
-        strokeWidth={hovered ? 2 : 1.5}
-        style={{ transition: "all 0.2s" }}
-      />
-      {/* Status bar */}
-      <rect
-        x={node.x - w / 2}
-        y={node.y - h / 2}
-        width={3}
-        height={h}
-        rx={1.5}
-        fill={colors.dot}
-      />
-      {/* Status dot */}
-      <circle cx={node.x - w / 2 + 14} cy={node.y - 6} r={3.5} fill={colors.dot} />
-      {/* Name */}
-      <text
-        x={node.x - w / 2 + 24}
-        y={node.y - 2}
-        fill="white"
-        fontSize={11}
-        fontWeight={600}
-        fontFamily="system-ui"
-      >
-        {node.label.length > 12 ? node.label.slice(0, 11) + "…" : node.label}
-      </text>
-      {/* Sublabel (image) */}
-      <text
-        x={node.x - w / 2 + 14}
-        y={node.y + 13}
-        fill="#6b7280"
-        fontSize={8}
-        fontFamily="monospace"
-      >
-        {(node.sublabel || "").length > 16
-          ? (node.sublabel || "").slice(0, 15) + "…"
-          : node.sublabel}
-      </text>
-    </g>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════
-   Edge-snap geometry helpers
-   ══════════════════════════════════════════════════════════ */
-
-// Node dimensions (must match the SVG renderers)
-const NODE_DIMS: Record<string, { w: number; h: number; r?: number }> = {
-  server:    { w: 0, h: 0, r: 34 },   // circle
-  network:   { w: 140, h: 50 },        // rect
-  container: { w: 130, h: 46 },        // rect
-};
-
-/** Point where a ray from (cx,cy)→(tx,ty) exits a rectangle centered at (cx,cy). */
-function rectEdgePoint(
-  cx: number, cy: number,
-  halfW: number, halfH: number,
-  tx: number, ty: number,
-): { x: number; y: number } {
-  const dx = tx - cx;
-  const dy = ty - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-
-  // Scale factor at which the ray hits each edge
-  const sx = halfW / Math.abs(dx || 1e-6);
-  const sy = halfH / Math.abs(dy || 1e-6);
-  const s = Math.min(sx, sy);
-
-  return { x: cx + dx * s, y: cy + dy * s };
-}
-
-/** Point where a ray from (cx,cy)→(tx,ty) exits a circle centered at (cx,cy). */
-function circleEdgePoint(
-  cx: number, cy: number, r: number,
-  tx: number, ty: number,
-): { x: number; y: number } {
-  const dx = tx - cx;
-  const dy = ty - cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist === 0) return { x: cx + r, y: cy };
-  return { x: cx + (dx / dist) * r, y: cy + (dy / dist) * r };
-}
-
-/** Compute the edge-snapped point for a node toward a target. */
-function nodeEdgePoint(node: LayoutNode, target: LayoutNode): { x: number; y: number } {
-  const dims = NODE_DIMS[node.type] || NODE_DIMS.container;
-  if (dims.r) {
-    return circleEdgePoint(node.x, node.y, dims.r, target.x, target.y);
-  }
-  return rectEdgePoint(node.x, node.y, dims.w / 2, dims.h / 2, target.x, target.y);
-}
-
-/* ══════════════════════════════════════════════════════════
-   Animated edge
-   ══════════════════════════════════════════════════════════ */
-
-function AnimatedEdge({ from, to, color }: {
-  from: LayoutNode;
-  to: LayoutNode;
+  from: CardRect;
+  to: CardRect;
   color: string;
+  label?: string;
 }) {
-  // Snap endpoints to card borders
-  const start = nodeEdgePoint(from, to);
-  const end   = nodeEdgePoint(to, from);
+  const x1 = from.x + from.w / 2;
+  const y1 = from.y + from.h;
+  const x2 = to.x + to.w / 2;
+  const y2 = to.y;
 
-  // Curved bezier path between edge-snapped points
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const cp1x = start.x + dx * 0.3 - dy * 0.1;
-  const cp1y = start.y + dy * 0.3 + dx * 0.1;
-  const cp2x = start.x + dx * 0.7 + dy * 0.1;
-  const cp2y = start.y + dy * 0.7 - dx * 0.1;
+  const midY = (y1 + y2) / 2;
+  const pathD = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
 
-  const pathD = `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${end.x} ${end.y}`;
+  const labelX = (x1 + x2) / 2;
+  const labelY = midY - 4;
 
   return (
     <g>
-      {/* Shadow line */}
-      <path
-        d={pathD}
-        fill="none"
-        stroke={`${color}20`}
-        strokeWidth={4}
-      />
+      {/* Shadow */}
+      <path d={pathD} fill="none" stroke={`${color}15`} strokeWidth={6} />
       {/* Main line */}
       <path
         d={pathD}
         fill="none"
-        stroke={`${color}60`}
-        strokeWidth={1.5}
+        stroke={`${color}50`}
+        strokeWidth={2}
         strokeDasharray="6 4"
       >
         <animate
@@ -544,67 +273,203 @@ function AnimatedEdge({ from, to, color }: {
           repeatCount="indefinite"
         />
       </path>
-      {/* Connection dot at source edge */}
-      <circle cx={start.x} cy={start.y} r={3} fill={color} opacity={0.4} />
-      {/* Connection dot at target edge */}
-      <circle cx={end.x} cy={end.y} r={3} fill={color} opacity={0.7} />
+      {/* Start dot */}
+      <circle cx={x1} cy={y1} r={3} fill={color} opacity={0.5} />
+      {/* End dot */}
+      <circle cx={x2} cy={y2} r={3} fill={color} opacity={0.7} />
+      {/* Port label */}
+      {label && (
+        <g>
+          <rect
+            x={labelX - label.length * 3.5 - 8}
+            y={labelY - 10}
+            width={label.length * 7 + 16}
+            height={18}
+            rx={9}
+            fill="#1e293b"
+            stroke={`${color}40`}
+            strokeWidth={1}
+          />
+          <text
+            x={labelX}
+            y={labelY + 2}
+            textAnchor="middle"
+            fill={color}
+            fontSize={10}
+            fontFamily="ui-monospace, monospace"
+            fontWeight={600}
+          >
+            {label}
+          </text>
+        </g>
+      )}
     </g>
   );
 }
 
 /* ══════════════════════════════════════════════════════════
-   Stat card with tooltip (summary bar)
+   HTML Card components
    ══════════════════════════════════════════════════════════ */
 
-function StatCard({
-  icon,
-  label,
-  value,
-  color,
-  tooltip,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  color: string;
-  tooltip: string;
-}) {
+function InternetCard({ card }: { card: CardRect }) {
   return (
-    <div className="relative group flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700 cursor-help">
-      <span className={color}>{icon}</span>
-      <span className="text-xs text-gray-400">{label}</span>
-      <span className="text-sm font-semibold text-white">{value}</span>
-      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-        {tooltip}
-      </span>
+    <div
+      className="absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-all hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
+      style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
+    >
+      <Globe className="h-5 w-5 text-amber-400" />
+      <span className="text-sm font-semibold text-amber-200">Internet</span>
+    </div>
+  );
+}
+
+function ServerCard({ card, hostname }: { card: CardRect; hostname?: string }) {
+  return (
+    <div
+      className="absolute flex items-center gap-3 rounded-2xl border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-sm px-4 cursor-default select-none transition-all hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
+      style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
+    >
+      <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
+        <Server className="h-5 w-5 text-blue-400" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-white truncate">{hostname || "Server"}</p>
+        <p className="text-[10px] text-blue-300/60">Docker Host</p>
+      </div>
+    </div>
+  );
+}
+
+function NetworkCard({
+  card,
+  net,
+  colorIdx,
+}: {
+  card: CardRect;
+  net: DockerNetworkInfo;
+  colorIdx: number;
+}) {
+  const palette = NETWORK_PALETTE[colorIdx % NETWORK_PALETTE.length];
+
+  return (
+    <div
+      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-2.5 cursor-default select-none transition-all hover:shadow-lg group"
+      style={{
+        left: card.x,
+        top: card.y,
+        width: card.w,
+        height: card.h,
+        backgroundColor: palette.bgFade,
+        borderColor: palette.border,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${palette.bg}20`, border: `1px solid ${palette.bg}40` }}
+        >
+          <Network className="h-3.5 w-3.5" style={{ color: palette.bg }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-white truncate">{net.name}</p>
+          <p className="text-[10px] text-gray-400">
+            {net.driver} · {net.containers.length} app{net.containers.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContainerCard({
+  card,
+  container,
+}: {
+  card: CardRect;
+  container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
+}) {
+  const status = containerStatusColor(container.state);
+  const ports = parsePortString(container.ports);
+
+  return (
+    <div
+      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-3 cursor-default select-none transition-all hover:shadow-lg group"
+      style={{
+        left: card.x,
+        top: card.y,
+        width: card.w,
+        height: card.h,
+        backgroundColor: status.bg,
+        borderColor: status.border,
+      }}
+    >
+      {/* Status bar left */}
+      <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full" style={{ backgroundColor: status.dot }} />
+
+      <div className="ml-2 space-y-1">
+        {/* Row 1: Name + status */}
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: status.dot }} />
+          <p className="text-xs font-semibold text-white truncate flex-1">{container.name}</p>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+            style={{ color: status.dot, backgroundColor: `${status.dot}15` }}
+          >
+            {status.label}
+          </span>
+        </div>
+
+        {/* Row 2: Image */}
+        {container.image && (
+          <p className="text-[10px] text-gray-500 font-mono truncate pl-4">
+            {container.image.split(":")[0]?.split("/").pop()}
+            {container.image.includes(":") ? `:${container.image.split(":")[1]}` : ""}
+          </p>
+        )}
+
+        {/* Row 3: IP + Ports */}
+        <div className="flex items-center gap-2 pl-4 flex-wrap">
+          {container.ipv4?.trim() && (
+            <span className="text-[10px] text-gray-500 font-mono">
+              {container.ipv4.trim()}
+            </span>
+          )}
+          {ports.length > 0 && (
+            <div className="flex items-center gap-1">
+              {ports.slice(0, 3).map((p, i) => (
+                <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-mono">
+                  :{p.host}→{p.container}
+                </span>
+              ))}
+              {ports.length > 3 && (
+                <span className="text-[9px] text-gray-600">+{ports.length - 3}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════
-   Port card (open ports section)
+   Summary stat
    ══════════════════════════════════════════════════════════ */
 
-function PortCard({
-  protocol,
-  port,
-  process,
+function StatChip({
+  icon,
+  label,
+  value,
+  color,
 }: {
-  protocol: string;
-  port: number;
-  process: string;
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  color: string;
 }) {
   return (
-    <div className="relative group flex items-center gap-2 bg-gray-900/70 border border-gray-700/50 rounded-lg px-3 py-2 hover:border-amber-500/30 transition-colors cursor-help">
-      <Badge variant="info">{protocol.toUpperCase()}</Badge>
-      <span className="text-white text-sm font-mono font-semibold">:{port}</span>
-      {process && (
-        <span className="text-xs text-gray-500 truncate max-w-[120px]">{process}</span>
-      )}
-      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-        🚪 Cổng {port} đang mở — cho phép kết nối từ bên ngoài vào.
-        {process ? ` Chương trình "${process}" đang lắng nghe ở đây.` : ""}
-      </span>
+    <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-2.5 py-1.5 border border-gray-700">
+      <span className={color}>{icon}</span>
+      <span className="text-[11px] text-gray-400">{label}</span>
+      <span className="text-sm font-semibold text-white">{value}</span>
     </div>
   );
 }
@@ -623,12 +488,13 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  const SVG_W = 900;
-  const SVG_H = 600;
+  // Pan & Zoom state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -658,13 +524,43 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     fetchTopology();
   }, [fetchTopology]);
 
+  /* ─── Mouse drag handlers ─── */
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStart.current.x;
+    const dy = e.clientY - dragStart.current.y;
+    setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy });
+  }, [isDragging]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  /* ─── Scroll zoom ─── */
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.08 : 0.08;
+    setZoom(z => Math.min(2, Math.max(0.3, z + delta)));
+  }, []);
+
+  /* ─── Zoom controls ─── */
+  const zoomIn = () => setZoom(z => Math.min(2, z + 0.15));
+  const zoomOut = () => setZoom(z => Math.max(0.3, z - 0.15));
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
   // ── Loading ──
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
-          <p className="text-sm text-gray-500">Đang tải sơ đồ mạng...</p>
+          <p className="text-sm text-gray-500">Loading network map...</p>
         </div>
       </div>
     );
@@ -677,10 +573,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         <WifiOff className="h-10 w-10 text-gray-500" />
         <div className="text-center">
           <p className="text-sm font-medium text-gray-300">Server Offline</p>
-          <p className="text-xs text-gray-500 mt-1">Không thể kết nối đến server</p>
+          <p className="text-xs text-gray-500 mt-1">Cannot connect to server</p>
         </div>
         <Button variant="secondary" size="sm" onClick={fetchTopology}>
-          <RefreshCw className="h-4 w-4 mr-1" /> Thử lại
+          <RefreshCw className="h-4 w-4 mr-1" /> Retry
         </Button>
       </div>
     );
@@ -693,7 +589,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         <AlertCircle className="h-10 w-10 text-red-400" />
         <p className="text-sm text-red-400 max-w-md text-center">{error}</p>
         <Button variant="secondary" size="sm" onClick={fetchTopology}>
-          <RefreshCw className="h-4 w-4 mr-1" /> Thử lại
+          <RefreshCw className="h-4 w-4 mr-1" /> Retry
         </Button>
       </div>
     );
@@ -702,92 +598,56 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   if (!topology) return null;
 
   // ── Compute data ──
-  const allContainers = topology.networks.flatMap((n) => n.containers);
+  const allContainers = topology.networks.flatMap(n => n.containers);
   const totalContainers = allContainers.length;
-  const runningContainers = allContainers.filter(
-    (c) => c.state?.toLowerCase() === "running"
-  ).length;
-  const stoppedContainers = allContainers.filter(
-    (c) => c.state?.toLowerCase() === "exited" || c.state?.toLowerCase() === "dead"
-  ).length;
-  const listeningPorts = topology.hostPorts.filter(
-    (p) => p.localPort > 0 && p.process
-  );
+  const runningContainers = allContainers.filter(c => c.state?.toLowerCase() === "running").length;
+  const stoppedContainers = allContainers.filter(c => ["exited", "dead"].includes(c.state?.toLowerCase() || "")).length;
+  const listeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
 
   // Compute layout
-  const { nodes, edges } = computeLayout(topology.networks, SVG_W, SVG_H);
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-  const hoveredNodeData = hoveredNode ? nodeMap.get(hoveredNode) : null;
+  const { cards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
+  const cardMap = new Map(cards.map(c => [c.id, c]));
+
+  // Flatten containers indexed by network
+  const netsWithContainers = topology.networks.filter(n => n.containers.length > 0);
+  const emptyNets = topology.networks.filter(n => n.containers.length === 0);
+  const orderedNets = [...netsWithContainers, ...emptyNets];
+
+  // Build a lookup of container data by card id
+  const containerDataMap = new Map<string, typeof allContainers[number]>();
+  orderedNets.forEach((net, i) => {
+    net.containers.forEach(cont => {
+      containerDataMap.set(`cont-${cont.id || cont.name}-${i}`, cont);
+    });
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* ── Summary Bar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-3">
-          <StatCard
-            icon={<Network className="h-4 w-4" />}
-            label="Mạng"
-            value={topology.networks.length}
-            color="text-purple-400"
-            tooltip="Mạng Docker giống như 'đường dây' nội bộ giúp các ứng dụng nói chuyện với nhau bên trong server."
-          />
-          <StatCard
-            icon={<Box className="h-4 w-4" />}
-            label="Ứng dụng"
-            value={totalContainers}
-            color="text-blue-400"
-            tooltip="Mỗi ứng dụng chạy trong một 'container' riêng biệt — như từng phòng riêng, tách biệt với nhau."
-          />
-          <StatCard
-            icon={<Wifi className="h-4 w-4" />}
-            label="Đang chạy"
-            value={runningContainers}
-            color="text-emerald-400"
-            tooltip="Số ứng dụng đang hoạt động và phục vụ người dùng."
-          />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <StatChip icon={<Network className="h-3.5 w-3.5" />} label="Networks" value={topology.networks.length} color="text-purple-400" />
+          <StatChip icon={<Box className="h-3.5 w-3.5" />} label="Apps" value={totalContainers} color="text-blue-400" />
+          <StatChip icon={<Container className="h-3.5 w-3.5" />} label="Running" value={runningContainers} color="text-emerald-400" />
           {stoppedContainers > 0 && (
-            <StatCard
-              icon={<Box className="h-4 w-4" />}
-              label="Đã dừng"
-              value={stoppedContainers}
-              color="text-red-400"
-              tooltip="Ứng dụng đã ngừng hoạt động. Có thể khởi động lại từ tab Containers."
-            />
+            <StatChip icon={<Box className="h-3.5 w-3.5" />} label="Stopped" value={stoppedContainers} color="text-red-400" />
           )}
-          <StatCard
-            icon={<Globe className="h-4 w-4" />}
-            label="Cổng mở"
-            value={listeningPorts.length}
-            color="text-amber-400"
-            tooltip="Cổng (port) là 'cửa ra vào' của server. Mỗi cổng mở cho phép kết nối từ internet vào."
-          />
+          <StatChip icon={<Globe className="h-3.5 w-3.5" />} label="Open Ports" value={listeningPorts.length} color="text-amber-400" />
         </div>
 
         <div className="flex items-center gap-2">
           {/* Zoom controls */}
-          <div className="flex items-center gap-1 bg-gray-800 rounded-lg border border-gray-700 p-0.5">
-            <button
-              onClick={() => setZoom((z) => Math.max(0.5, z - 0.1))}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
-              title="Thu nhỏ"
-            >
+          <div className="flex items-center gap-0.5 bg-gray-800 rounded-lg border border-gray-700 p-0.5">
+            <button onClick={zoomOut} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Zoom out">
               <ZoomOut className="h-3.5 w-3.5" />
             </button>
             <span className="text-xs text-gray-500 px-1 min-w-[3rem] text-center">
               {Math.round(zoom * 100)}%
             </span>
-            <button
-              onClick={() => setZoom((z) => Math.min(1.5, z + 0.1))}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
-              title="Phóng to"
-            >
+            <button onClick={zoomIn} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Zoom in">
               <ZoomIn className="h-3.5 w-3.5" />
             </button>
-            <button
-              onClick={() => setZoom(1)}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded"
-              title="Đặt lại"
-            >
+            <button onClick={resetView} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Reset view">
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -809,132 +669,121 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Di chuột vào các thành phần sẽ hiện giải thích bằng tiếng Việt</span>
+          <span>Drag to pan · Scroll to zoom</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" /> Đang chạy
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-red-400" /> Đã dừng
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-yellow-400" /> Đang khởi động lại
-          </span>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Running</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Stopped</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Ports exposed</span>
         </div>
       </div>
 
-      {/* ── SVG Mindmap ── */}
+      {/* ── Map Viewport ── */}
       <div
-        ref={containerRef}
-        className="bg-gray-800/30 rounded-xl border border-gray-700 overflow-x-auto"
+        ref={viewportRef}
+        className="bg-gray-900/50 rounded-xl border border-gray-700 overflow-hidden relative"
+        style={{ height: Math.min(canvasH * zoom + 40, 700), cursor: isDragging ? "grabbing" : "grab" }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
       >
-        {nodes.length <= 1 ? (
-          <div className="flex flex-col items-center gap-3 py-16">
+        {cards.length <= 2 ? (
+          <div className="flex flex-col items-center gap-3 py-16 h-full justify-center">
             <Network className="h-8 w-8 text-gray-600" />
-            <p className="text-sm text-gray-400">Không tìm thấy mạng Docker nào</p>
-            <p className="text-xs text-gray-600">
-              Server chưa có mạng nội bộ nào được tạo
-            </p>
+            <p className="text-sm text-gray-400">No Docker networks found</p>
+            <p className="text-xs text-gray-600">This server has no internal networks configured</p>
           </div>
         ) : (
-          <svg
-            width={SVG_W * zoom}
-            height={SVG_H * zoom}
-            viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-            className="w-full"
-            style={{ minHeight: 400 }}
+          <div
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "top center",
+              width: canvasW,
+              height: canvasH,
+              position: "relative",
+              transition: isDragging ? "none" : "transform 0.15s ease-out",
+            }}
           >
-            {/* Background grid */}
-            <defs>
-              <pattern id="netGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1f2937" strokeWidth="0.5" />
-              </pattern>
-              {/* Glow filter */}
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-                <feMerge>
-                  <feMergeNode in="coloredBlur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#netGrid)" />
+            {/* Background grid pattern */}
+            <svg
+              width={canvasW}
+              height={canvasH}
+              className="absolute inset-0 pointer-events-none"
+            >
+              <defs>
+                <pattern id="mapGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1f293720" strokeWidth="0.5" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#mapGrid)" />
 
-            {/* Render edges first (below nodes) */}
-            {edges.map((edge, i) => {
-              const fromNode = nodeMap.get(edge.from);
-              const toNode = nodeMap.get(edge.to);
-              if (!fromNode || !toNode) return null;
-              return (
-                <AnimatedEdge
-                  key={`edge-${i}`}
-                  from={fromNode}
-                  to={toNode}
-                  color={edge.color}
-                />
-              );
-            })}
-
-            {/* Render nodes */}
-            {nodes.map((node) => {
-              const isHovered = hoveredNode === node.id;
-              if (node.type === "server") {
+              {/* Render edges */}
+              {edges.map((edge, i) => {
+                const fromCard = cardMap.get(edge.fromId);
+                const toCard = cardMap.get(edge.toId);
+                if (!fromCard || !toCard) return null;
                 return (
-                  <ServerNode
-                    key={node.id}
-                    node={node}
-                    hovered={isHovered}
-                    onHover={setHoveredNode}
+                  <SvgEdge
+                    key={`edge-${i}`}
+                    from={fromCard}
+                    to={toCard}
+                    color={edge.color}
+                    label={edge.label}
                   />
                 );
-              }
-              if (node.type === "network") {
-                return (
-                  <NetworkNode
-                    key={node.id}
-                    node={node}
-                    hovered={isHovered}
-                    onHover={setHoveredNode}
-                  />
-                );
-              }
-              return (
-                <ContainerNode
-                  key={node.id}
-                  node={node}
-                  hovered={isHovered}
-                  onHover={setHoveredNode}
-                />
-              );
-            })}
+              })}
+            </svg>
 
-            {/* Tooltip overlay (rendered last = on top) */}
-            {hoveredNodeData && (
-              <SvgTooltip node={hoveredNodeData} visible={true} />
-            )}
-          </svg>
+            {/* Render HTML cards */}
+            {cards.map(card => {
+              if (card.type === "internet") {
+                return <InternetCard key={card.id} card={card} />;
+              }
+              if (card.type === "server") {
+                return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} />;
+              }
+              if (card.type === "network") {
+                const netIdx = parseInt(card.id.replace("net-", "")) || 0;
+                const netData = orderedNets.find(n => card.id === `net-${n.id}`);
+                if (!netData) return null;
+                const colorIdx = orderedNets.indexOf(netData);
+                return <NetworkCard key={card.id} card={card} net={netData} colorIdx={colorIdx >= 0 ? colorIdx : 0} />;
+              }
+              if (card.type === "container") {
+                const contData = containerDataMap.get(card.id);
+                if (!contData) return null;
+                return <ContainerCard key={card.id} card={card} container={contData} />;
+              }
+              return null;
+            })}
+          </div>
         )}
       </div>
 
-      {/* ── Open Ports Section ── */}
+      {/* ── Open Ports Detail ── */}
       {listeningPorts.length > 0 && (
         <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-4">
           <h4 className="text-sm font-medium text-gray-300 mb-1 flex items-center gap-2">
             <Globe className="h-4 w-4 text-amber-400" />
-            Cổng đang mở
+            Open Ports
           </h4>
           <p className="text-xs text-gray-500 mb-3">
-            Đây là các &quot;cửa&quot; cho phép truy cập từ bên ngoài vào server. Mỗi cổng tương ứng với một ứng dụng đang lắng nghe.
+            Ports currently listening for external connections.
           </p>
           <div className="flex flex-wrap gap-2">
             {listeningPorts.map((p, i) => (
-              <PortCard
+              <div
                 key={`${p.protocol}-${p.localPort}-${i}`}
-                protocol={p.protocol}
-                port={p.localPort}
-                process={p.process}
-              />
+                className="flex items-center gap-2 bg-gray-900/70 border border-gray-700/50 rounded-lg px-3 py-2 hover:border-amber-500/30 transition-colors"
+              >
+                <Badge variant="info">{p.protocol.toUpperCase()}</Badge>
+                <span className="text-white text-sm font-mono font-semibold">:{p.localPort}</span>
+                {p.process && (
+                  <span className="text-xs text-gray-500 truncate max-w-[120px]">{p.process}</span>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -944,20 +793,14 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-gray-400 flex items-center gap-2">
           <Server className="h-4 w-4" />
-          Chi tiết từng mạng
+          Network Details
         </h4>
-        {topology.networks.map((net, i) => {
+        {orderedNets.map((net, i) => {
           const palette = NETWORK_PALETTE[i % NETWORK_PALETTE.length];
           return (
-            <div
-              key={net.id}
-              className="bg-gray-900 border border-gray-700/60 rounded-xl p-4"
-            >
+            <div key={net.id} className="bg-gray-900 border border-gray-700/60 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: palette.bg }}
-                />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: palette.bg }} />
                 <span className="text-sm font-medium text-white">{net.name}</span>
                 <Badge variant="default">{net.driver}</Badge>
                 <span className="text-xs text-gray-500 ml-auto">
@@ -966,38 +809,26 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               </div>
 
               {net.containers.length === 0 ? (
-                <p className="text-xs text-gray-600 italic">Không có ứng dụng nào trong mạng này</p>
+                <p className="text-xs text-gray-600 italic">No containers in this network</p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {net.containers.map((cont) => {
-                    const colors = containerColor(cont.state);
+                  {net.containers.map(cont => {
+                    const colors = containerStatusColor(cont.state);
                     return (
-                      <div
-                        key={cont.id || cont.name}
-                        className="flex items-start gap-2 bg-gray-800/60 rounded-lg p-2.5 border border-gray-700/40"
-                      >
-                        <div
-                          className="w-2 h-2 rounded-full mt-1.5 shrink-0"
-                          style={{ backgroundColor: colors.dot }}
-                        />
+                      <div key={cont.id || cont.name} className="flex items-start gap-2 bg-gray-800/60 rounded-lg p-2.5 border border-gray-700/40">
+                        <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: colors.dot }} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-gray-200 truncate">
-                            {cont.name}
-                          </p>
-                          <p className="text-[10px] text-gray-500 truncate">
-                            {cont.image || "—"}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span
-                              className="text-[10px] font-medium"
-                              style={{ color: colors.dot }}
-                            >
-                              {stateEmoji(cont.state)} {stateLabel(cont.state)}
+                          <p className="text-xs font-medium text-gray-200 truncate">{cont.name}</p>
+                          <p className="text-[10px] text-gray-500 truncate">{cont.image || "—"}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="text-[10px] font-medium" style={{ color: colors.dot }}>
+                              {colors.label}
                             </span>
-                            {cont.ipv4 && (
-                              <span className="text-[10px] text-gray-600 font-mono">
-                                {cont.ipv4?.trim()}
-                              </span>
+                            {cont.ipv4?.trim() && (
+                              <span className="text-[10px] text-gray-600 font-mono">{cont.ipv4.trim()}</span>
+                            )}
+                            {cont.ports && (
+                              <span className="text-[10px] text-amber-400/70 font-mono">{formatPortsBadge(cont.ports)}</span>
                             )}
                           </div>
                         </div>

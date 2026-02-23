@@ -11,6 +11,7 @@ import {
   Cog,
   Zap,
   Network,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -20,6 +21,7 @@ import { DockerContainerList } from "@/components/servers/DockerContainerList";
 import { ServiceList } from "@/components/servers/ServiceList";
 import { QuickActions } from "@/components/servers/QuickActions";
 import { ServerNetworkMap } from "@/components/servers/ServerNetworkMap";
+import { PackageManager } from "@/components/network/PackageManager";
 import { ServerForm } from "@/components/servers/ServerForm";
 import type { ServerInfo } from "@/types";
 
@@ -28,6 +30,7 @@ const SERVER_TABS = [
   { key: "containers", label: "Containers", icon: <Box className="h-4 w-4" /> },
   { key: "networks", label: "Networks", icon: <Network className="h-4 w-4" /> },
   { key: "services", label: "Services", icon: <Cog className="h-4 w-4" /> },
+  { key: "packages", label: "Packages", icon: <Package className="h-4 w-4" /> },
   { key: "actions", label: "Quick Actions", icon: <Zap className="h-4 w-4" /> },
 ];
 
@@ -155,6 +158,7 @@ export default function ServerDetailPage() {
       {activeTab === "containers" && <DockerContainerList serverId={serverId} />}
       {activeTab === "networks" && <ServerNetworkMap serverId={serverId} />}
       {activeTab === "services" && <ServiceList serverId={serverId} />}
+      {activeTab === "packages" && <PackageManager serverId={serverId} />}
       {activeTab === "actions" && <QuickActions serverId={serverId} />}
     </div>
   );

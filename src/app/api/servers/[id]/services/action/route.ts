@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/crypto";
 import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
 
-const ALLOWED_ACTIONS = ["start", "stop", "restart"] as const;
+const ALLOWED_ACTIONS = ["start", "stop", "restart", "enable", "disable"] as const;
 type ServiceAction = (typeof ALLOWED_ACTIONS)[number];
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -77,9 +77,10 @@ export async function POST(
       }
     }
 
+    const pastTense: Record<string, string> = { start: "started", stop: "stopped", restart: "restarted", enable: "enabled", disable: "disabled" };
     return NextResponse.json({
       success: true,
-      message: `Service "${service}" ${action}ed successfully`,
+      message: `Service "${service}" ${pastTense[action] || action + "ed"} successfully`,
     });
   } catch (err) {
     const message = safeErrorMessage(err, "Failed to execute service action");

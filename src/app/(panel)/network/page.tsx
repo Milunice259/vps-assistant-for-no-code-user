@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { PortTable } from "@/components/network/PortTable";
-import { PackageManager } from "@/components/network/PackageManager";
 import {
   NetworkTopologyView,
   ServerSelector,
@@ -41,14 +40,6 @@ export default function NetworkPage() {
           Host Open Ports
         </h2>
         <PortTable />
-      </section>
-
-      {/* Host Machine Package Manager */}
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Package Manager
-        </h2>
-        <PackageManager />
       </section>
     </div>
   );

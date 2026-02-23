@@ -544,30 +544,53 @@ function InfoPanel({
 }
 
 /* ══════════════════════════════════════════════════════════
-   Server Info Card — key-value pairs in the header
+   Server Quick Stat Card
    ══════════════════════════════════════════════════════════ */
-function ServerInfoItem({
+function QuickStatCard({
   icon,
   label,
   value,
+  sub,
+  accentColor,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  sub?: string;
+  accentColor: string;
 }) {
   return (
-    <div className="flex items-center gap-3 bg-gray-800/60 rounded-xl px-4 py-3 border border-gray-700/40">
-      <div className="w-9 h-9 rounded-lg bg-gray-700/50 flex items-center justify-center shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider">
-          {label}
-        </p>
-        <p className="text-sm text-white font-medium truncate">{value}</p>
+    <div className="relative overflow-hidden bg-gray-800/60 rounded-xl px-4 py-3.5 border border-gray-700/40 group hover:border-gray-600/60 transition-colors">
+      <div
+        className={`absolute top-0 left-0 w-1 h-full rounded-r-full ${accentColor}`}
+      />
+      <div className="flex items-center gap-3 ml-1">
+        <div className="w-9 h-9 rounded-lg bg-gray-700/40 flex items-center justify-center shrink-0">
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+            {label}
+          </p>
+          <p
+            className="text-sm text-white font-semibold truncate"
+            title={value}
+          >
+            {value}
+          </p>
+          {sub && <p className="text-[10px] text-gray-500 truncate">{sub}</p>}
+        </div>
       </div>
     </div>
   );
+}
+
+function formatBytesShort(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const val = bytes / Math.pow(1024, i);
+  return `${val.toFixed(1)} ${units[i]}`;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -724,31 +747,37 @@ export function ServerOverview({ serverId }: ServerOverviewProps) {
             </Button>
           </div>
 
-          {/* Server Info Cards */}
-          {stats.os && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <ServerInfoItem
-                icon={<Globe className="h-4 w-4 text-blue-400" />}
-                label="OS"
-                value={stats.os.distro}
-              />
-              <ServerInfoItem
-                icon={<Info className="h-4 w-4 text-purple-400" />}
-                label="Version"
-                value={stats.os.version}
-              />
-              <ServerInfoItem
-                icon={<Cpu className="h-4 w-4 text-cyan-400" />}
-                label="Kernel"
-                value={stats.os.kernel}
-              />
-              <ServerInfoItem
-                icon={<Timer className="h-4 w-4 text-emerald-400" />}
-                label="Uptime"
-                value={formatUptime(stats.uptime)}
-              />
-            </div>
-          )}
+          {/* Server Quick Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <QuickStatCard
+              icon={<Globe className="h-4 w-4 text-blue-400" />}
+              label="Operating System"
+              value={stats.os?.distro || stats.platform}
+              sub={stats.os?.kernel ? `Kernel ${stats.os.kernel}` : undefined}
+              accentColor="bg-blue-500"
+            />
+            <QuickStatCard
+              icon={<Cpu className="h-4 w-4 text-cyan-400" />}
+              label="Processor"
+              value={stats.cpu.model || `${stats.cpu.cores || '—'} Cores`}
+              sub={stats.cpu.model && stats.cpu.cores ? `${stats.cpu.cores} Cores` : undefined}
+              accentColor="bg-cyan-500"
+            />
+            <QuickStatCard
+              icon={<MemoryStick className="h-4 w-4 text-purple-400" />}
+              label="Total Memory"
+              value={formatBytesShort(stats.memory.total)}
+              sub={`${stats.memory.usagePercent.toFixed(0)}% in use`}
+              accentColor="bg-purple-500"
+            />
+            <QuickStatCard
+              icon={<Timer className="h-4 w-4 text-emerald-400" />}
+              label="Uptime"
+              value={formatUptime(stats.uptime)}
+              sub="Since last reboot"
+              accentColor="bg-emerald-500"
+            />
+          </div>
 
           {/* Resource Gauges */}
           <div className="grid gap-4 sm:grid-cols-3">

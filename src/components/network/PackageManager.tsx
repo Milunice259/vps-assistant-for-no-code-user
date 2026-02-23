@@ -108,7 +108,11 @@ function StatusMessage({ type, message }: { type: "success" | "error" | "loading
   );
 }
 
-export function PackageManager() {
+interface PackageManagerProps {
+  serverId?: string;
+}
+
+export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
   const [packages, setPackages] = useState<PackageInfo[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);

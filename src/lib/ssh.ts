@@ -501,33 +501,61 @@ export async function containerAction(
 // ─── Quick Server Actions ───
 
 const QUICK_ACTION_COMMANDS: Record<string, string> = {
-  "system-update":    "sudo apt update -y && sudo apt upgrade -y 2>&1",
-  "docker-prune":     "docker system prune -af 2>&1",
-  "restart-docker":   "sudo systemctl restart docker 2>&1",
-  "clear-apt-cache":  "sudo apt clean && sudo apt autoclean 2>&1",
-  "clear-logs":       "sudo journalctl --vacuum-time=3d 2>&1",
-  "check-disk":       "df -h 2>&1",
-  "security-updates": "sudo apt update -qq && apt list --upgradable 2>&1",
-  "docker-stats":     'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}" 2>&1',
-  "sync-time":        "sudo timedatectl set-ntp true 2>&1; chronyc -a makestep 2>/dev/null || sudo ntpdate -u pool.ntp.org 2>/dev/null || echo 'NTP sync attempted'",
-  "restart-server":   "sudo reboot",
+  // Maintenance
+  "system-health-check": "echo '=== DISK ===' && df -h / && echo '' && echo '=== MEMORY ===' && free -h && echo '' && echo '=== CPU LOAD ===' && uptime && echo '' && echo '=== UPTIME ===' && uptime -p 2>/dev/null || uptime && echo '' && echo '=== PENDING UPDATES ===' && (apt list --upgradable 2>/dev/null | grep -c upgradable || echo 0) && echo '' && echo '=== FAILED SERVICES ===' && (systemctl --failed --no-pager --no-legend 2>/dev/null || echo 'N/A') && echo '' && echo '=== KERNEL ===' && uname -r 2>&1",
+  "security-check":     "echo '=== FIREWALL ===' && (sudo ufw status 2>/dev/null || sudo iptables -L -n --line-numbers 2>/dev/null | head -30 || echo 'No firewall detected') && echo '' && echo '=== FAIL2BAN ===' && (sudo fail2ban-client status 2>/dev/null || echo 'fail2ban not installed') && echo '' && echo '=== RECENT SSH LOGINS ===' && (last -n 10 -a 2>/dev/null || echo 'N/A') && echo '' && echo '=== FAILED LOGIN ATTEMPTS ===' && (sudo journalctl _SYSTEMD_UNIT=sshd.service --since '24 hours ago' --no-pager 2>/dev/null | grep -i 'failed\\|invalid' | tail -10 || echo 'None in last 24h') 2>&1",
+  "sync-time":          "sudo timedatectl set-ntp true 2>&1; chronyc -a makestep 2>/dev/null || sudo ntpdate -u pool.ntp.org 2>/dev/null || echo 'NTP sync attempted'",
+  "os-version-check":   "echo '=== OS ===' && cat /etc/os-release 2>/dev/null && echo '' && echo '=== KERNEL ===' && uname -a && echo '' && echo '=== DISTRIBUTION UPGRADES ===' && (do-release-upgrade -c 2>/dev/null || echo 'do-release-upgrade not available') 2>&1",
+  // Update
+  "os-update":          "sudo apt update -y && sudo apt upgrade -y 2>&1",
+  // Diagnostics
+  "docker-stats":       'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}" 2>&1',
+  "connection-stats":   "echo '=== CONNECTION SUMMARY ===' && ss -s && echo '' && echo '=== LISTENING PORTS ===' && ss -tlnp 2>&1",
+  // Cleanup
+  "docker-prune":       "docker system prune -af 2>&1",
+  "clear-apt-cache":    "sudo apt clean && sudo apt autoclean 2>&1",
+  "clear-logs":         "sudo journalctl --vacuum-time=3d 2>&1",
+  "clear-temp":         "sudo rm -rf /tmp/* /var/tmp/* 2>&1 && echo 'Temp files cleared'",
+  "remove-old-kernels": "sudo apt autoremove --purge -y 2>&1",
+  // System
+  "restart-docker":     "sudo systemctl restart docker 2>&1",
+  "restart-server":     "sudo reboot",
+  // Security
+  "firewall-reload":    "sudo ufw reload 2>/dev/null || (sudo iptables-save && echo 'iptables rules reloaded') 2>&1",
+  "unban-all":          "sudo fail2ban-client unban --all 2>&1 || echo 'fail2ban not available'",
+  "ban-ip":             "sudo fail2ban-client set sshd banip {PARAM} 2>/dev/null || sudo ufw deny from {PARAM} 2>/dev/null || echo 'Neither fail2ban nor ufw available' 2>&1",
+  "unban-ip":           "sudo fail2ban-client set sshd unbanip {PARAM} 2>/dev/null || sudo ufw delete deny from {PARAM} 2>/dev/null || echo 'Neither fail2ban nor ufw available' 2>&1",
+  // Legacy
+  "check-disk":         "df -h 2>&1",
+  "check-uptime":       "uptime",
+  "check-memory":       "free -h",
+  "check-connections":  "ss -s",
+  "check-docker-version": 'docker version --format "Client: {{.Client.Version}}, Server: {{.Server.Version}}"',
 };
 
 /**
  * Run a predefined server maintenance action.
  * Only whitelisted commands are allowed.
+ * Actions with {PARAM} support a safe parameter substitution.
  */
 export async function quickAction(
   ssh: SSH2Promise,
-  action: string
+  action: string,
+  param?: string,
 ): Promise<{ success: boolean; output: string }> {
-  const command = QUICK_ACTION_COMMANDS[action];
+  let command = QUICK_ACTION_COMMANDS[action];
   if (!command) {
     return { success: false, output: `Unknown action: ${action}` };
   }
 
+  // Substitute {PARAM} with sanitized param
+  if (command.includes("{PARAM}") && param) {
+    const safeParam = param.replace(/[^a-fA-F0-9.:]/g, "");
+    command = command.replace(/\{PARAM\}/g, safeParam);
+  }
+
   try {
-    const output = await executeCommand(ssh, command, 120_000); // Long timeout for apt/prune
+    const output = await executeCommand(ssh, command, 120_000);
     return { success: true, output };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

@@ -11,6 +11,15 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Activity,
+  Download,
+  BarChart3,
+  Network,
+  ShieldOff,
+  ShieldBan,
+  ShieldCheck,
+  FileX,
+  HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -59,28 +68,39 @@ interface ActionDef {
   label: string;
   description: string;
   icon: React.ReactNode;
-  category: "maintenance" | "cleanup" | "system";
+  category: "maintenance" | "update" | "diagnostics" | "cleanup" | "security" | "system";
   confirmMessage?: string;
+  /** If set, shows an input prompt before executing. */
+  promptInput?: {
+    label: string;
+    placeholder: string;
+  };
 }
 
 /* ══════════════════════════════════════════════════════════
    Action definitions
    ══════════════════════════════════════════════════════════ */
 const ACTIONS: ActionDef[] = [
-  // Maintenance
+  // ── Maintenance ──
   {
-    key: "system-update",
-    label: "System Update",
-    description: "Update all system packages to the latest versions",
-    icon: <RefreshCw className="h-4 w-4" />,
+    key: "system-health-check",
+    label: "System Health Check",
+    description: "Check disk, memory, CPU load, failed services, and pending updates",
+    icon: <Activity className="h-4 w-4" />,
     category: "maintenance",
-    confirmMessage: "This will update all system packages. Continue?",
   },
   {
-    key: "security-updates",
-    label: "Security Updates",
-    description: "Check for available security patches",
+    key: "security-check",
+    label: "Security Check",
+    description: "Audit firewall, fail2ban status, and recent SSH login activity",
     icon: <Shield className="h-4 w-4" />,
+    category: "maintenance",
+  },
+  {
+    key: "os-version-check",
+    label: "OS Version Check",
+    description: "Check current OS version, kernel, and available distribution upgrades",
+    icon: <HardDrive className="h-4 w-4" />,
     category: "maintenance",
   },
   {
@@ -90,7 +110,34 @@ const ACTIONS: ActionDef[] = [
     icon: <Clock className="h-4 w-4" />,
     category: "maintenance",
   },
-  // Cleanup
+
+  // ── Update ──
+  {
+    key: "os-update",
+    label: "OS Update",
+    description: "Update and upgrade all system packages to the latest versions",
+    icon: <Download className="h-4 w-4" />,
+    category: "update",
+    confirmMessage: "This will update all system packages. It may take a few minutes and use bandwidth. Continue?",
+  },
+
+  // ── Diagnostics ──
+  {
+    key: "docker-stats",
+    label: "Docker Stats",
+    description: "Show CPU, memory, and network usage for each running container",
+    icon: <BarChart3 className="h-4 w-4" />,
+    category: "diagnostics",
+  },
+  {
+    key: "connection-stats",
+    label: "Connection Stats",
+    description: "Show active TCP connections and all listening ports",
+    icon: <Network className="h-4 w-4" />,
+    category: "diagnostics",
+  },
+
+  // ── Cleanup ──
   {
     key: "docker-prune",
     label: "Docker Prune",
@@ -113,7 +160,63 @@ const ACTIONS: ActionDef[] = [
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
   },
-  // System
+  {
+    key: "clear-temp",
+    label: "Clear Temp Files",
+    description: "Remove all temporary files from /tmp and /var/tmp",
+    icon: <FileX className="h-4 w-4" />,
+    category: "cleanup",
+  },
+  {
+    key: "remove-old-kernels",
+    label: "Remove Old Kernels",
+    description: "Uninstall unused kernel versions and orphan packages",
+    icon: <Trash2 className="h-4 w-4" />,
+    category: "cleanup",
+    confirmMessage: "This will remove old kernel versions and orphan packages. Continue?",
+  },
+
+  // ── Security ──
+  {
+    key: "firewall-reload",
+    label: "Reload Firewall",
+    description: "Reload firewall rules (ufw or iptables)",
+    icon: <ShieldCheck className="h-4 w-4" />,
+    category: "security",
+  },
+  {
+    key: "ban-ip",
+    label: "Ban IP Address",
+    description: "Block an IP address via fail2ban or ufw",
+    icon: <ShieldBan className="h-4 w-4" />,
+    category: "security",
+    confirmMessage: "This will block the specified IP from accessing your server. Continue?",
+    promptInput: {
+      label: "IP address to ban",
+      placeholder: "e.g. 192.168.1.100",
+    },
+  },
+  {
+    key: "unban-ip",
+    label: "Unban IP Address",
+    description: "Remove a specific IP from the ban list",
+    icon: <ShieldOff className="h-4 w-4" />,
+    category: "security",
+    promptInput: {
+      label: "IP address to unban",
+      placeholder: "e.g. 192.168.1.100",
+    },
+  },
+  {
+    key: "unban-all",
+    label: "Unban All IPs",
+    description: "Remove all IP bans from fail2ban",
+    icon: <ShieldOff className="h-4 w-4" />,
+    category: "security",
+    confirmMessage: "This will unban ALL blocked IP addresses. Are you sure?",
+  },
+
+  // ── System ──
   {
     key: "restart-docker",
     label: "Restart Docker",
@@ -133,12 +236,15 @@ const ACTIONS: ActionDef[] = [
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
-  maintenance: "🔧 Maintenance",
+  maintenance: "🔍 Diagnostics & Checks",
+  update: "📥 Update",
+  diagnostics: "📊 Live Monitoring",
   cleanup: "🧹 Cleanup",
+  security: "🛡️ Security",
   system: "⚙️ System",
 };
 
-const CATEGORY_ORDER = ["maintenance", "cleanup", "system"];
+const CATEGORY_ORDER = ["maintenance", "update", "diagnostics", "cleanup", "security", "system"];
 
 /* ══════════════════════════════════════════════════════════
    Main component
@@ -151,6 +257,7 @@ interface QuickActionsProps {
 export function QuickActions({ serverId }: QuickActionsProps) {
   const [results, setResults] = useState<Record<string, ActionResult>>({});
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
 
   const updateResult = useCallback(
     (key: string, result: ActionResult) => {
@@ -160,14 +267,17 @@ export function QuickActions({ serverId }: QuickActionsProps) {
   );
 
   const executeAction = useCallback(
-    async (actionKey: string) => {
+    async (actionKey: string, param?: string) => {
       updateResult(actionKey, { status: "loading" });
 
       try {
+        const body: Record<string, string> = { action: actionKey };
+        if (param) body.param = param;
+
         const res = await fetch(`/api/servers/${serverId}/actions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: actionKey }),
+          body: JSON.stringify(body),
         });
         const json = await res.json();
 
@@ -196,6 +306,11 @@ export function QuickActions({ serverId }: QuickActionsProps) {
   );
 
   function handleActionClick(action: ActionDef) {
+    // If action needs input, show input prompt first
+    if (action.promptInput) {
+      setConfirming(action.key);
+      return;
+    }
     if (action.confirmMessage) {
       setConfirming(action.key);
     } else {
@@ -204,8 +319,13 @@ export function QuickActions({ serverId }: QuickActionsProps) {
   }
 
   function handleConfirm(action: ActionDef) {
+    const param = action.promptInput ? inputValues[action.key]?.trim() : undefined;
+    // Validate IP if needed
+    if (action.promptInput && (!param || !/^[\d.:a-fA-F]+$/.test(param))) {
+      return; // Don't proceed without valid input
+    }
     setConfirming(null);
-    executeAction(action.key);
+    executeAction(action.key, param);
   }
 
   // Group actions by category
@@ -213,7 +333,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
     category: cat,
     label: CATEGORY_LABELS[cat],
     actions: ACTIONS.filter((a) => a.category === cat),
-  }));
+  })).filter((g) => g.actions.length > 0);
 
   return (
     <div className="space-y-8">
@@ -229,6 +349,8 @@ export function QuickActions({ serverId }: QuickActionsProps) {
                 action={action}
                 result={results[action.key] || { status: "idle" }}
                 confirming={confirming === action.key}
+                inputValue={inputValues[action.key] || ""}
+                onInputChange={(v) => setInputValues((prev) => ({ ...prev, [action.key]: v }))}
                 onRun={() => handleActionClick(action)}
                 onConfirm={() => handleConfirm(action)}
                 onCancel={() => setConfirming(null)}
@@ -248,6 +370,8 @@ function ActionCard({
   action,
   result,
   confirming,
+  inputValue,
+  onInputChange,
   onRun,
   onConfirm,
   onCancel,
@@ -255,6 +379,8 @@ function ActionCard({
   action: ActionDef;
   result: ActionResult;
   confirming: boolean;
+  inputValue: string;
+  onInputChange: (v: string) => void;
   onRun: () => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -294,13 +420,37 @@ function ActionCard({
       {/* Description */}
       <p className="text-xs text-gray-500 mb-3">{action.description}</p>
 
-      {/* Confirm Dialog (inline) */}
+      {/* Confirm / Input Dialog (inline) */}
       {confirming && (
         <div className="mb-3 p-2.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-3.5 w-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-yellow-300">{action.confirmMessage}</p>
-          </div>
+          {/* Input prompt */}
+          {action.promptInput && (
+            <div className="mb-2">
+              <label className="text-xs text-gray-300 font-medium block mb-1">
+                {action.promptInput.label}
+              </label>
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => onInputChange(e.target.value)}
+                placeholder={action.promptInput.placeholder}
+                className="w-full px-2.5 py-1.5 text-xs rounded-md bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none font-mono"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onConfirm();
+                  if (e.key === "Escape") onCancel();
+                }}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+            </div>
+          )}
+          {/* Confirm message */}
+          {action.confirmMessage && (
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-yellow-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-yellow-300">{action.confirmMessage}</p>
+            </div>
+          )}
           <div className="flex gap-2 mt-2">
             <Button variant="danger" size="sm" onClick={onConfirm}>
               Yes, proceed

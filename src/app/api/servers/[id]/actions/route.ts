@@ -9,25 +9,55 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 const VALID_ACTIONS = [
-  "system-update",
+  // Maintenance
+  "system-health-check",
+  "security-check",
+  "sync-time",
+  "os-version-check",
+  // Update
+  "os-update",
+  // Diagnostics
+  "docker-stats",
+  "connection-stats",
+  // Cleanup
   "docker-prune",
-  "restart-docker",
   "clear-apt-cache",
   "clear-logs",
-  "check-disk",
-  "security-updates",
-  "docker-stats",
-  "sync-time",
+  "clear-temp",
+  "remove-old-kernels",
+  // System
+  "restart-docker",
   "restart-server",
+  // Security
+  "firewall-reload",
+  "unban-all",
+  "ban-ip",
+  "unban-ip",
+  // Legacy (backend-only, used by other features)
+  "check-disk",
   "check-uptime",
   "check-memory",
   "check-connections",
   "check-docker-version",
 ] as const;
 
+/** Actions that accept a `param` field (e.g. an IP address). */
+const PARAM_ACTIONS = new Set(["ban-ip", "unban-ip"]);
+
+/** Validate IPv4/IPv6 address. */
+function isValidIP(ip: string): boolean {
+  // IPv4
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+    return ip.split(".").every((n) => Number(n) >= 0 && Number(n) <= 255);
+  }
+  // IPv6 (simplified check)
+  if (/^[0-9a-fA-F:]+$/.test(ip) && ip.includes(":")) return true;
+  return false;
+}
+
 /**
  * POST /api/servers/[id]/actions - Run a quick maintenance action.
- * Body: { action: "system-update" | "docker-prune" | ... }
+ * Body: { action: "system-health-check" | "docker-prune" | ..., param?: string }
  *
  * For local server: uses execLocal() directly.
  * For remote servers: uses SSH.
@@ -43,7 +73,7 @@ export async function POST(
   try {
     const { id } = await context.params;
     const body = await request.json();
-    const { action } = body as { action?: string };
+    const { action, param } = body as { action?: string; param?: string };
 
     if (!action) {
       return NextResponse.json(
@@ -62,9 +92,19 @@ export async function POST(
       );
     }
 
+    // Validate param for actions that require it
+    if (PARAM_ACTIONS.has(action)) {
+      if (!param || !isValidIP(param)) {
+        return NextResponse.json(
+          { success: false, error: "A valid IP address is required for this action" },
+          { status: 400 },
+        );
+      }
+    }
+
     // Local server — execute directly
     if (isLocalServer(id)) {
-      const result = localQuickAction(action);
+      const result = localQuickAction(action, param);
       if (!result.success) {
         return NextResponse.json(
           { success: false, error: result.output },
@@ -81,7 +121,7 @@ export async function POST(
     const result = await connectToServer(id);
     ssh = result.ssh;
 
-    const actionResult = await quickAction(ssh, action);
+    const actionResult = await quickAction(ssh, action, param);
 
     if (!actionResult.success) {
       return NextResponse.json(

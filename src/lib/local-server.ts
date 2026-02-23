@@ -232,24 +232,41 @@ export function getLocalServices(): { services: Array<{ name: string; loadState:
 const DOCKER_ACTIONS = new Set([
   "docker-prune",
   "docker-stats",
+  "connection-stats",
   "check-docker-version",
 ]);
 
 /** Command map: all host-level commands run via nsenter */
 const LOCAL_ACTION_COMMANDS: Record<string, string> = {
-  "system-update":    "apt update -y && apt upgrade -y",
-  "docker-prune":     "docker system prune -af",
-  "restart-docker":   "systemctl restart docker",
-  "clear-apt-cache":  "apt clean && apt autoclean",
-  "clear-logs":       "journalctl --vacuum-time=3d",
-  "check-disk":       "df -h",
-  "security-updates": "apt update -qq && apt list --upgradable 2>/dev/null",
-  "docker-stats":     'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}"',
-  "sync-time":        "timedatectl set-ntp true; chronyc -a makestep 2>/dev/null || ntpdate -u pool.ntp.org 2>/dev/null || echo NTP sync attempted",
-  "restart-server":   "reboot",
-  "check-uptime":     "uptime",
-  "check-memory":     "free -h",
-  "check-connections": "ss -s",
+  // Maintenance
+  "system-health-check": "echo '=== DISK ===' && df -h / && echo '' && echo '=== MEMORY ===' && free -h && echo '' && echo '=== CPU LOAD ===' && uptime && echo '' && echo '=== UPTIME ===' && uptime -p 2>/dev/null || uptime && echo '' && echo '=== PENDING UPDATES ===' && (apt list --upgradable 2>/dev/null | grep -c upgradable || echo 0) && echo '' && echo '=== FAILED SERVICES ===' && (systemctl --failed --no-pager --no-legend 2>/dev/null || echo 'N/A') && echo '' && echo '=== KERNEL ===' && uname -r",
+  "security-check":     "echo '=== FIREWALL ===' && (ufw status 2>/dev/null || iptables -L -n --line-numbers 2>/dev/null | head -30 || echo 'No firewall detected') && echo '' && echo '=== FAIL2BAN ===' && (fail2ban-client status 2>/dev/null || echo 'fail2ban not installed') && echo '' && echo '=== RECENT SSH LOGINS ===' && (last -n 10 -a 2>/dev/null || echo 'N/A') && echo '' && echo '=== FAILED LOGIN ATTEMPTS ===' && (journalctl _SYSTEMD_UNIT=sshd.service --since '24 hours ago' --no-pager 2>/dev/null | grep -i 'failed\\|invalid' | tail -10 || echo 'None in last 24h')",
+  "sync-time":          "timedatectl set-ntp true; chronyc -a makestep 2>/dev/null || ntpdate -u pool.ntp.org 2>/dev/null || echo NTP sync attempted",
+  "os-version-check":   "echo '=== OS ===' && cat /etc/os-release 2>/dev/null && echo '' && echo '=== KERNEL ===' && uname -a && echo '' && echo '=== DISTRIBUTION UPGRADES ===' && (do-release-upgrade -c 2>/dev/null || echo 'do-release-upgrade not available')",
+  // Update
+  "os-update":          "apt update -y && apt upgrade -y",
+  // Diagnostics
+  "docker-stats":       'docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}"',
+  "connection-stats":   "echo '=== CONNECTION SUMMARY ===' && ss -s && echo '' && echo '=== LISTENING PORTS ===' && ss -tlnp",
+  // Cleanup
+  "docker-prune":       "docker system prune -af",
+  "clear-apt-cache":    "apt clean && apt autoclean",
+  "clear-logs":         "journalctl --vacuum-time=3d",
+  "clear-temp":         "rm -rf /tmp/* /var/tmp/* 2>/dev/null && echo 'Temp files cleared'",
+  "remove-old-kernels": "apt autoremove --purge -y",
+  // System
+  "restart-docker":     "systemctl restart docker",
+  "restart-server":     "reboot",
+  // Security
+  "firewall-reload":    "ufw reload 2>/dev/null || (iptables-save && echo 'iptables rules reloaded')",
+  "unban-all":          "fail2ban-client unban --all 2>/dev/null || echo 'fail2ban not available'",
+  "ban-ip":             "fail2ban-client set sshd banip {PARAM} 2>/dev/null || ufw deny from {PARAM} 2>/dev/null || echo 'Neither fail2ban nor ufw available'",
+  "unban-ip":           "fail2ban-client set sshd unbanip {PARAM} 2>/dev/null || ufw delete deny from {PARAM} 2>/dev/null || echo 'Neither fail2ban nor ufw available'",
+  // Legacy
+  "check-disk":         "df -h",
+  "check-uptime":       "uptime",
+  "check-memory":       "free -h",
+  "check-connections":  "ss -s",
   "check-docker-version": 'docker version --format "Client: {{.Client.Version}}, Server: {{.Server.Version}}"',
 };
 
@@ -258,11 +275,18 @@ const LOCAL_ACTION_COMMANDS: Record<string, string> = {
  * Docker commands use the socket directly; system commands use nsenter.
  */
 export function localQuickAction(
-  action: string
+  action: string,
+  param?: string,
 ): { success: boolean; output: string } {
-  const command = LOCAL_ACTION_COMMANDS[action];
+  let command = LOCAL_ACTION_COMMANDS[action];
   if (!command) {
     return { success: false, output: `Unknown action: ${action}` };
+  }
+
+  // Substitute {PARAM} with sanitized param
+  if (command.includes("{PARAM}") && param) {
+    const safeParam = param.replace(/[^a-fA-F0-9.:]/g, "");
+    command = command.replace(/\{PARAM\}/g, safeParam);
   }
 
   const isDockerAction = DOCKER_ACTIONS.has(action);

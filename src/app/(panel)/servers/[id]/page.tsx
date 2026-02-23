@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
-import { ServerStats } from "@/components/servers/ServerStats";
+import { ServerOverview } from "@/components/servers/ServerOverview";
 import { DockerContainerList } from "@/components/servers/DockerContainerList";
 import { ServiceList } from "@/components/servers/ServiceList";
 import { QuickActions } from "@/components/servers/QuickActions";
@@ -151,7 +151,7 @@ export default function ServerDetailPage() {
       <Tabs tabs={SERVER_TABS} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* Tab Content */}
-      {activeTab === "overview" && <ServerStats serverId={serverId} />}
+      {activeTab === "overview" && <ServerOverview serverId={serverId} />}
       {activeTab === "containers" && <DockerContainerList serverId={serverId} />}
       {activeTab === "networks" && <ServerNetworkMap serverId={serverId} />}
       {activeTab === "services" && <ServiceList serverId={serverId} />}

@@ -184,14 +184,31 @@ check_for_updates() {
 
     print_info "Updates available. Resetting to remote version..."
 
+    # Save deploy.sh hash before reset
+    DEPLOY_HASH_BEFORE=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1 || echo "")
+
     # On a deploy server, always match remote exactly
     git reset --hard origin/main 2>/dev/null
     chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
 
-    # NOTE: If deploy.sh itself was updated, auto_update_script() (line 168)
-    # already handled the restart via exec. No need to restart here for
-    # non-deploy-script changes — just continue with the current flow.
     print_success "Code updated to latest version."
+
+    # Check if deploy.sh itself was updated by the reset
+    DEPLOY_HASH_AFTER=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1 || echo "")
+
+    if [ -n "$DEPLOY_HASH_BEFORE" ] && [ -n "$DEPLOY_HASH_AFTER" ] && [ "$DEPLOY_HASH_BEFORE" != "$DEPLOY_HASH_AFTER" ]; then
+        echo ""
+        print_warning "deploy.sh has been updated to a new version!"
+        print_info "Restarting with the new deploy.sh in 10 seconds..."
+        echo ""
+        for i in $(seq 10 -1 1); do
+            printf "\r${YELLOW}  ⏳ Restarting in %d seconds... ${NC}" "$i"
+            sleep 1
+        done
+        printf "\r%-40s\r" " "
+        print_info "Restarting now..."
+        exec bash "$APP_DIR/deploy.sh" "$@"
+    fi
 }
 
 # --- Helper Functions ---

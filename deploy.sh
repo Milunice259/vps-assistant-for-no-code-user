@@ -37,12 +37,18 @@ auto_update_script() {
     [ -d .git ] || return 0
     git rev-parse --verify origin/main >/dev/null 2>&1 || return 0
 
-    # Compare the ACTUAL file on disk against the remote version.
-    # This catches ALL cases: local edits, uncommitted changes, stale HEAD, etc.
-    if ! git diff --quiet origin/main -- deploy.sh 2>/dev/null; then
-        echo -e "${BLUE}  ℹ deploy.sh on disk differs from remote. Updating...${NC}"
-        git checkout origin/main -- deploy.sh >/dev/null 2>&1
-        chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
+    # Hash the CURRENT file on disk
+    HASH_BEFORE=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1)
+
+    # Checkout the remote version (overwrites the file on disk)
+    git checkout origin/main -- deploy.sh >/dev/null 2>&1 || return 0
+    chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
+
+    # Hash the NEW file after checkout
+    HASH_AFTER=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1)
+
+    # Only restart if the file ACTUALLY changed (not a false positive from line endings)
+    if [ "$HASH_BEFORE" != "$HASH_AFTER" ]; then
         echo -e "${GREEN}  ✓ deploy.sh updated to latest version.${NC}"
         echo -e "${YELLOW}  ⚠ Restarting with the new deploy.sh in 10 seconds...${NC}"
         echo ""

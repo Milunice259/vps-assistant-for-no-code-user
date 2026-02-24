@@ -21,7 +21,6 @@ prisma.$executeRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {
 
 // ── Graceful shutdown — close DB connection on process exit ──
 async function shutdown() {
-  console.log("[db] Shutting down Prisma client...");
   await prisma.$disconnect();
   process.exit(0);
 }

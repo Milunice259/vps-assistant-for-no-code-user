@@ -37,17 +37,22 @@ auto_update_script() {
     [ -d .git ] || return 0
     git rev-parse --verify origin/main >/dev/null 2>&1 || return 0
 
-    LOCAL_HASH=$(git rev-parse HEAD:deploy.sh 2>/dev/null || echo "")
-    REMOTE_HASH=$(git rev-parse origin/main:deploy.sh 2>/dev/null || echo "")
-
-    if [ -n "$LOCAL_HASH" ] && [ -n "$REMOTE_HASH" ] && [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
-        if git diff --quiet HEAD -- deploy.sh 2>/dev/null; then
-            echo -e "${BLUE}  ℹ Auto-updating deploy.sh to latest version...${NC}"
-            git checkout origin/main -- deploy.sh >/dev/null 2>&1
-            chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
-            echo -e "${GREEN}  ✓ deploy.sh updated. Restarting...${NC}"
-            exec bash "$APP_DIR/deploy.sh" "$@"
-        fi
+    # Compare the ACTUAL file on disk against the remote version.
+    # This catches ALL cases: local edits, uncommitted changes, stale HEAD, etc.
+    if ! git diff --quiet origin/main -- deploy.sh 2>/dev/null; then
+        echo -e "${BLUE}  ℹ deploy.sh on disk differs from remote. Updating...${NC}"
+        git checkout origin/main -- deploy.sh >/dev/null 2>&1
+        chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
+        echo -e "${GREEN}  ✓ deploy.sh updated to latest version.${NC}"
+        echo -e "${YELLOW}  ⚠ Restarting with the new deploy.sh in 10 seconds...${NC}"
+        echo ""
+        for i in $(seq 10 -1 1); do
+            printf "\r${YELLOW}  ⏳ Restarting in %d seconds... ${NC}" "$i"
+            sleep 1
+        done
+        printf "\r%-50s\r" " "
+        echo -e "${BLUE}  ℹ Restarting now...${NC}"
+        exec bash "$APP_DIR/deploy.sh" "$@"
     fi
 }
 
@@ -184,31 +189,11 @@ check_for_updates() {
 
     print_info "Updates available. Resetting to remote version..."
 
-    # Save deploy.sh hash before reset
-    DEPLOY_HASH_BEFORE=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1 || echo "")
-
     # On a deploy server, always match remote exactly
     git reset --hard origin/main 2>/dev/null
     chmod +x "$APP_DIR/deploy.sh" 2>/dev/null || true
 
     print_success "Code updated to latest version."
-
-    # Check if deploy.sh itself was updated by the reset
-    DEPLOY_HASH_AFTER=$(md5sum "$APP_DIR/deploy.sh" 2>/dev/null | cut -d' ' -f1 || echo "")
-
-    if [ -n "$DEPLOY_HASH_BEFORE" ] && [ -n "$DEPLOY_HASH_AFTER" ] && [ "$DEPLOY_HASH_BEFORE" != "$DEPLOY_HASH_AFTER" ]; then
-        echo ""
-        print_warning "deploy.sh has been updated to a new version!"
-        print_info "Restarting with the new deploy.sh in 10 seconds..."
-        echo ""
-        for i in $(seq 10 -1 1); do
-            printf "\r${YELLOW}  ⏳ Restarting in %d seconds... ${NC}" "$i"
-            sleep 1
-        done
-        printf "\r%-40s\r" " "
-        print_info "Restarting now..."
-        exec bash "$APP_DIR/deploy.sh" "$@"
-    fi
 }
 
 # --- Helper Functions ---

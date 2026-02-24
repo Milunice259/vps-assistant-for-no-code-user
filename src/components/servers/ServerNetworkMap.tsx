@@ -95,10 +95,10 @@ const INTERNET_W = 160;
 const INTERNET_H = 60;
 const SERVER_W = 180;
 const SERVER_H = 70;
-const NETWORK_W = 200;
+const NETWORK_W = 220;
 const NETWORK_H = 64;
-const CONTAINER_W = 200;
-const CONTAINER_H = 90;
+const CONTAINER_W = 280;
+const CONTAINER_H = 100;
 
 const ROW_GAP = 80;
 const COL_GAP = 24;
@@ -281,9 +281,9 @@ function SvgEdge({
       {label && (
         <g>
           <rect
-            x={labelX - label.length * 3.5 - 8}
+            x={labelX - Math.max(label.length * 3.5, 20) - 8}
             y={labelY - 10}
-            width={label.length * 7 + 16}
+            width={Math.max(label.length * 7, 40) + 16}
             height={18}
             rx={9}
             fill="#1e293b"
@@ -299,6 +299,7 @@ function SvgEdge({
             fontFamily="ui-monospace, monospace"
             fontWeight={600}
           >
+            <title>{label}</title>
             {label}
           </text>
         </g>
@@ -333,7 +334,7 @@ function ServerCard({ card, hostname }: { card: CardRect; hostname?: string }) {
         <Server className="h-5 w-5 text-blue-400" />
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-white truncate">{hostname || "Server"}</p>
+        <p className="text-sm font-semibold text-white truncate" title={hostname || "Server"}>{hostname || "Server"}</p>
         <p className="text-[10px] text-blue-300/60">Docker Host</p>
       </div>
     </div>
@@ -370,8 +371,8 @@ function NetworkCard({
           <Network className="h-3.5 w-3.5" style={{ color: palette.bg }} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-white truncate">{net.name}</p>
-          <p className="text-[10px] text-gray-400">
+          <p className="text-xs font-semibold text-white truncate" title={net.name}>{net.name}</p>
+          <p className="text-[10px] text-gray-400" title={`${net.driver} · ${net.containers.length} container(s): ${net.containers.map(c => c.name).join(', ')}`}>
             {net.driver} · {net.containers.length} app{net.containers.length !== 1 ? "s" : ""}
           </p>
         </div>
@@ -383,16 +384,19 @@ function NetworkCard({
 function ContainerCard({
   card,
   container,
+  onSelect,
 }: {
   card: CardRect;
   container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
+  onSelect?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }) => void;
 }) {
   const status = containerStatusColor(container.state);
   const ports = parsePortString(container.ports);
+  const fullInfo = [container.name, container.image, container.ipv4, container.ports].filter(Boolean).join(' | ');
 
   return (
     <div
-      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-3 cursor-default select-none transition-all hover:shadow-lg group"
+      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-3 cursor-pointer select-none transition-all hover:shadow-lg hover:brightness-110 group"
       style={{
         left: card.x,
         top: card.y,
@@ -401,6 +405,8 @@ function ContainerCard({
         backgroundColor: status.bg,
         borderColor: status.border,
       }}
+      title={fullInfo}
+      onClick={(e) => { e.stopPropagation(); onSelect?.(container); }}
     >
       {/* Status bar left */}
       <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full" style={{ backgroundColor: status.dot }} />
@@ -409,8 +415,8 @@ function ContainerCard({
         {/* Row 1: Name + status */}
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: status.dot }} />
-          <p className="text-xs font-semibold text-white truncate flex-1">{container.name}</p>
-          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+          <p className="text-xs font-semibold text-white truncate flex-1" title={container.name}>{container.name}</p>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
             style={{ color: status.dot, backgroundColor: `${status.dot}15` }}
           >
             {status.label}
@@ -419,7 +425,7 @@ function ContainerCard({
 
         {/* Row 2: Image */}
         {container.image && (
-          <p className="text-[10px] text-gray-500 font-mono truncate pl-4">
+          <p className="text-[10px] text-gray-500 font-mono truncate pl-4" title={container.image}>
             {container.image.split(":")[0]?.split("/").pop()}
             {container.image.includes(":") ? `:${container.image.split(":")[1]}` : ""}
           </p>
@@ -434,18 +440,31 @@ function ContainerCard({
           )}
           {ports.length > 0 && (
             <div className="flex items-center gap-1">
-              {ports.slice(0, 3).map((p, i) => (
+              {ports.slice(0, 4).map((p, i) => (
                 <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-mono">
                   :{p.host}→{p.container}
                 </span>
               ))}
-              {ports.length > 3 && (
-                <span className="text-[9px] text-gray-600">+{ports.length - 3}</span>
+              {ports.length > 4 && (
+                <span className="text-[9px] text-gray-600">+{ports.length - 4}</span>
               )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   Detail row for container info panel
+   ══════════════════════════════════════════════════════════ */
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="text-xs text-gray-500">{label}</span>
+      <p className="text-sm text-white font-mono break-all">{value}</p>
     </div>
   );
 }
@@ -488,6 +507,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
+  const [selectedContainer, setSelectedContainer] = useState<{ name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string } | null>(null);
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
@@ -754,13 +774,37 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} />;
               }
               return null;
             })}
           </div>
         )}
       </div>
+
+      {/* ── Selected Container Detail Panel ── */}
+      {selectedContainer && (
+        <div className="relative bg-gray-800/80 backdrop-blur-sm rounded-xl border border-gray-700 p-4">
+          <button
+            onClick={() => setSelectedContainer(null)}
+            className="absolute top-3 right-3 text-gray-500 hover:text-white text-sm transition-colors"
+          >
+            ✕
+          </button>
+          <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <Box className="h-4 w-4 text-blue-400" />
+            Container Detail
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <DetailRow label="Name" value={selectedContainer.name} />
+            <DetailRow label="Status" value={containerStatusColor(selectedContainer.state).label} />
+            {selectedContainer.image && <DetailRow label="Image" value={selectedContainer.image} />}
+            {selectedContainer.ipv4?.trim() && <DetailRow label="IP Address" value={selectedContainer.ipv4.trim()} />}
+            {selectedContainer.ports && <DetailRow label="Ports" value={selectedContainer.ports} />}
+            {selectedContainer.id && <DetailRow label="Container ID" value={selectedContainer.id} />}
+          </div>
+        </div>
+      )}
 
       {/* ── Open Ports Detail ── */}
       {listeningPorts.length > 0 && (
@@ -815,11 +859,11 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                   {net.containers.map(cont => {
                     const colors = containerStatusColor(cont.state);
                     return (
-                      <div key={cont.id || cont.name} className="flex items-start gap-2 bg-gray-800/60 rounded-lg p-2.5 border border-gray-700/40">
+                      <div key={cont.id || cont.name} className="flex items-start gap-2 bg-gray-800/60 rounded-lg p-2.5 border border-gray-700/40 cursor-pointer hover:bg-gray-800 hover:border-gray-600 transition-colors" onClick={() => setSelectedContainer(cont)} title="Click to view full details">
                         <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: colors.dot }} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-gray-200 truncate">{cont.name}</p>
-                          <p className="text-[10px] text-gray-500 truncate">{cont.image || "—"}</p>
+                          <p className="text-xs font-medium text-gray-200 break-all" title={cont.name}>{cont.name}</p>
+                          <p className="text-[10px] text-gray-500 break-all" title={cont.image || "—"}>{cont.image || "—"}</p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="text-[10px] font-medium" style={{ color: colors.dot }}>
                               {colors.label}
@@ -828,7 +872,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                               <span className="text-[10px] text-gray-600 font-mono">{cont.ipv4.trim()}</span>
                             )}
                             {cont.ports && (
-                              <span className="text-[10px] text-amber-400/70 font-mono">{formatPortsBadge(cont.ports)}</span>
+                              <span className="text-[10px] text-amber-400/70 font-mono" title={cont.ports}>{formatPortsBadge(cont.ports)}</span>
                             )}
                           </div>
                         </div>

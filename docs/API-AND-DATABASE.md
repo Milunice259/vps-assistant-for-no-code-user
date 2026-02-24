@@ -32,7 +32,9 @@
 { "success": false, "error": "Invalid credentials" }
 ```
 
-Side effect: sets HttpOnly cookie `vps-session` (7-day TTL).
+Side effect: sets HttpOnly cookie `vps-session` (24-hour TTL, auto-refreshes at 12h).
+
+If the user has account lockout active (5 failed attempts), returns `429`.
 
 ### POST `/api/auth/logout`
 
@@ -167,7 +169,7 @@ Run a quick maintenance action on a remote server.
 { "action": "apt-update" }
 ```
 
-**Valid actions:** `apt-update`, `docker-prune`, `restart-docker`
+**Valid actions:** `system-health-check`, `security-check`, `os-update`, `docker-stats`, `connection-stats`, `docker-prune`, `clear-apt-cache`, `clear-logs`, `clear-temp`, `remove-old-kernels`, `restart-docker`, `restart-server`, `firewall-reload`, `unban-all`, `ban-ip`, `unban-ip`, and more (25+ total).
 
 ### GET `/api/servers/[id]/cron`
 
@@ -333,11 +335,29 @@ List audit log entries with pagination.
 
 ---
 
-## Backup Endpoint
+## Backup Endpoints
+
+### GET `/api/backup`
+
+List all database backups with name, size, and creation date.
 
 ### POST `/api/backup`
 
-Create a backup of the SQLite database. Returns the backup file.
+Create a new backup or restore from existing.
+
+```json
+// Create backup (default)
+{}
+
+// Restore from backup
+{ "action": "restore", "name": "backup_2026-02-24.db" }
+```
+
+Rate limited: 5 operations per 60 seconds per IP.
+
+### DELETE `/api/backup?name=backup_2026-02-24.db`
+
+Delete a backup file. Validates filename to prevent path traversal.
 
 ---
 
@@ -426,6 +446,14 @@ Deploy a Docker image or Docker Compose stack.
 
 // Docker Compose mode
 { "mode": "compose", "composeContent": "version: '3'\nservices:...", "projectName": "my-stack" }
+```
+
+### POST `/api/deploy/rollback`
+
+Rollback to a previous successful deployment. ADMIN-only.
+
+```json
+{ "deploymentId": "cuid..." }
 ```
 
 ### GET `/api/deploy/stream`
@@ -526,12 +554,12 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 ## Security Layers
 
 ```
-1. Traefik ──── TLS termination, auto cert renewal, HTTP→HTTPS redirect
+1. Traefik ──── TLS termination, auto cert renewal, HTTP→HTTPS redirect, HSTS
 2. Middleware ── JWT verification, route protection (/panel/*)
-3. API Layer ── Input validation, error sanitization
-4. Auth ─────── bcrypt 12 rounds, JWT HS256 (HttpOnly cookie), 7-day TTL
+3. API Layer ── Input validation, error sanitization, rate limiting (100/min/IP)
+4. Auth ─────── bcrypt 12 rounds, JWT HS256, 24h TTL + auto-refresh, account lockout
 5. Data ─────── AES-256-GCM encryption for SSH credentials
-6. Network ──── SQLite embedded, no external database port
+6. Network ──── SQLite embedded (WAL mode), no external database port
 ```
 
 ## Authentication Flow
@@ -561,7 +589,7 @@ Client                    Server
   httpOnly: true,         // JS cannot read → XSS protection
   secure: production,     // HTTPS only in production
   sameSite: "lax",        // Basic CSRF protection
-  maxAge: 7 * 24 * 3600,  // 7 days
+  maxAge: 24 * 3600,      // 24 hours (auto-refreshes at 12h)
   path: "/"
 }
 ```
@@ -603,12 +631,17 @@ const original = decrypt(encrypted); // → plaintext
 
 ## Known Limitations
 
-| Limitation               | Severity | Future Improvement              |
-| ------------------------ | -------- | ------------------------------- |
-| No rate limiting         | Medium   | Add rate limiter middleware     |
-| No 2FA                   | Medium   | Add TOTP (Google Authenticator) |
-| SSH host keys not stored | Low      | Store known_hosts               |
-| No CORS/CSP headers      | Low      | Add security headers            |
+| Limitation               | Severity | Status / Notes                                           |
+| ------------------------ | -------- | -------------------------------------------------------- |
+| No 2FA                   | Medium   | TOTP infrastructure ready, enrollment UI pending         |
+| SSH host keys not stored | Low      | Env-based known_hosts supported (`SSH_KNOWN_HOSTS_PATH`) |
+
+> **Resolved (previously listed as limitations):**
+>
+> - ✅ Rate limiting (100/min/IP + 5/min backup ops)
+> - ✅ Account lockout (5 failures → 15 min lock)
+> - ✅ HSTS headers (production)
+> - ✅ CSRF null-origin protection
 
 ## Deployment Security Checklist
 

@@ -7,6 +7,7 @@ import { CpuGauge } from "@/components/dashboard/CpuGauge";
 import { MemoryBar } from "@/components/dashboard/MemoryBar";
 import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import { QuickOverview } from "@/components/dashboard/QuickOverview";
+import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
 import { Cpu, MemoryStick, HardDrive, Clock, Server, Wifi } from "lucide-react";
 
 function formatUptime(seconds: number): string {
@@ -43,6 +44,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Onboarding wizard — shows for first-time users */}
+      <OnboardingWizard />
       {/* Connection status */}
       <div className="flex items-center gap-2 text-sm">
         <Wifi className={`w-4 h-4 ${connected ? "text-green-400" : "text-gray-600"}`} />

@@ -31,7 +31,11 @@ export type AuditAction =
   | "quick_action"
   | "backup_create"
   | "backup_restore"
-  | "backup_delete";
+  | "backup_delete"
+  | "user_created"
+  | "user_updated"
+  | "user_deleted"
+  | "deployment_rollback";
 
 interface AuditEntry {
   action: AuditAction;

@@ -727,13 +727,23 @@ deploy_application() {
     BUILD_LOG=$(mktemp)
     START_TIME=$(date +%s)
 
+    # Get terminal width (fallback 80) — used to prevent line wrapping
+    TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
+
     # Docker BuildKit writes directly to /dev/tty, bypassing shell redirection.
     # Use 'script' to capture ALL output including direct TTY writes.
     script -q -c "$COMPOSE_CMD build $USE_NO_CACHE --progress=plain" "$BUILD_LOG" > /dev/null 2>&1 &
     BUILD_PID=$!
 
+    # Wait for 'script' to fully initialize before starting progress loop.
+    # This prevents script's own startup output from interfering with our line.
+    sleep 2
+
     SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     SPIN_IDX=0
+
+    # Hide cursor for cleaner single-line updates
+    tput civis 2>/dev/null || true
 
     while kill -0 "$BUILD_PID" 2>/dev/null; do
         NOW=$(date +%s)
@@ -741,33 +751,54 @@ deploy_application() {
         MINS=$((ELAPSED / 60))
         SECS=$((ELAPSED % 60))
 
-        # Parse BuildKit --progress=plain format:
+        # Parse BuildKit --progress=plain format, strip ALL control chars
         #   "#5 [deps 2/4] RUN apk add ..."
         #   "#12 [builder 1/3] COPY . ."
-        CURRENT_STEP=$(grep -oE '#[0-9]+ \[[a-z_-]+ [0-9]+/[0-9]+\] .+' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/#[0-9]* \[\([^]]*\)\] /\1 · /' | cut -c1-60)
+        CURRENT_STEP=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/[^[:print:]]//g' "$BUILD_LOG" 2>/dev/null \
+            | grep -oE '#[0-9]+ \[[a-z_-]+ [0-9]+/[0-9]+\] .+' \
+            | tail -1 \
+            | sed 's/#[0-9]* \[\([^]]*\)\] /\1 · /')
 
         if [ -z "$CURRENT_STEP" ]; then
-            CURRENT_STEP=$(grep -oE '#[0-9]+ \[.+\]' "$BUILD_LOG" 2>/dev/null | tail -1 | sed 's/#[0-9]* //' | cut -c1-50)
+            CURRENT_STEP=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/[^[:print:]]//g' "$BUILD_LOG" 2>/dev/null \
+                | grep -oE '#[0-9]+ \[.+\]' \
+                | tail -1 \
+                | sed 's/#[0-9]* //')
         fi
         if [ -z "$CURRENT_STEP" ]; then
             CURRENT_STEP="preparing..."
         fi
 
-        # Count completed steps
-        DONE_COUNT=$(grep -c 'DONE' "$BUILD_LOG" 2>/dev/null || echo "0")
+        # Count completed steps (from sanitized log)
+        DONE_COUNT=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/[^[:print:]]//g' "$BUILD_LOG" 2>/dev/null \
+            | grep -c 'DONE' || echo "0")
 
         CHAR="${SPINNER:$SPIN_IDX:1}"
         SPIN_IDX=$(( (SPIN_IDX + 1) % ${#SPINNER} ))
 
-        printf "\r  ${CYAN}%s${NC} Building (%s done) ${NC}%02d:%02d  ${BLUE}%s${NC}%-20s" \
-            "$CHAR" "$DONE_COUNT" "$MINS" "$SECS" "$CURRENT_STEP" " "
+        # Build raw text (no ANSI) to measure real length
+        RAW_TEXT=$(printf "  %s Building (%s done) %02d:%02d  %s" \
+            "$CHAR" "$DONE_COUNT" "$MINS" "$SECS" "$CURRENT_STEP")
+
+        # Truncate to terminal width - 1 (leave room, prevent wrap)
+        MAX_LEN=$((TERM_WIDTH - 1))
+        RAW_TEXT="${RAW_TEXT:0:$MAX_LEN}"
+
+        # Pad with spaces to fill entire line (overwrites any previous longer text)
+        PADDED=$(printf "%-${MAX_LEN}s" "$RAW_TEXT")
+
+        # Print: carriage return → overwrite entire line (no newline, no wrap)
+        printf "\r%s" "$PADDED"
         sleep 1
     done
+
+    # Restore cursor
+    tput cnorm 2>/dev/null || true
 
     # Check build result
     wait "$BUILD_PID"
     BUILD_EXIT=$?
-    printf "\r%-100s\r" " "  # Clear the progress line
+    printf "\r%-${TERM_WIDTH}s\r" " "  # Clear the progress line
 
     if [ $BUILD_EXIT -ne 0 ]; then
         echo ""

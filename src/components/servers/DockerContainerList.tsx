@@ -109,8 +109,8 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
         <Box className="h-8 w-8 text-gray-500" />
-        <p className="text-sm text-gray-400">No Docker containers found</p>
-        <p className="text-xs text-gray-600">Docker may not be installed or no containers exist.</p>
+        <p className="text-sm text-gray-400">No applications found on this server</p>
+        <p className="text-xs text-gray-600">Deploy an application to see it here. Check the Deploy page to get started.</p>
         <Button variant="secondary" size="sm" onClick={fetchContainers}>
           <RefreshCw className="h-4 w-4 mr-1" /> Refresh
         </Button>
@@ -121,7 +121,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-400">{containers.length} container(s)</p>
+        <p className="text-sm text-gray-400">{containers.length} application(s)</p>
         <Button variant="ghost" size="sm" onClick={fetchContainers}>
           <RefreshCw className="h-4 w-4" />
         </Button>
@@ -132,10 +132,10 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
           <thead>
             <tr className="border-b border-gray-700 text-gray-400 text-left">
               <th className="pb-3 font-medium">Name</th>
-              <th className="pb-3 font-medium">Image</th>
-              <th className="pb-3 font-medium">State</th>
+              <th className="pb-3 font-medium">Template</th>
+              <th className="pb-3 font-medium">Status</th>
               <th className="pb-3 font-medium">Uptime</th>
-              <th className="pb-3 font-medium">Ports</th>
+              <th className="pb-3 font-medium">Connections</th>
               <th className="pb-3 font-medium text-right">Actions</th>
             </tr>
           </thead>

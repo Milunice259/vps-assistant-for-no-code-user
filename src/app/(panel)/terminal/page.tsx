@@ -34,10 +34,7 @@ export default function TerminalPage() {
       .then((r) => r.json())
       .then((json) => {
         if (json.success) {
-          setServers([
-            { id: "local", name: "Local VPS", host: "localhost" },
-            ...json.data,
-          ]);
+          setServers(json.data);
         }
       })
       .catch(() => {});

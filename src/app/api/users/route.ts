@@ -1,0 +1,110 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { hashPassword, getSession } from "@/lib/auth";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { safeErrorMessage } from "@/lib/safe-error";
+import type { ApiResponse } from "@/types";
+
+export const dynamic = "force-dynamic";
+
+// GET /api/users — List all users (ADMIN only)
+export async function GET(): Promise<NextResponse<ApiResponse>> {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    if (session.role !== "ADMIN") {
+      return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    }
+
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json({ success: true, data: users });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: safeErrorMessage(error, "Failed to load users") },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/users — Create a new user (ADMIN only)
+export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse>> {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    if (session.role !== "ADMIN") {
+      return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { username, password, role } = body;
+
+    if (!username || !password) {
+      return NextResponse.json(
+        { success: false, error: "Username and password are required" },
+        { status: 400 }
+      );
+    }
+
+    if (username.length < 3 || username.length > 50) {
+      return NextResponse.json(
+        { success: false, error: "Username must be between 3 and 50 characters" },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { success: false, error: "Password must be at least 8 characters" },
+        { status: 400 }
+      );
+    }
+
+    const validRoles = ["ADMIN", "OPERATOR", "VIEWER"];
+    const userRole = validRoles.includes(role) ? role : "VIEWER";
+
+    // Check if username already exists
+    const existing = await prisma.user.findUnique({ where: { username } });
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: "Username already exists" },
+        { status: 409 }
+      );
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const user = await prisma.user.create({
+      data: { username, passwordHash, role: userRole },
+      select: { id: true, username: true, role: true, createdAt: true },
+    });
+
+    const ip = getClientIp(request);
+    await auditLog({
+      action: "user_created",
+      userId: session.sub as string,
+      username: session.username as string,
+      ip,
+      details: `Created user: ${username} (${userRole})`,
+    });
+
+    return NextResponse.json({ success: true, data: user });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: safeErrorMessage(error, "Failed to create user") },
+      { status: 500 }
+    );
+  }
+}

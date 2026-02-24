@@ -5,7 +5,7 @@
 
 import { prisma } from "@/lib/db";
 
-export type NotificationType = "discord" | "slack" | "telegram";
+export type NotificationType = "discord" | "slack" | "telegram" | "email";
 
 export interface AlertPayload {
   title: string;

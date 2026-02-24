@@ -20,15 +20,19 @@ import { ServerOverview } from "@/components/servers/ServerOverview";
 import { DockerContainerList } from "@/components/servers/DockerContainerList";
 import { ServiceList } from "@/components/servers/ServiceList";
 import { QuickActions } from "@/components/servers/QuickActions";
-import { ServerNetworkMap } from "@/components/servers/ServerNetworkMap";
+import dynamic from "next/dynamic";
+const ServerNetworkMap = dynamic(
+  () => import("@/components/servers/ServerNetworkMap").then((m) => m.ServerNetworkMap),
+  { ssr: false, loading: () => <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div> }
+);
 import { PackageManager } from "@/components/network/PackageManager";
 import { ServerForm } from "@/components/servers/ServerForm";
 import type { ServerInfo } from "@/types";
 
 const SERVER_TABS = [
   { key: "overview", label: "Overview", icon: <Monitor className="h-4 w-4" /> },
-  { key: "containers", label: "Containers", icon: <Box className="h-4 w-4" /> },
-  { key: "networks", label: "Networks", icon: <Network className="h-4 w-4" /> },
+  { key: "containers", label: "Applications", icon: <Box className="h-4 w-4" /> },
+  { key: "networks", label: "Network Map", icon: <Network className="h-4 w-4" /> },
   { key: "services", label: "Services", icon: <Cog className="h-4 w-4" /> },
   { key: "packages", label: "Packages", icon: <Package className="h-4 w-4" /> },
   { key: "actions", label: "Quick Actions", icon: <Zap className="h-4 w-4" /> },

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { execOnHost } from "@/lib/local-server";
+import { execOnHost, canAccessHost } from "@/lib/local-server";
 import { validatePath } from "@/lib/validation";
 import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
+import { readdirSync, statSync } from "fs";
+import { join } from "path";
 
 /**
  * GET /api/servers/[id]/files?path=/some/dir
@@ -72,13 +74,54 @@ interface FileEntry {
 
 /**
  * List a directory on the local (host) server.
+ * Tries nsenter first for host filesystem access,
+ * falls back to Node.js fs (works inside the container or on local dev).
  */
 async function listLocalDirectory(dirPath: string): Promise<FileEntry[]> {
-  // Use ls with machine-readable output
-  const cmd = `ls -la --time-style=long-iso "${dirPath}" 2>/dev/null || ls -la "${dirPath}" 2>/dev/null`;
-  const result = await execOnHost(cmd);
+  // Try nsenter (host filesystem) first
+  if (canAccessHost()) {
+    try {
+      const cmd = `ls -la --time-style=long-iso "${dirPath}" 2>/dev/null || ls -la "${dirPath}" 2>/dev/null`;
+      const result = execOnHost(cmd);
+      return parseLsOutput(result, dirPath);
+    } catch {
+      // Fall through to fs fallback
+    }
+  }
 
-  return parseLsOutput(result, dirPath);
+  // Fallback: use Node.js fs (reads the container or local filesystem)
+  try {
+    const items = readdirSync(dirPath);
+    const entries: FileEntry[] = [];
+
+    for (const name of items) {
+      if (name === "." || name === "..") continue;
+      try {
+        const fullPath = join(dirPath, name);
+        const stat = statSync(fullPath);
+        entries.push({
+          name,
+          path: fullPath.replace(/\\/g, "/"),
+          type: stat.isDirectory() ? "directory" : "file",
+          size: stat.size,
+          modified: stat.mtime.toISOString().split("T")[0],
+        });
+      } catch {
+        // Skip entries we can't stat (permission denied, etc.)
+      }
+    }
+
+    entries.sort((a, b) => {
+      if (a.type === b.type) return a.name.localeCompare(b.name);
+      return a.type === "directory" ? -1 : 1;
+    });
+
+    return entries;
+  } catch (err) {
+    throw new Error(
+      `Cannot list directory "${dirPath}": ${err instanceof Error ? err.message : "Permission denied or directory does not exist"}`
+    );
+  }
 }
 
 /**

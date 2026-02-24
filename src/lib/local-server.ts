@@ -283,9 +283,16 @@ export function localQuickAction(
     return { success: false, output: `Unknown action: ${action}` };
   }
 
-  // Substitute {PARAM} with sanitized param
+  // Substitute {PARAM} with validated param
   if (command.includes("{PARAM}") && param) {
     const safeParam = param.replace(/[^a-fA-F0-9.:]/g, "");
+    // Validate IP format (IPv4 or IPv6) before injection
+    const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(safeParam) &&
+      safeParam.split(".").every(n => parseInt(n) >= 0 && parseInt(n) <= 255);
+    const isIPv6 = /^[a-fA-F0-9:]+$/.test(safeParam) && safeParam.includes(":");
+    if (!isIPv4 && !isIPv6) {
+      return { success: false, output: "Invalid IP address format. Please enter a valid IPv4 (e.g., 192.168.1.1) or IPv6 address." };
+    }
     command = command.replace(/\{PARAM\}/g, safeParam);
   }
 

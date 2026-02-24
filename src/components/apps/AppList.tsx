@@ -141,7 +141,7 @@ export function AppList() {
               <thead>
                 <tr className="border-b border-gray-700 text-gray-400 text-left">
                   <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Image</th>
+                  <th className="pb-3 font-medium">Template</th>
                   <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium">Domain</th>
                   <th className="pb-3 font-medium text-right">Actions</th>

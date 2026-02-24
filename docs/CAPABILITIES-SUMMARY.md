@@ -1,6 +1,7 @@
-# VPS Control App - Capabilities Summary
+# VPS Control App — Capabilities Summary
 
-> Complete list of implemented capabilities in the current codebase.
+> Complete list of implemented capabilities in the current codebase.  
+> Last updated: February 2026 (Post-audit, all P0–P4 fixes applied)
 
 ---
 
@@ -11,9 +12,11 @@ VPS Control App is a web control panel for:
 - managing remote VPS connection profiles,
 - monitoring host and remote server health,
 - running Linux host network/package checks,
+- deploying applications from GitHub to remote servers,
+- managing database backups from the browser,
 - and bootstrap-deploying the panel itself with Docker + Traefik.
 
-It is designed for single-team/single-admin operation with a simple deployment model.
+It is designed for single-team/admin operation with a simple deployment model.
 
 ---
 
@@ -22,14 +25,11 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Username/password login (`/api/auth/login`)
 - Logout (`/api/auth/logout`)
 - Current user endpoint (`/api/auth/me`)
-- JWT session cookie (`vps-session`, HttpOnly, Secure, SameSite=Lax, 7-day expiry)
+- JWT session cookie (`vps-session`, HttpOnly, Secure, SameSite=Lax, **24-hour expiry**)
+- **Auto-refresh**: sessions silently refresh when past 50% of lifespan (12h)
 - Route protection middleware for panel pages and API routes
-
-**Constraints**
-
-- Single-admin style model (no RBAC/roles)
-- No 2FA
-- No login rate limiting
+- **Account lockout**: 5 failed attempts → 15-minute lockout
+- **API rate limiting**: 100 requests/min/IP globally
 
 ---
 
@@ -39,6 +39,8 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Snapshot host metrics API (`/api/stats`)
 - Real-time host metrics stream via SSE (`/api/stats/stream`)
 - CPU, memory, disk, uptime, hostname, OS reporting
+- **Quick Overview**: app/server/port count summary cards
+- **Onboarding Wizard**: 3-step guide for first-time users
 
 **Constraints**
 
@@ -53,17 +55,13 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Store host, port, username, auth method (password or SSH key)
 - Encrypt sensitive credentials at rest (AES-256-GCM)
 - Per-server live stats endpoint (`/api/servers/[id]/stats`) over SSH
-- Server activation toggles and last connection timestamps
+- **SSH connection pooling**: 5-min TTL, max 10 concurrent connections, auto-eviction
+- **Modular SSH architecture**: 7 focused modules (connection, stats, containers, network, actions, pool, index)
 - **Docker container management**: list, start, stop, restart containers
 - **Systemd service viewer**: list active/inactive service units
 - **Network topology**: Docker networks with container IPs + host ports
-- **Quick actions**: one-click `apt update`, `docker prune`, `restart docker`
-
-**Constraints**
-
-- Remote stats/Docker/service commands are Linux-oriented
-- SSH host keys are auto-accepted (automation convenience, lower strictness)
-- Requires reachable SSH and valid credentials
+- **Quick actions**: 25+ predefined actions (health check, security audit, OS update, docker prune, ban/unban IP, etc.)
+- **Container crash detection**: monitors for restart loops (3+ in 5 min), sends broadcast alerts
 
 ---
 
@@ -73,6 +71,7 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - List installed/upgradable packages (`/api/network/packages`)
 - Trigger package metadata update (`apt update`)
 - Trigger package upgrades (all or selected packages)
+- **Lazy-loaded network map** for improved page performance
 
 **Constraints**
 
@@ -89,19 +88,14 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Live status sync (RUNNING, STOPPED, RESTARTING, UNHEALTHY, UNKNOWN)
 - Container log viewer (`/api/apps/[id]/logs`)
 - **Health check auto-run** with endpoint monitoring
-- **Container PIDs** displayed in SSE stream and detail page
 - **Environment variable editor** for tracked containers
 - **Resource charts** (CPU/memory over time)
 - **Per-app settings** (restart policy, resource limits, logging, networking)
-
-**Constraints**
-
-- Discovery requires active SSH connection to target servers
-- Offline servers result in UNKNOWN status for their apps
+- **De-jargoned labels**: "Container" → "Application", "Image" → "Template", "Ports" → "Connections"
 
 ---
 
-## 6) Deployment Workflow in App UI
+## 6) Deployment Workflow
 
 - Submit Git repository deployment requests from panel (`/api/deploy`)
 - Stack detection for common frameworks (Next.js, React, Vue, Nuxt, Node, Python, Go, Rust, static)
@@ -110,17 +104,37 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Remote deployments support custom path, environment variables, and target server selection
 - **FileBrowser integration** for visual path selection on deploy forms
 - Deployment history with status and logs
-- Persistent deployment log records in DB
+- **Deployment rollback**: re-deploy previous successful deployment via `/api/deploy/rollback`
 - **Real-time deploy logs via SSE** (`/api/deploy/stream`)
-
-**Constraints**
-
-- Remote deployment requires SSH access and Docker on the target server
-- Local mode is clone + detect + log oriented (does not fully orchestrate)
 
 ---
 
-## 7) VPS Bootstrap Deployment (deploy.sh)
+## 7) Database Backups
+
+- **Backup management UI** at `/backup`
+- Create snapshots of the SQLite database
+- Restore from any backup with auto pre-restore backup
+- Delete old backups
+- List backups with name, size, creation date
+- Rate limited (5 operations/min/IP)
+- All operations audit-logged
+
+---
+
+## 8) Notification System
+
+- **4 channels**: Discord, Slack, Telegram, **Email** (via HTTP mail API)
+- Webhook-based delivery for Discord/Slack/Telegram
+- Email via SendGrid/Mailgun HTTP API (SMTP_HOST env var)
+- Configurable alert rules (CPU, memory, disk thresholds)
+- Threshold-based alerting with cooldown to prevent alert storms
+- **Container crash alerts**: automatic broadcast on restart loops
+- Severity levels: info, warning, critical (with emoji + color coding)
+- Formatted payloads per channel (embeds, blocks, HTML)
+
+---
+
+## 9) VPS Bootstrap Deployment (deploy.sh)
 
 - Guided server bootstrap script for new VPS
 - System checks (OS, RAM, disk, internet)
@@ -131,78 +145,53 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Builds and starts app container
 - Verifies deployment status and reports clear failure/success
 
-**Constraints**
+---
 
-- Intended for Ubuntu/Debian with root/sudo
-- Domain DNS must point to server IP for public HTTPS
-- Existing shared Traefik environments require matching resolver/network
+## 10) Security Controls
+
+| Control                | Status         | Details                                 |
+| ---------------------- | -------------- | --------------------------------------- |
+| Password hashing       | ✅ Implemented | bcryptjs with salt rounds               |
+| JWT auth cookie        | ✅ Implemented | HttpOnly + Secure + SameSite=Lax        |
+| JWT auto-refresh       | ✅ Implemented | 24h lifespan, refresh at 12h            |
+| AES-256-GCM encryption | ✅ Implemented | SSH credentials encrypted at rest       |
+| API rate limiting      | ✅ Implemented | 100 req/min/IP                          |
+| Account lockout        | ✅ Implemented | 5 failures → 15 min lock                |
+| HSTS header            | ✅ Implemented | Strict-Transport-Security in production |
+| CSRF protection        | ✅ Implemented | Null-origin bypass prevented            |
+| Input validation       | ✅ Implemented | Central validation module (46 tests)    |
+| Non-root container     | ✅ Implemented | UID 1001 nextjs user                    |
+| SQLite WAL mode        | ✅ Implemented | Better concurrent read performance      |
+| Error sanitization     | ✅ Implemented | 18 friendly error mappings              |
 
 ---
 
-## 8) Docker, Traefik, and TLS Integration
+## 11) User Experience
 
-- Single app container (`vps-control-app`) with Next.js standalone runtime
-- SQLite persisted in Docker volume (`app_data`)
-- Traefik labels for domain routing and HTTPS
-- HTTP-to-HTTPS redirect middleware
-- Configurable certificate resolver (`CERT_RESOLVER`)
-- Explicit Traefik docker network label for backend IP resolution
-
-**Constraints**
-
-- TLS certificate validity depends on correct Traefik resolver and DNS
-- If Traefik is externally managed, resolver name must match that Traefik instance
+- **Breadcrumbs navigation** across all panel pages
+- **Command Palette** (`Ctrl+K` / `⌘K`) for quick page navigation
+- **Onboarding Wizard** (3-step) for first-time users
+- **Internationalization** (English + Vietnamese) with browser auto-detect
+- **De-jargoned UI** (Container→Application, Image→Template, Ports→Connections)
+- **Empty states with CTAs** for first-time users
+- **Lazy-loaded components** (NetworkMap) for faster page loads
+- **Dark theme** with premium design
 
 ---
 
-## 9) Database and Data Model
+## 12) Audit Log
 
-- SQLite database with Prisma ORM
-- Startup auto-sync (`prisma db push`)
-- Optional startup admin seed in entrypoint
-- Core entities: `User`, `Server`, `DeploymentLog`, `App`
-
-**Constraints**
-
-- SQLite is simple and lightweight but not for high write concurrency at scale
-
----
-
-## 10) Security Controls (Implemented)
-
-- Password hashing with bcryptjs
-- JWT auth cookie (HttpOnly + Secure)
-- AES-256-GCM encryption for stored SSH credentials
-- Input validation/sanitization in API handlers and scripts
-- Firewall and reverse-proxy TLS setup in deploy automation
-
-**Known Gaps**
-
-- No 2FA
-- No account lockout/rate limit for login
-- No fine-grained RBAC
-
----
-
-## 11) Audit Log
-
-- Records administrative actions (server changes, deployments, container operations)
-- Timestamped entries with action type and details
-- Viewable from the panel UI (`/audit`)
-- API endpoint (`/api/audit`) with pagination
+- Records all administrative actions (38 action types)
+- Timestamped entries with action type, user, target, IP, and details
 - **Full-text search** across user, target, IP, and action fields
 - **Action type filter** dropdown
 - **Date range filter** (From/To date pickers)
 - **CSV export** of filtered audit entries
 - Expandable row detail view
 
-**Constraints**
-
-- Audit log is stored in SQLite alongside app data
-
 ---
 
-## 12) Web Terminal
+## 13) Web Terminal
 
 - Browser-based command execution on managed servers
 - **Server selector dropdown** to choose target server
@@ -210,48 +199,58 @@ It is designed for single-team/single-admin operation with a simple deployment m
 - Output streamed to the UI with command history
 - **Relaxed allowlist** supporting 30+ common Linux commands
 - Command history navigation (↑/↓ arrows)
-- Clear command (`clear`) support
-
-**Constraints**
-
-- Not a full interactive terminal (no PTY allocation)
-- Command execution is subject to validation and sanitization
 
 ---
 
-## 13) Operational Tasks Supported
+## 14) User Management
 
-- App logs via Docker Compose
-- Restart/stop/update with script and compose commands
-- SQLite backup via `docker cp` from container volume path
-- Re-deploy and reconfigure through `deploy.sh`
+- Create, update, delete user accounts (`/api/users`)
+- User listing with role display
+- ADMIN role management
+- Accessible from sidebar under System group
+
+---
+
+## 15) Testing
+
+- **87 tests** across 6 test files
+- Vitest test runner
+- Covers: validation (46), error handling (11), sanitization (6), SSE (8), crypto (9), auth (7)
+- All tests pass with build verification
 
 ---
 
 ## Quick Capability Matrix
 
-| Area                         | Implemented | Notes                                    |
-| ---------------------------- | ----------- | ---------------------------------------- |
-| Auth + sessions              | Yes         | JWT cookie, single-admin model           |
-| Dashboard monitoring         | Yes         | Host metrics + SSE + Quick Overview      |
-| Remote SSH server stats      | Yes         | Linux commands over SSH                  |
-| Server profile CRUD          | Yes         | Encrypted secrets                        |
-| Docker container management  | Yes         | List, start, stop, restart via SSH       |
-| Systemd service viewer       | Yes         | Read-only service listing                |
-| Quick server actions         | Yes         | apt-update, docker-prune, restart-docker |
-| Application tracking         | Yes         | DB + live discovery + health check       |
-| Host port/package management | Yes         | Linux/apt only                           |
-| Panel-driven deployment      | Yes         | Git, Docker Image, Docker Compose modes  |
-| VPS bootstrap automation     | Yes         | deploy.sh end-to-end                     |
-| Traefik HTTPS routing        | Yes         | Requires correct DNS/resolver            |
-| SQLite persistence           | Yes         | Volume-backed                            |
-| Audit log                    | Yes         | Search, filter, date range, CSV export   |
-| Web terminal                 | Yes         | Server selector, command history         |
-| SSE real-time streams        | Yes         | Dashboard, apps, deploy log streams      |
-| Notification channels        | Yes         | Webhook-based alerts with rules          |
-| Settings management          | Yes         | General, Docker, Security, Backup        |
-| SSL certificate checker      | Yes         | Per-server SSL/TLS verification          |
-| File browser                 | Yes         | Remote file system navigation            |
+| Area                         | Implemented | Notes                                       |
+| ---------------------------- | ----------- | ------------------------------------------- |
+| Auth + sessions              | ✅          | JWT 24h + auto-refresh, lockout, rate limit |
+| Dashboard monitoring         | ✅          | Host metrics + SSE + Quick Overview         |
+| Remote SSH server management | ✅          | Modular SSH with connection pooling         |
+| Docker container management  | ✅          | List, start, stop, restart via SSH          |
+| Container crash detection    | ✅          | 3+ restarts in 5min → alert                 |
+| Quick server actions         | ✅          | 25+ predefined maintenance commands         |
+| Application tracking         | ✅          | DB + live discovery + health check          |
+| Host port/package management | ✅          | Linux/apt only                              |
+| Panel-driven deployment      | ✅          | Git, Docker Image, Docker Compose modes     |
+| Deployment rollback          | ✅          | Re-deploy from previous deployment          |
+| Database backups             | ✅          | Create, restore, delete from browser        |
+| VPS bootstrap automation     | ✅          | deploy.sh end-to-end                        |
+| Traefik HTTPS routing        | ✅          | Requires correct DNS/resolver               |
+| SQLite persistence           | ✅          | Volume-backed, WAL mode                     |
+| Audit log                    | ✅          | 38 action types, search, export             |
+| Web terminal                 | ✅          | Server selector, command history            |
+| SSE real-time streams        | ✅          | Dashboard, apps, deploy log streams         |
+| Notification channels        | ✅          | Discord, Slack, Telegram, Email             |
+| Command palette              | ✅          | Ctrl+K fuzzy search across pages            |
+| i18n                         | ✅          | English + Vietnamese (61 keys)              |
+| Settings management          | ✅          | General, Docker, Security, Backup           |
+| SSL certificate checker      | ✅          | Per-server SSL/TLS verification             |
+| File browser                 | ✅          | Remote file system navigation               |
+| User management              | ✅          | CRUD + role management                      |
+| Onboarding wizard            | ✅          | 3-step first-time setup guide               |
+| Breadcrumbs navigation       | ✅          | Context-aware page breadcrumbs              |
+| Unit tests                   | ✅          | 87 tests, 6 files via Vitest                |
 
 ---
 

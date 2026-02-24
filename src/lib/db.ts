@@ -12,3 +12,19 @@ export const prisma =
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
+
+// ── Enable WAL mode for better concurrent read/write ──
+// WAL allows readers and writer to coexist without SQLITE_BUSY
+prisma.$executeRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {
+  // Silently ignore — WAL may already be enabled or env doesn't support it
+});
+
+// ── Graceful shutdown — close DB connection on process exit ──
+async function shutdown() {
+  console.log("[db] Shutting down Prisma client...");
+  await prisma.$disconnect();
+  process.exit(0);
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

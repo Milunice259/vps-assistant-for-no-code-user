@@ -25,12 +25,15 @@ function isRateLimited(ip: string): boolean {
   return entry.count > MAX_OPS;
 }
 
-setInterval(() => {
+const _backupCleanup = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap) {
     if (now - entry.firstAttempt > WINDOW_MS) rateLimitMap.delete(ip);
   }
-}, 300_000).unref();
+}, 300_000);
+if (typeof _backupCleanup === "object" && _backupCleanup && "unref" in _backupCleanup) {
+  (_backupCleanup as NodeJS.Timeout).unref();
+}
 
 /**
  * Validate a backup filename — must be a plain .db filename with no path traversal.

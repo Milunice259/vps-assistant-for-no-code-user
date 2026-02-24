@@ -730,14 +730,10 @@ deploy_application() {
     # Get terminal width (fallback 80) — used to prevent line wrapping
     TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
 
-    # Docker BuildKit writes directly to /dev/tty, bypassing shell redirection.
-    # Use 'script' to capture ALL output including direct TTY writes.
-    script -q -c "$COMPOSE_CMD build $USE_NO_CACHE --progress=plain" "$BUILD_LOG" > /dev/null 2>&1 &
+    # Run build in background, capturing all output to log file.
+    # --progress=plain outputs to stdout/stderr (no /dev/tty), so direct redirection works.
+    $COMPOSE_CMD build $USE_NO_CACHE --progress=plain > "$BUILD_LOG" 2>&1 &
     BUILD_PID=$!
-
-    # Wait for 'script' to fully initialize before starting progress loop.
-    # This prevents script's own startup output from interfering with our line.
-    sleep 2
 
     SPINNER='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     SPIN_IDX=0

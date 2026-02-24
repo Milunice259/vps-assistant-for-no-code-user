@@ -33,12 +33,15 @@ function isRateLimited(ip: string): boolean {
   return entry.count > MAX_CMDS;
 }
 
-setInterval(() => {
+const _termCleanup = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap) {
     if (now - entry.firstAttempt > WINDOW_MS) rateLimitMap.delete(ip);
   }
-}, 300_000).unref();
+}, 300_000);
+if (typeof _termCleanup === "object" && _termCleanup && "unref" in _termCleanup) {
+  (_termCleanup as NodeJS.Timeout).unref();
+}
 
 const MAX_OUTPUT_BYTES = 1_000_000; // 1MB max output
 

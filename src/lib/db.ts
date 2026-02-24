@@ -6,7 +6,10 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "warn", "error"] : ["error"],
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "warn", "error"]
+        : ["error"],
   });
 
 if (process.env.NODE_ENV !== "production") {
@@ -15,7 +18,7 @@ if (process.env.NODE_ENV !== "production") {
 
 // ── Enable WAL mode for better concurrent read/write ──
 // WAL allows readers and writer to coexist without SQLITE_BUSY
-prisma.$executeRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {
+prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL").catch(() => {
   // Silently ignore — WAL may already be enabled or env doesn't support it
 });
 

@@ -44,12 +44,15 @@ function checkRateLimit(ip: string): { limited: boolean; remaining: number } {
 }
 
 // Cleanup stale entries every 5 minutes
-setInterval(() => {
+const _cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of apiRateMap) {
     if (now >= entry.resetAt) apiRateMap.delete(ip);
   }
-}, 300_000).unref();
+}, 300_000);
+if (typeof _cleanupTimer === "object" && _cleanupTimer && "unref" in _cleanupTimer) {
+  (_cleanupTimer as NodeJS.Timeout).unref();
+}
 
 function getClientIp(request: NextRequest): string {
   return (

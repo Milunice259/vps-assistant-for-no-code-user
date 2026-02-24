@@ -39,14 +39,17 @@ function isRateLimited(ip: string): boolean {
 }
 
 // Periodic cleanup to prevent memory leak (every 5 minutes)
-setInterval(() => {
+const _loginCleanup = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap) {
     if (now - entry.firstAttempt > WINDOW_MS) {
       rateLimitMap.delete(ip);
     }
   }
-}, 300_000).unref();
+}, 300_000);
+if (typeof _loginCleanup === "object" && _loginCleanup && "unref" in _loginCleanup) {
+  (_loginCleanup as NodeJS.Timeout).unref();
+}
 
 // ─── Route handler ───
 

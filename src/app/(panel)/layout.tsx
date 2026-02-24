@@ -36,12 +36,12 @@ function PanelContent({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-950">
       <Sidebar />
       <div
-        className="flex min-w-0 flex-1 flex-col transition-all duration-300 md:ml-16"
+        className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 md:ml-16"
         style={{ marginLeft: undefined }}
       >
         {/* Desktop: use inline style for margin; Mobile: no margin */}
         <div
-          className="hidden md:flex md:flex-1 md:flex-col"
+          className="hidden md:flex md:flex-1 md:flex-col md:overflow-hidden"
           style={{ marginLeft: collapsed ? "4rem" : "16rem" }}
         >
           <Header title={title} />
@@ -51,7 +51,7 @@ function PanelContent({ children }: { children: React.ReactNode }) {
           </main>
         </div>
         {/* Mobile: no sidebar margin, add top padding for hamburger */}
-        <div className="flex flex-1 flex-col md:hidden">
+        <div className="flex flex-1 flex-col overflow-hidden md:hidden">
           <Header title={title} />
           <main className="flex-1 overflow-y-auto p-4 pt-2">
             <Breadcrumbs />

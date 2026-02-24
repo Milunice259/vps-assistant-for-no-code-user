@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PortTable } from "@/components/network/PortTable";
 import dynamic from "next/dynamic";
 const ServerNetworkMap = dynamic(
-  () => import("@/components/servers/ServerNetworkMap").then((m) => m.ServerNetworkMap),
+  () => import("@/components/servers/network-map").then((m) => m.ServerNetworkMap),
   { ssr: false, loading: () => <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div> }
 );
 import type { ServerInfo } from "@/types";

@@ -11,14 +11,13 @@ RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN npm ci
+RUN npm ci --ignore-scripts && npx prisma generate
 
 # ─── Stage 2: Build Application ───
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate
 RUN npm run build
 
 # ─── Stage 3: Production-only Dependencies ───

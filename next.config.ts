@@ -4,6 +4,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["ssh2-promise", "ssh2"],
 
+  // Tree-shake lucide-react: only bundle icons actually used
+  modularizeImports: {
+    "lucide-react": {
+      transform: "lucide-react/dist/esm/icons/{{kebabCase member}}",
+    },
+  },
+
   // ── Security Headers ──
   async headers() {
     return [

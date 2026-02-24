@@ -28,3 +28,6 @@ docker-data/
 docs
 deploy.sh
 docker-compose.yml
+*.tgz
+.turbo
+.pnp*

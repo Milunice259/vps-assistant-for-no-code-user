@@ -83,12 +83,29 @@ async function resolveExec(id: string): Promise<{
   };
 }
 
-// ─── GET — Read .env from container ─────────────────────────────────────
+// ─── GET — Read runtime env + .env file from container ──────────────────
+
+/** System vars to hide from runtime view */
+const SYSTEM_ENV_KEYS = new Set([
+  "PATH", "HOME", "HOSTNAME", "TERM", "SHLVL", "_",
+  "LANG", "LC_ALL", "LC_CTYPE", "LANGUAGE", "TZ",
+  "PWD", "OLDPWD", "SHELL", "USER", "LOGNAME",
+]);
+
+interface ProfileInfo {
+  id: string;
+  name: string;
+  vars: Record<string, string>;
+  isActive: boolean;
+}
 
 interface EnvReadResult {
   vars: Record<string, string>;
+  runtimeVars: Record<string, string>;
   envPath: string | null;
   source: "file" | "not-found";
+  profiles: ProfileInfo[];
+  activeProfile: ProfileInfo | null;
 }
 
 export async function GET(
@@ -103,7 +120,24 @@ export async function GET(
 
     const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
 
-    // 1. Detect WorkingDir
+    // 1. Read runtime env vars via `docker exec env`
+    const runtimeVars: Record<string, string> = {};
+    try {
+      const envOutput = await exec(`docker exec ${safeId} env 2>/dev/null`);
+      for (const line of envOutput.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const eqIdx = trimmed.indexOf("=");
+        if (eqIdx <= 0) continue;
+        const key = trimmed.slice(0, eqIdx);
+        const value = trimmed.slice(eqIdx + 1);
+        if (!SYSTEM_ENV_KEYS.has(key)) {
+          runtimeVars[key] = value;
+        }
+      }
+    } catch { /* env command not available */ }
+
+    // 2. Detect WorkingDir
     let workDir = "/app";
     try {
       const wd = await exec(
@@ -112,32 +146,48 @@ export async function GET(
       if (wd.trim()) workDir = wd.trim();
     } catch { /* use default */ }
 
-    // 2. Try to read .env from workDir first, then fallback locations
+    // 3. Try to read .env from workDir first, then fallback locations
     const pathsToTry = [
       `${workDir}/.env`,
       ...ENV_SEARCH_PATHS.filter((p) => p !== ".env" && p !== `${workDir}/.env`),
     ];
+
+    // 4. Load profiles from DB (only for DB-backed apps)
+    let profiles: ProfileInfo[] = [];
+    let activeProfile: ProfileInfo | null = null;
+    try {
+      const dbProfiles = await prisma.envProfile.findMany({
+        where: { appId: id },
+        orderBy: { createdAt: "desc" },
+      });
+      profiles = dbProfiles.map((p) => ({
+        id: p.id,
+        name: p.name,
+        vars: JSON.parse(p.vars || "{}"),
+        isActive: p.isActive,
+      }));
+      activeProfile = profiles.find((p) => p.isActive) || null;
+    } catch { /* profiles not available for local containers */ }
 
     for (const envPath of pathsToTry) {
       try {
         const content = await exec(
           `docker exec ${safeId} cat ${envPath} 2>/dev/null`
         );
-        // Successfully read the file
         const vars = parseEnvContent(content);
         return NextResponse.json({
           success: true,
-          data: { vars, envPath, source: "file" },
+          data: { vars, runtimeVars, envPath, source: "file", profiles, activeProfile },
         });
       } catch {
         // File not found at this path, try next
       }
     }
 
-    // 3. No .env file found anywhere
+    // 5. No .env file found anywhere
     return NextResponse.json({
       success: true,
-      data: { vars: {}, envPath: `${workDir}/.env`, source: "not-found" },
+      data: { vars: {}, runtimeVars, envPath: `${workDir}/.env`, source: "not-found", profiles, activeProfile },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to read env";

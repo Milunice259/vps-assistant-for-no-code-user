@@ -13,6 +13,7 @@ import {
   Play,
   Square,
   RotateCcw,
+  RefreshCw,
   Download,
   Trash2,
   Terminal,
@@ -25,7 +26,6 @@ import { AppLogViewer } from "@/components/apps/AppLogViewer";
 import { AppEnvEditor } from "@/components/apps/AppEnvEditor";
 import { AppSettings } from "@/components/apps/AppSettings";
 import { WebTerminal } from "@/components/apps/WebTerminal";
-import { AppHealthCheck } from "@/components/apps/AppHealthCheck";
 import { useSSE } from "@/hooks/useSSE";
 import type {
   AppDetailInfo,
@@ -125,7 +125,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   terminal: "Open an interactive shell session inside this container.",
   logs: "Live-stream stdout/stderr output from this container.",
   resources: "CPU, memory, and network usage charts with historical data.",
-  env: "Environment variables configured inside this container. For local containers, these are read directly from Docker and are read-only.",
+  env: "View runtime variables injected by Docker (read-only) and manage custom .env overrides for your app.",
   settings:
     "Update application settings like resource limits, domain, and restart policy.",
 };
@@ -373,8 +373,7 @@ export default function AppDetailPage() {
       {/* Tab Content */}
       {activeTab === "overview" && (
         <div className="space-y-6">
-          <OverviewPanel app={app} />
-          {app.containerId && <AppHealthCheck appId={app.id} />}
+          <OverviewPanel app={app} appId={app.id} />
         </div>
       )}
       {activeTab === "terminal" && app.containerId && (
@@ -442,7 +441,61 @@ function StatCard({
   );
 }
 
-function OverviewPanel({ app }: { app: AppDetailInfo }) {
+function InlineHealthCheck({ appId }: { appId: string }) {
+  const [result, setResult] = useState<{
+    status: "healthy" | "unhealthy" | "unknown";
+    output: string;
+    containerState: string;
+    checkedAt: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const runCheck = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/apps/${appId}/health`);
+      const json: ApiResponse<typeof result> = await res.json();
+      if (json.success && json.data) setResult(json.data);
+      else setError(json.error || "Health check failed");
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [appId]);
+
+  useEffect(() => { runCheck(); }, [runCheck]);
+
+  const statusStyle = {
+    healthy: "text-emerald-400",
+    unhealthy: "text-red-400",
+    unknown: "text-gray-400",
+  };
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      {loading && !result && (
+        <span className="text-xs text-gray-500">Checking…</span>
+      )}
+      {error && <span className="text-xs text-red-400">{error}</span>}
+      {result && (
+        <>
+          <span className={`text-sm font-semibold capitalize ${statusStyle[result.status]}`}>
+            {result.status}
+          </span>
+          <span className="text-xs text-gray-500">{result.output}</span>
+        </>
+      )}
+      <Button variant="ghost" size="sm" onClick={runCheck} loading={loading}>
+        <RefreshCw className="h-3 w-3 mr-1" /> Check Now
+      </Button>
+    </div>
+  );
+}
+
+function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
   const [copied, setCopied] = useState(false);
 
   const copyId = () => {
@@ -502,8 +555,10 @@ function OverviewPanel({ app }: { app: AppDetailInfo }) {
     },
     {
       label: "Health Check",
-      value: app.healthCheck || (
-        <span className="text-gray-600 italic">Not configured</span>
+      value: app.containerId ? (
+        <InlineHealthCheck appId={appId} />
+      ) : (
+        <span className="text-gray-600 italic">No container</span>
       ),
     },
     { label: "Created", value: new Date(app.createdAt).toLocaleString() },

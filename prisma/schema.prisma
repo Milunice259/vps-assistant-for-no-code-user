@@ -146,6 +146,7 @@ model App {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   metrics       AppMetric[]
+  envProfiles   EnvProfile[]
 
   @@map("apps")
 }
@@ -163,6 +164,21 @@ model AppMetric {
 
   @@index([appId, timestamp])
   @@map("app_metrics")
+}
+
+// ─── Env override profiles ───
+model EnvProfile {
+  id        String   @id @default(cuid())
+  appId     String   @map("app_id")
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  name      String                         // e.g., "Production", "Debug", "Test"
+  vars      String                         // JSON: {"KEY": "value", ...}
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, name])
+  @@map("env_profiles")
 }
 
 enum UserRole {

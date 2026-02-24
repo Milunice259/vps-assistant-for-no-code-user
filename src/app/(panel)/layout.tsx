@@ -36,7 +36,7 @@ function PanelContent({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-950">
       <Sidebar />
       <div
-        className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 md:ml-16"
+        className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300"
         style={{ marginLeft: undefined }}
       >
         {/* Desktop: use inline style for margin; Mobile: no margin */}

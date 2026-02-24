@@ -5,8 +5,16 @@ import { execOnHost, canAccessHost } from "@/lib/local-server";
 import { validatePath } from "@/lib/validation";
 import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
-import { readdirSync, statSync } from "fs";
+import { readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
+
+/** Thrown when the requested directory does not exist on disk. */
+class DirectoryNotFoundError extends Error {
+  constructor(path: string) {
+    super(`Directory not found: ${path}`);
+    this.name = "DirectoryNotFoundError";
+  }
+}
 
 /**
  * GET /api/servers/[id]/files?path=/some/dir
@@ -56,6 +64,12 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: entries });
   } catch (err) {
+    if (err instanceof DirectoryNotFoundError) {
+      return NextResponse.json(
+        { success: false, error: err.message },
+        { status: 404 }
+      );
+    }
     const message = safeErrorMessage(err, "Failed to list directory");
     return NextResponse.json(
       { success: false, error: message },
@@ -90,6 +104,10 @@ async function listLocalDirectory(dirPath: string): Promise<FileEntry[]> {
   }
 
   // Fallback: use Node.js fs (reads the container or local filesystem)
+  if (!existsSync(dirPath)) {
+    throw new DirectoryNotFoundError(dirPath);
+  }
+
   try {
     const items = readdirSync(dirPath);
     const entries: FileEntry[] = [];
@@ -118,8 +136,9 @@ async function listLocalDirectory(dirPath: string): Promise<FileEntry[]> {
 
     return entries;
   } catch (err) {
+    if (err instanceof DirectoryNotFoundError) throw err;
     throw new Error(
-      `Cannot list directory "${dirPath}": ${err instanceof Error ? err.message : "Permission denied or directory does not exist"}`
+      `Cannot list directory "${dirPath}": ${err instanceof Error ? err.message : "Permission denied"}`
     );
   }
 }

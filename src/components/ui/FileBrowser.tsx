@@ -222,13 +222,14 @@ export function FileBrowser({
   const loadDirectory = useCallback(async (path: string) => {
     setLoading(true);
     setError(null);
+    setCurrentPath(path);
     try {
       const res = await fetch(`/api/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to load directory");
       setRootEntries(json.data || []);
-      setCurrentPath(path);
     } catch (err) {
+      setRootEntries(null);
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
@@ -249,14 +250,40 @@ export function FileBrowser({
     })),
   ];
 
-  // Quick access directories
-  const QUICK_DIRS = [
+  // Quick access directories — dynamically filtered to only existing ones
+  const ALL_QUICK_DIRS = [
     { name: "Root", path: "/" },
     { name: "Home", path: "/home" },
     { name: "Opt", path: "/opt" },
     { name: "Var/www", path: "/var/www" },
     { name: "Etc", path: "/etc" },
   ];
+
+  const [quickDirs, setQuickDirs] = useState(ALL_QUICK_DIRS.slice(0, 1));
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const results = await Promise.all(
+        ALL_QUICK_DIRS.map(async (d) => {
+          if (d.path === "/") return d;
+          try {
+            const res = await fetch(
+              `/api/servers/${serverId}/files?path=${encodeURIComponent(d.path)}`
+            );
+            return res.ok ? d : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (!cancelled) {
+        setQuickDirs(results.filter(Boolean) as typeof ALL_QUICK_DIRS);
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [serverId]);
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/50 overflow-hidden">
@@ -275,7 +302,7 @@ export function FileBrowser({
 
       {/* Quick access bar */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-700/50 bg-gray-800/30 overflow-x-auto">
-        {QUICK_DIRS.map((d) => (
+        {quickDirs.map((d) => (
           <button
             key={d.path}
             onClick={() => loadDirectory(d.path)}

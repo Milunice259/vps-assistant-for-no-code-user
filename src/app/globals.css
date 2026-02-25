@@ -48,3 +48,15 @@
     @apply border-b border-gray-800 hover:bg-gray-800/50 transition-colors;
   }
 }
+
+@layer utilities {
+  /* Hide scrollbar but keep scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

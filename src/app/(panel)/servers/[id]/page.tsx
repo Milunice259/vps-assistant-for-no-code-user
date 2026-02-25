@@ -116,29 +116,31 @@ export default function ServerDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push("/servers")}
-            className="text-gray-400 hover:text-white"
+            className="shrink-0 text-gray-400 hover:text-white"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h2 className="text-xl font-semibold text-white">{server.name}</h2>
-            <p className="text-sm text-gray-400">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-white sm:text-xl">{server.name}</h2>
+            <p className="truncate text-xs text-gray-400 sm:text-sm">
               {isLocal ? "This machine" : `${server.username}@${server.host}:${server.port}`}
             </p>
           </div>
-          {isLocal && (
-            <Badge variant="info">Local</Badge>
-          )}
-          <Badge variant={server.isActive ? "success" : "default"}>
-            {server.isActive ? "Active" : "Inactive"}
-          </Badge>
+          <div className="flex shrink-0 gap-1.5">
+            {isLocal && (
+              <Badge variant="info">Local</Badge>
+            )}
+            <Badge variant={server.isActive ? "success" : "default"}>
+              {server.isActive ? "Active" : "Inactive"}
+            </Badge>
+          </div>
         </div>
         {!isLocal && (
-          <div className="flex gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
               <Pencil className="w-4 h-4 mr-1" /> Edit
             </Button>

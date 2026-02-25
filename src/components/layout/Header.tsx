@@ -12,15 +12,17 @@ export function Header({ title }: HeaderProps) {
   const { user, loading, logout } = useAuth();
 
   return (
-    <header className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-6 py-4">
-      <h1 className="text-xl font-semibold text-white">{title}</h1>
+    <header className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-3 md:px-6 md:py-4 pl-14 md:pl-6">
+      <h1 className="min-w-0 truncate text-lg font-semibold text-white md:text-xl">
+        {title}
+      </h1>
 
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-2 md:gap-4 ml-3">
         {loading ? (
           <div className="h-5 w-24 animate-pulse rounded bg-gray-700" />
         ) : user ? (
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-300">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="hidden items-center gap-2 text-sm text-gray-300 sm:flex">
               <User className="h-4 w-4" />
               <span>{user.username}</span>
             </div>

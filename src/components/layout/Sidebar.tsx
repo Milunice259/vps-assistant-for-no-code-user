@@ -62,48 +62,45 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-export function Sidebar() {
-  const { collapsed, toggle } = useSidebar();
+/**
+ * Renders sidebar inner content.
+ * @param showLabels — when true, group headers + nav labels are visible.
+ *                     Mobile drawer always passes true; desktop follows `collapsed`.
+ */
+function SidebarInner({
+  showLabels,
+  onMobileClose,
+}: {
+  showLabels: boolean;
+  onMobileClose?: () => void;
+}) {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  // Close mobile menu on escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMobileOpen(false);
-    };
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, []);
-
-  const sidebarContent = (
+  return (
     <>
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-700 px-4">
         <Terminal className="h-6 w-6 shrink-0 text-brand-400" />
-        {!collapsed && (
+        {showLabels && (
           <span className="text-lg font-bold text-white">VPS Control</span>
         )}
         {/* Mobile close button */}
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="ml-auto text-gray-400 hover:text-white md:hidden"
-          aria-label="Close menu"
-        >
-          <X className="h-5 w-5" />
-        </button>
+        {onMobileClose && (
+          <button
+            onClick={onMobileClose}
+            className="ml-auto text-gray-400 hover:text-white"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* Navigation with groups */}
       <nav className="min-h-0 flex-1 overflow-y-auto p-3">
         {navGroups.map((group) => (
           <div key={group.label} className="mb-4">
-            {!collapsed && (
+            {showLabels && (
               <span className="mb-1 block px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 {group.label}
               </span>
@@ -123,10 +120,10 @@ export function Sidebar() {
                         ? "bg-brand-600/20 text-brand-400"
                         : "text-gray-400 hover:bg-gray-800 hover:text-white"
                     )}
-                    title={collapsed ? item.label : undefined}
+                    title={!showLabels ? item.label : undefined}
                   >
                     <span className="shrink-0">{item.icon}</span>
-                    {!collapsed && <span>{item.label}</span>}
+                    {showLabels && <span>{item.label}</span>}
                   </Link>
                 );
               })}
@@ -134,25 +131,28 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-
-      {/* Collapse toggle — desktop only */}
-      <div className="hidden shrink-0 border-t border-gray-700 p-3 md:block">
-        <button
-          onClick={toggle}
-          className="flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-5 w-5" />
-          ) : (
-            <>
-              <PanelLeftClose className="h-5 w-5" />
-              <span>Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
     </>
   );
+}
+
+export function Sidebar() {
+  const { collapsed, toggle } = useSidebar();
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Close mobile menu on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, []);
 
   return (
     <>
@@ -173,17 +173,17 @@ export function Sidebar() {
         />
       )}
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — always shows labels regardless of collapsed state */}
       <aside
         className={clsx(
           "fixed left-0 top-0 z-50 flex h-screen h-[100dvh] w-64 flex-col border-r border-gray-700 bg-gray-900 transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {sidebarContent}
+        <SidebarInner showLabels onMobileClose={() => setMobileOpen(false)} />
       </aside>
 
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — respects collapsed state */}
       <aside
         className={clsx(
           "fixed left-0 top-0 z-40 hidden flex-col border-r border-gray-700 bg-gray-900 transition-all duration-300 md:flex",
@@ -191,7 +191,23 @@ export function Sidebar() {
           collapsed ? "w-16" : "w-64"
         )}
       >
-        {sidebarContent}
+        <SidebarInner showLabels={!collapsed} />
+        {/* Collapse toggle — desktop only */}
+        <div className="shrink-0 border-t border-gray-700 p-3">
+          <button
+            onClick={toggle}
+            className="flex w-full items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-5 w-5" />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
       </aside>
     </>
   );

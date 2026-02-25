@@ -255,35 +255,35 @@ export default function AppDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3 min-w-0">
           <button
             onClick={() => router.push("/apps")}
-            className="text-gray-400 hover:text-white"
+            className="mt-1 shrink-0 text-gray-400 hover:text-white"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h2 className="text-xl font-semibold text-white">{displayName}</h2>
-            <div className="flex items-center gap-2 text-sm text-gray-400 mt-0.5">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-white sm:text-xl">{displayName}</h2>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400 mt-0.5 sm:text-sm">
               {app.image && (
-                <span className="font-mono text-xs bg-gray-800 px-2 py-0.5 rounded">
+                <span className="truncate max-w-[160px] font-mono text-xs bg-gray-800 px-1.5 py-0.5 rounded sm:max-w-[240px] sm:px-2">
                   {app.image}
                 </span>
               )}
               <span>•</span>
-              <span>{app.serverName}</span>
+              <span className="truncate">{app.serverName}</span>
               {app.domain && (
                 <>
                   <span>•</span>
-                  <span className="text-brand-400">{app.domain}</span>
+                  <span className="truncate text-brand-400">{app.domain}</span>
                 </>
               )}
             </div>
           </div>
           <Badge variant={statusBadgeVariant(app.status)}>{app.status}</Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           {/* Container Actions */}
           {app.containerId && (
             <>
@@ -571,7 +571,7 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
         <tbody className="divide-y divide-gray-800">
           {details.map((d) => (
             <tr key={d.label} className="hover:bg-gray-800/50">
-              <td className="py-3 pr-8 text-gray-400 font-medium whitespace-nowrap w-40">
+              <td className="py-3 pr-4 text-gray-400 font-medium whitespace-nowrap w-28 sm:w-40 sm:pr-8">
                 {d.label}
               </td>
               <td className="py-3 text-white break-all">{d.value}</td>

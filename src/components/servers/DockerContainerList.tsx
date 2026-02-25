@@ -128,7 +128,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[600px] text-sm">
           <thead>
             <tr className="border-b border-gray-700 text-gray-400 text-left">
               <th className="pb-3 font-medium">Name</th>

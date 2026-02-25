@@ -108,8 +108,8 @@ export function AppList() {
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <div className="flex justify-between items-center">
-        <div className="flex gap-4 text-sm">
+      <div className="flex flex-wrap justify-between items-center gap-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <span className="text-gray-400">
             Total: <span className="text-white">{apps.length}</span>
           </span>

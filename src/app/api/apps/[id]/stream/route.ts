@@ -17,21 +17,25 @@ interface AppStreamData {
   pids: number;
 }
 
+/** Counter for periodic cleanup (every ~100 ticks ≈ 16 min) */
+let tickCount = 0;
+
 export async function GET(
   _request: NextRequest,
   context: RouteContext
 ) {
   const { id: appId } = await context.params;
+  const isLocal = isLocalAppId(appId);
 
   return createSSEResponse<AppStreamData>(
     async () => {
       // Resolve container ID — from DB or from local:: prefix
       let containerId: string | null = null;
       let status = "UNKNOWN";
+      let dbAppId: string | null = null; // real DB id for metric persistence
 
-      if (isLocalAppId(appId)) {
+      if (isLocal) {
         containerId = parseLocalContainerId(appId);
-        // Check if container is running
         try {
           const state = execLocal(
             `docker inspect --format "{{.State.Status}}" ${containerId.replace(/[^a-zA-Z0-9_.-]/g, "")}`,
@@ -42,6 +46,7 @@ export async function GET(
           status = "UNKNOWN";
         }
       } else {
+        dbAppId = appId;
         const app = await prisma.app.findUnique({
           where: { id: appId },
           select: { containerId: true, status: true },
@@ -56,8 +61,9 @@ export async function GET(
 
       // Get live container stats
       try {
+        const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
         const raw = execLocal(
-          `docker stats ${containerId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.PIDs}}"`,
+          `docker stats ${safeId} --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.PIDs}}"`,
           10_000
         );
         const parts = raw.trim().split("|");
@@ -77,7 +83,35 @@ export async function GET(
         // Parse PIDs count
         const pids = parseInt(parts[3]?.trim() || "0", 10) || 0;
 
-        return { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut, pids };
+        const result: AppStreamData = { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut, pids };
+
+        // ── Persist metric to DB (non-local apps only) ──
+        if (dbAppId) {
+          try {
+            await prisma.appMetric.create({
+              data: {
+                appId: dbAppId,
+                cpuUsage: cpuPercent,
+                memUsage: memUsageMB,
+                netIn,
+                netOut,
+              },
+            });
+
+            // Periodic cleanup: delete metrics older than 30 days
+            tickCount++;
+            if (tickCount % 100 === 0) {
+              const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+              await prisma.appMetric.deleteMany({
+                where: { appId: dbAppId, timestamp: { lt: cutoff } },
+              });
+            }
+          } catch {
+            // DB write failure is not fatal — don't break the stream
+          }
+        }
+
+        return result;
       } catch {
         return {
           status,

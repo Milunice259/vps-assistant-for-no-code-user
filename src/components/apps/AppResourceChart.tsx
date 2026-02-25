@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import {
   AreaChart,
   Area,
@@ -10,149 +10,232 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import type { ContainerStats } from "@/types";
+import type { ContainerStats, MetricPoint, ApiResponse } from "@/types";
 
-const MAX_HISTORY = 60; // ~10 min at 10s intervals
+// ─── Time range definitions ───
 
-interface HistoryPoint {
-  time: string;
+type TimeRange = "1h" | "6h" | "24h" | "7d" | "30d";
+
+const RANGES: { key: TimeRange; label: string }[] = [
+  { key: "1h", label: "1 Giờ" },
+  { key: "6h", label: "6 Giờ" },
+  { key: "24h", label: "24 Giờ" },
+  { key: "7d", label: "7 Ngày" },
+  { key: "30d", label: "30 Ngày" },
+];
+
+interface ChartPoint {
+  time: string;     // display label
+  timestamp: number; // ms for dedup
   cpu: number;
   mem: number;
-  memPercent: number;
   netIn: number;
   netOut: number;
-  pids: number;
 }
 
 interface AppResourceChartProps {
+  appId: string;
   liveStats: ContainerStats | null;
-  metrics: unknown[]; // kept for interface compat, unused
+  metrics: unknown[]; // kept for interface compat
   cpuLimit: number | null;
   memoryLimit: number | null;
   onRefresh: () => void;
 }
 
+/** Format timestamp for X-axis based on selected range */
+function formatTime(iso: string, range: TimeRange): string {
+  const d = new Date(iso);
+  if (range === "7d" || range === "30d") {
+    return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }) +
+      " " + d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function AppResourceChart({
+  appId,
   liveStats,
   cpuLimit,
   memoryLimit,
 }: AppResourceChartProps) {
-  const historyRef = useRef<HistoryPoint[]>([]);
-  const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [range, setRange] = useState<TimeRange>("1h");
+  const [liveMode, setLiveMode] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<ChartPoint[]>([]);
+
+  // Track previous net values for rate calculation
   const prevNetRef = useRef<{ netIn: number; netOut: number } | null>(null);
   const [netRate, setNetRate] = useState({ inRate: 0, outRate: 0 });
 
-  // Accumulate SSE stream data into history
+  // ── Fetch historical data from API ──
+  const fetchHistory = useCallback(async (r: TimeRange) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/apps/${appId}/metrics?range=${r}`);
+      const json: ApiResponse<{ points: MetricPoint[] }> = await res.json();
+      if (json.success && json.data) {
+        const pts: ChartPoint[] = json.data.points.map((p) => ({
+          time: formatTime(p.time, r),
+          timestamp: new Date(p.time).getTime(),
+          cpu: p.cpu,
+          mem: p.mem,
+          netIn: p.netIn,
+          netOut: p.netOut,
+        }));
+        setHistory(pts);
+      }
+    } catch {
+      // Fetch failed — start with empty
+    } finally {
+      setLoading(false);
+    }
+  }, [appId]);
+
+  // Load historical data on mount and when range changes
   useEffect(() => {
-    if (!liveStats) return;
+    fetchHistory(range);
+  }, [fetchHistory, range]);
 
-    const now = new Date();
-    const time = now.toLocaleTimeString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+  // ── Append live SSE data ──
+  useEffect(() => {
+    if (!liveStats || !liveMode) return;
 
-    // Calculate net rates (delta between successive readings)
+    // Calculate net rates
     const prev = prevNetRef.current;
     let inRate = 0;
     let outRate = 0;
     if (prev) {
       const dIn = liveStats.netIn - prev.netIn;
       const dOut = liveStats.netOut - prev.netOut;
-      // SSE interval is ~10s
       inRate = Math.max(0, dIn / 10);
       outRate = Math.max(0, dOut / 10);
     }
     prevNetRef.current = { netIn: liveStats.netIn, netOut: liveStats.netOut };
     setNetRate({ inRate, outRate });
 
-    const point: HistoryPoint = {
-      time,
+    const now = new Date();
+    const point: ChartPoint = {
+      time: formatTime(now.toISOString(), range),
+      timestamp: now.getTime(),
       cpu: liveStats.cpuPercent,
       mem: liveStats.memUsageMB,
-      memPercent: liveStats.memPercent,
       netIn: inRate,
       netOut: outRate,
-      pids: liveStats.pids,
     };
 
-    const updated = [...historyRef.current, point].slice(-MAX_HISTORY);
-    historyRef.current = updated;
-    setHistory(updated);
-  }, [liveStats]);
+    setHistory((prev) => {
+      // Prevent duplicate timestamps (within 5s)
+      if (prev.length > 0 && Math.abs(prev[prev.length - 1].timestamp - point.timestamp) < 5000) {
+        return prev;
+      }
+      // Trim to keep chart manageable — keep last ~500 points in live mode
+      const updated = [...prev, point];
+      return updated.length > 500 ? updated.slice(-500) : updated;
+    });
+  }, [liveStats, liveMode, range]);
 
-  if (!liveStats) {
-    return (
-      <div className="text-center py-12 text-gray-500 text-sm">
-        Waiting for container stats…
-      </div>
-    );
-  }
+  // ── Render ──
 
-  const memLimit = memoryLimit || liveStats.memLimitMB || 0;
+  const memLimit = memoryLimit || liveStats?.memLimitMB || 0;
 
   return (
     <div className="space-y-6">
       {/* Resource Info Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <InfoCard
-          label="Processes"
-          value={String(liveStats.pids)}
-          hint="Running PIDs"
-          color="blue"
-        />
-        <InfoCard
-          label="Mem Usage"
-          value={`${liveStats.memPercent.toFixed(1)}%`}
-          hint={`${liveStats.memUsageMB.toFixed(0)} / ${memLimit.toFixed(0)} MB`}
-          color="purple"
-        />
-        <InfoCard
-          label="CPU Limit"
-          value={cpuLimit ? `${cpuLimit} cores` : "∞"}
-          hint={cpuLimit ? "Restricted" : "Unlimited"}
-          color="sky"
-        />
-        <InfoCard
-          label="Mem Limit"
-          value={memLimit ? `${memLimit.toFixed(0)} MB` : "∞"}
-          hint={memoryLimit ? "Restricted" : "Host limit"}
-          color="violet"
-        />
-        <InfoCard
-          label="Net In /s"
-          value={formatRate(netRate.inRate)}
-          hint="Current throughput"
-          color="emerald"
-        />
-        <InfoCard
-          label="Net Out /s"
-          value={formatRate(netRate.outRate)}
-          hint="Current throughput"
-          color="amber"
-        />
+      {liveStats && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <InfoCard
+            label="Processes"
+            value={String(liveStats.pids)}
+            hint="Running PIDs"
+            color="blue"
+          />
+          <InfoCard
+            label="Mem Usage"
+            value={`${liveStats.memPercent.toFixed(1)}%`}
+            hint={`${liveStats.memUsageMB.toFixed(0)} / ${memLimit.toFixed(0)} MB`}
+            color="purple"
+          />
+          <InfoCard
+            label="CPU Limit"
+            value={cpuLimit ? `${cpuLimit} cores` : "∞"}
+            hint={cpuLimit ? "Restricted" : "Unlimited"}
+            color="sky"
+          />
+          <InfoCard
+            label="Mem Limit"
+            value={memLimit ? `${memLimit.toFixed(0)} MB` : "∞"}
+            hint={memoryLimit ? "Restricted" : "Host limit"}
+            color="violet"
+          />
+          <InfoCard
+            label="Net In /s"
+            value={formatRate(netRate.inRate)}
+            hint="Current throughput"
+            color="emerald"
+          />
+          <InfoCard
+            label="Net Out /s"
+            value={formatRate(netRate.outRate)}
+            hint="Current throughput"
+            color="amber"
+          />
+        </div>
+      )}
+
+      {/* Time Range Selector + Live Toggle */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-lg border border-gray-700 bg-gray-900/50 p-0.5">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => { setRange(r.key); setLiveMode(false); }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                range === r.key && !liveMode
+                  ? "bg-brand-600 text-white"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => { setLiveMode(true); setRange("1h"); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+            liveMode
+              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400"
+              : "border-gray-700 bg-gray-900/50 text-gray-400 hover:text-white hover:bg-gray-800"
+          }`}
+        >
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${liveMode ? "bg-emerald-400 animate-pulse" : "bg-gray-600"}`} />
+          Live
+        </button>
+        {loading && (
+          <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        )}
+        <span className="ml-auto text-[10px] text-gray-600">
+          {history.length} data points
+        </span>
       </div>
 
-      {/* Real-time Charts */}
+      {/* Charts */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-gray-300">
-          Live Resource Timeline
-          <span className="ml-2 text-xs text-gray-500 font-normal">
-            (auto-updates every 10s)
-          </span>
-        </h3>
-
         {history.length < 2 ? (
           <div className="text-center py-10 text-gray-500 text-sm">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            Collecting data points… Charts appear after 2 readings (~20s).
+            {loading
+              ? "Loading historical data…"
+              : "Collecting data points… Charts appear after 2 readings (~20s)."}
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* CPU Chart */}
             <ChartCard title="CPU Usage (%)">
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={history}>
                   <defs>
                     <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
@@ -161,7 +244,12 @@ export function AppResourceChart({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="time" tick={{ fill: "#6b7280", fontSize: 10 }} />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    interval="preserveStartEnd"
+                    minTickGap={60}
+                  />
                   <YAxis tick={{ fill: "#6b7280", fontSize: 10 }} domain={[0, "auto"]} />
                   <Tooltip
                     contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
@@ -172,10 +260,10 @@ export function AppResourceChart({
                     type="monotone"
                     dataKey="cpu"
                     stroke="#3b82f6"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     fill="url(#cpuGrad)"
                     dot={false}
-                    animationDuration={300}
+                    isAnimationActive={false}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -183,7 +271,7 @@ export function AppResourceChart({
 
             {/* Memory Chart */}
             <ChartCard title="Memory Usage (MB)">
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={history}>
                   <defs>
                     <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
@@ -192,7 +280,12 @@ export function AppResourceChart({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="time" tick={{ fill: "#6b7280", fontSize: 10 }} />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    interval="preserveStartEnd"
+                    minTickGap={60}
+                  />
                   <YAxis tick={{ fill: "#6b7280", fontSize: 10 }} domain={[0, "auto"]} />
                   <Tooltip
                     contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
@@ -203,10 +296,10 @@ export function AppResourceChart({
                     type="monotone"
                     dataKey="mem"
                     stroke="#8b5cf6"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     fill="url(#memGrad)"
                     dot={false}
-                    animationDuration={300}
+                    isAnimationActive={false}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -214,7 +307,7 @@ export function AppResourceChart({
 
             {/* Network I/O Chart */}
             <ChartCard title="Network Throughput (/s)">
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={history}>
                   <defs>
                     <linearGradient id="netInGrad" x1="0" y1="0" x2="0" y2="1">
@@ -227,7 +320,12 @@ export function AppResourceChart({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="time" tick={{ fill: "#6b7280", fontSize: 10 }} />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fill: "#6b7280", fontSize: 10 }}
+                    interval="preserveStartEnd"
+                    minTickGap={60}
+                  />
                   <YAxis tick={{ fill: "#6b7280", fontSize: 10 }} domain={[0, "auto"]} />
                   <Tooltip
                     contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
@@ -238,52 +336,21 @@ export function AppResourceChart({
                     type="monotone"
                     dataKey="netIn"
                     stroke="#10b981"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     fill="url(#netInGrad)"
                     dot={false}
                     name="In"
-                    animationDuration={300}
+                    isAnimationActive={false}
                   />
                   <Area
                     type="monotone"
                     dataKey="netOut"
                     stroke="#f59e0b"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     fill="url(#netOutGrad)"
                     dot={false}
                     name="Out"
-                    animationDuration={300}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* PIDs Chart */}
-            <ChartCard title="Processes (PIDs)">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={history}>
-                  <defs>
-                    <linearGradient id="pidGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="time" tick={{ fill: "#6b7280", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "#6b7280", fontSize: 10 }} domain={[0, "auto"]} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
-                    labelStyle={{ color: "#9ca3af" }}
-                    formatter={(v: number) => [v, "PIDs"]}
-                  />
-                  <Area
-                    type="stepAfter"
-                    dataKey="pids"
-                    stroke="#06b6d4"
-                    strokeWidth={2}
-                    fill="url(#pidGrad)"
-                    dot={false}
-                    animationDuration={300}
+                    isAnimationActive={false}
                   />
                 </AreaChart>
               </ResponsiveContainer>

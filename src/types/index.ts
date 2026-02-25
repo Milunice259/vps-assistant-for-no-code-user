@@ -265,6 +265,15 @@ export interface AppMetricInfo {
   timestamp: string;
 }
 
+/** Downsampled metric point for chart display */
+export interface MetricPoint {
+  time: string;   // ISO timestamp
+  cpu: number;
+  mem: number;
+  netIn: number;
+  netOut: number;
+}
+
 /** Live container stats from docker stats */
 export interface ContainerStats {
   cpuPercent: number;

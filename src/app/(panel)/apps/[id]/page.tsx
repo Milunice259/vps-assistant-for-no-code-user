@@ -393,6 +393,7 @@ export default function AppDetailPage() {
       )}
       {activeTab === "resources" && (
         <AppResourceChart
+          appId={appId}
           liveStats={liveStats}
           metrics={metrics}
           cpuLimit={app.cpuLimit}

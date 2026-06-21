@@ -422,9 +422,13 @@ export function getLocalContainerDetail(containerId: string): {
         `docker inspect --format '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}\\n{{end}}' ${safeId}`,
         5_000
       );
-      // Check for traefik Host rule
-      const traefikMatch = labelRaw.match(/traefik\.http\.routers\.\w+\.rule=Host\(`([^`]+)`\)/);
-      if (traefikMatch) domain = traefikMatch[1];
+      // Check for Traefik Host rules. Router names often contain dashes.
+      const traefikRule = labelRaw
+        .split("\n")
+        .find((line) => /^traefik\.http\.routers\.[^.]+\.rule=/.test(line));
+      const traefikMatch = traefikRule?.match(/Host\(([^)]*)\)/);
+      const hostMatch = traefikMatch?.[1].match(/[`\"]([^`\"]+)[`\"]/);
+      if (hostMatch) domain = hostMatch[1];
       // Check for VIRTUAL_HOST (nginx-proxy)
       if (!domain) {
         const vhMatch = labelRaw.match(/VIRTUAL_HOST=([^\s\n]+)/);

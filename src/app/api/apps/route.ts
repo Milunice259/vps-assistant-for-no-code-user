@@ -24,6 +24,37 @@ function mapContainerState(state: string): AppStatusType {
   return "UNKNOWN";
 }
 
+function extractDomainFromLabels(labels: string): string | null {
+  const traefikRules = labels
+    .split("\n")
+    .filter((line) => /^traefik\.http\.routers\.[^.]+\.rule=/.test(line));
+
+  for (const rule of traefikRules) {
+    const hosts = [...rule.matchAll(/Host\(([^)]*)\)/g)]
+      .flatMap((match) => [...match[1].matchAll(/[`\"]([^`\"]+)[`\"]/g)].map((host) => host[1]))
+      .filter((host) => !host.includes("/"));
+    if (hosts.length > 0) return [...new Set(hosts)].join(", ");
+  }
+
+  const virtualHost = labels.match(/^VIRTUAL_HOST=([^\s\n]+)/m);
+  return virtualHost?.[1] ?? null;
+}
+
+function getLocalContainerDomain(containerId: string): string | null {
+  const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
+  if (!safeId) return null;
+
+  try {
+    const labels = execLocal(
+      `docker inspect --format '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}{{"\\n"}}{{end}}' ${safeId}`,
+      5_000,
+    );
+    return extractDomainFromLabels(labels);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Discover Docker containers on the local machine via `docker ps`.
  * Returns empty array if Docker is not available.
@@ -42,7 +73,7 @@ function discoverLocalContainers(): AppInfo[] {
       .split("\n")
       .filter(Boolean)
       .flatMap((line): AppInfo[] => {
-        const [id, name, image, state, ports] = line.split("\t");
+        const [id, name, image, state] = line.split("\t");
         if (!id) return [];
         return [
           {
@@ -54,7 +85,7 @@ function discoverLocalContainers(): AppInfo[] {
             serverId: "local",
             serverName: "This Server",
             status: mapContainerState(state || ""),
-            domain: ports?.match(/:(\d+)->/)?.[1] ? null : null,
+            domain: getLocalContainerDomain(id),
             createdAt: new Date().toISOString(),
           },
         ];
@@ -110,10 +141,17 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
     // ── Discover LOCAL Docker containers (host machine) ──
     const localContainers = discoverLocalContainers();
     for (const lc of localContainers) {
-      if (lc.containerId && !discoveredContainerIds.has(lc.containerId)) {
-        allApps.push(lc);
-        discoveredContainerIds.add(lc.containerId);
+      if (!lc.containerId) continue;
+
+      const existing = allApps.find((app) => app.containerId === lc.containerId);
+      if (existing) {
+        existing.status = lc.status;
+        existing.domain = existing.domain || lc.domain;
+        continue;
       }
+
+      allApps.push(lc);
+      discoveredContainerIds.add(lc.containerId);
     }
 
     // Discover live containers from each remote server

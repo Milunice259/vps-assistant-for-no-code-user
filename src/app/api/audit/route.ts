@@ -15,8 +15,12 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25")));
     const action = searchParams.get("action") || undefined;
+    const target = searchParams.get("target") || undefined;
 
-    const where = action ? { action } : {};
+    const where = {
+      ...(action ? { action } : {}),
+      ...(target ? { target: { contains: target } } : {}),
+    };
 
     const [entries, total] = await Promise.all([
       prisma.auditLog.findMany({

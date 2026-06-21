@@ -30,6 +30,8 @@ const ACTION_COLORS: Record<string, string> = {
   service_start: "text-emerald-400 bg-emerald-500/10",
   service_stop: "text-yellow-400 bg-yellow-500/10",
   service_restart: "text-orange-400 bg-orange-500/10",
+  service_enable: "text-emerald-400 bg-emerald-500/10",
+  service_disable: "text-red-400 bg-red-500/10",
 };
 
 /** Human-friendly action descriptions */
@@ -50,6 +52,8 @@ const ACTION_LABELS: Record<string, string> = {
   service_start: "Service started",
   service_stop: "Service stopped",
   service_restart: "Service restarted",
+  service_enable: "Service enabled on boot",
+  service_disable: "Service disabled on boot",
 };
 
 export default function AuditPage() {
@@ -210,7 +214,8 @@ export default function AuditPage() {
 
       {/* Table */}
       <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
+        <table className="min-w-[760px] w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800 text-gray-500 text-xs">
               <th className="text-left px-4 py-2 w-6"></th>
@@ -284,6 +289,7 @@ export default function AuditPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}

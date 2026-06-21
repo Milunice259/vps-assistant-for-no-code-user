@@ -158,7 +158,7 @@ export function Sidebar() {
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-4 z-50 rounded-lg bg-gray-800 p-2 text-gray-400 shadow-lg hover:text-white md:hidden"
+        className="fixed left-4 top-3 z-50 rounded-lg bg-gray-800 p-2 text-gray-400 shadow-lg hover:text-white md:hidden"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5" />
@@ -190,6 +190,14 @@ export function Sidebar() {
           collapsed ? "w-16" : "w-64"
         )}
       >
+        <button
+          onClick={toggle}
+          className="absolute -right-3 top-5 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 bg-gray-900 text-gray-400 shadow-lg transition-colors hover:border-gray-600 hover:text-white"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+        </button>
         <SidebarInner showLabels={!collapsed} />
         {/* Collapse toggle — desktop only */}
         <div className="shrink-0 border-t border-gray-700 p-3">

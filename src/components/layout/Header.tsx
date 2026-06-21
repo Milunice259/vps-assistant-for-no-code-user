@@ -12,7 +12,7 @@ export function Header({ title }: HeaderProps) {
   const { user, loading, logout } = useAuth();
 
   return (
-    <header className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-3 md:px-6 md:py-4 pl-14 md:pl-6">
+    <header className="flex min-h-14 items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-2 pl-14 md:min-h-16 md:px-6 md:py-4 md:pl-6">
       <h1 className="min-w-0 truncate text-lg font-semibold text-white md:text-xl">
         {title}
       </h1>

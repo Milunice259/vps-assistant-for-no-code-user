@@ -245,7 +245,7 @@ export function DeployForm() {
             rows={4}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
           />
-          <p className="text-xs text-gray-600">One per line: KEY=value</p>
+          <p className="text-xs text-gray-500">One per line: KEY=value. Values are stored encrypted and hidden from logs. If you are unsure, leave this empty and add it later.</p>
         </div>
 
         <div className="flex justify-end">

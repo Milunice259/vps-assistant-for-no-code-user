@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createSSHConnection, getRemoteContainers, closeSSH } from "@/lib/ssh";
+import { createSSHConnection, getRemoteContainers, closeSSH, executeCommandSafe } from "@/lib/ssh";
 import { execLocal } from "@/lib/local-server";
 import type {
   ApiResponse,
@@ -134,6 +134,34 @@ function discoverLocalSystemServices(): AppInfo[] {
   }
 }
 
+async function discoverRemoteSystemServices(ssh: Awaited<ReturnType<typeof createSSHConnection>>, serverId: string, serverName: string): Promise<AppInfo[]> {
+  const raw = await executeCommandSafe(
+    ssh,
+    "systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'",
+    10_000,
+  );
+
+  return raw
+    .trim()
+    .split("\n")
+    .map((unit) => unit.trim())
+    .filter(Boolean)
+    .filter((unit) => SYSTEM_APP_PATTERN.test(unit) && !CORE_SERVICE_PATTERN.test(unit))
+    .map((unit) => ({
+      id: `service::${serverId}::${unit}`,
+      name: unit.replace(/\.service$/, ""),
+      appSource: "systemd" as const,
+      containerId: null,
+      containerName: null,
+      image: unit,
+      serverId,
+      serverName,
+      status: "RUNNING" as AppStatusType,
+      domain: null,
+      createdAt: new Date().toISOString(),
+    }));
+}
+
 /**
  * GET /api/apps - List all applications across all managed servers.
  *
@@ -242,6 +270,12 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
             createdAt: new Date().toISOString(),
           });
         }
+
+        const serviceApps = await discoverRemoteSystemServices(ssh, server.id, server.name);
+        for (const serviceApp of serviceApps) {
+          const existing = allApps.find((app) => app.id === serviceApp.id || (app.serverId === serviceApp.serverId && app.name === serviceApp.name));
+          if (!existing) allApps.push(serviceApp);
+        }
       } catch {
         // Server is offline — mark its DB apps as UNKNOWN
         for (const app of allApps) {
@@ -330,4 +364,5 @@ export async function POST(
     );
   }
 }
+
 

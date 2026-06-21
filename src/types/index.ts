@@ -234,6 +234,7 @@ export type AppStatusType =
 export interface AppInfo {
   id: string;
   name: string;
+  appSource?: "docker" | "systemd" | "manual";
   containerId: string | null;
   containerName: string | null;
   image: string | null;
@@ -332,3 +333,4 @@ export interface UserInfo {
   id: string;
   username: string;
 }
+

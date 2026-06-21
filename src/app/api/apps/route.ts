@@ -79,6 +79,7 @@ function discoverLocalContainers(): AppInfo[] {
           {
             id: `local::${id}`,
             name: name || image || id,
+            appSource: "docker",
             containerId: id,
             containerName: name || null,
             image: image || null,
@@ -95,6 +96,40 @@ function discoverLocalContainers(): AppInfo[] {
       "[apps] Local Docker discovery failed:",
       err instanceof Error ? err.message : err,
     );
+    return [];
+  }
+}
+
+const SYSTEM_APP_PATTERN = /(hermes|9router|n8n|gooffi|leed|chat|node|pm2|uvicorn|gunicorn|traefik|nginx)/i;
+const CORE_SERVICE_PATTERN = /^(systemd-|dbus|cron|ssh|docker|containerd|network|polkit|rsyslog|udev|apparmor|snapd)/i;
+
+function discoverLocalSystemServices(): AppInfo[] {
+  try {
+    const raw = execLocal(
+      "systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'",
+      10_000,
+    );
+    return raw
+      .trim()
+      .split("\n")
+      .map((unit) => unit.trim())
+      .filter(Boolean)
+      .filter((unit) => SYSTEM_APP_PATTERN.test(unit) && !CORE_SERVICE_PATTERN.test(unit))
+      .map((unit) => ({
+        id: `local-service::${unit}`,
+        name: unit.replace(/\.service$/, ""),
+        appSource: "systemd" as const,
+        containerId: null,
+        containerName: null,
+        image: unit,
+        serverId: "local",
+        serverName: "This Server",
+        status: "RUNNING" as AppStatusType,
+        domain: null,
+        createdAt: new Date().toISOString(),
+      }));
+  } catch (err) {
+    console.warn("[apps] Local systemd discovery failed:", err instanceof Error ? err.message : err);
     return [];
   }
 }
@@ -126,6 +161,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
       allApps.push({
         id: app.id,
         name: app.name,
+        appSource: app.containerId ? "docker" : "manual",
         containerId: app.containerId,
         containerName: app.containerName,
         image: app.image,
@@ -152,6 +188,12 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
 
       allApps.push(lc);
       discoveredContainerIds.add(lc.containerId);
+    }
+
+    const localSystemServices = discoverLocalSystemServices();
+    for (const serviceApp of localSystemServices) {
+      const existing = allApps.find((app) => app.id === serviceApp.id || app.name === serviceApp.name);
+      if (!existing) allApps.push(serviceApp);
     }
 
     // Discover live containers from each remote server
@@ -189,6 +231,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
           allApps.push({
             id: `discovered::${server.id}::${c.id}`,
             name: c.name || c.image,
+            appSource: "docker",
             containerId: c.id,
             containerName: c.name,
             image: c.image,
@@ -287,3 +330,4 @@ export async function POST(
     );
   }
 }
+

@@ -30,6 +30,12 @@ function statusBadgeVariant(status: AppStatusType) {
   }
 }
 
+function sourceLabel(app: AppInfo) {
+  if (app.appSource === "systemd") return "System Service";
+  if (app.appSource === "manual") return "Manual";
+  return "Docker";
+}
+
 export function AppList() {
   const router = useRouter();
   const [apps, setApps] = useState<AppInfo[]>([]);
@@ -115,6 +121,9 @@ export function AppList() {
             Total: <span className="text-white">{apps.length}</span>
           </span>
           <span className="text-gray-400">
+            System: <span className="text-cyan-400">{apps.filter((a) => a.appSource === "systemd").length}</span>
+          </span>
+          <span className="text-gray-400">
             Running: <span className="text-emerald-400">{runningCount}</span>
           </span>
           {stoppedCount > 0 && (
@@ -144,11 +153,12 @@ export function AppList() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[760px] w-full text-sm">
+            <table className="min-w-[860px] w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700 text-gray-400 text-left">
                   <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Template</th>
+                  <th className="pb-3 font-medium">Source</th>
+                  <th className="pb-3 font-medium">Runtime</th>
                   <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium">Domain</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
@@ -166,6 +176,9 @@ export function AppList() {
                         <span className="truncate max-w-[200px]">{app.name}</span>
                         <ChevronRight className="h-3.5 w-3.5 text-gray-600" />
                       </button>
+                    </td>
+                    <td className="py-3 text-xs">
+                      <Badge variant={app.appSource === "systemd" ? "info" : "default"}>{sourceLabel(app)}</Badge>
                     </td>
                     <td className="py-3 text-gray-400 text-xs truncate max-w-[200px]">
                       {app.image || "—"}
@@ -211,3 +224,4 @@ export function AppList() {
     </div>
   );
 }
+

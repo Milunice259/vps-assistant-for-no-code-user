@@ -54,7 +54,7 @@ export default function SettingsPage() {
   // Add rule form
   const [ruleMetric, setRuleMetric] = useState("cpu");
   const [ruleThreshold, setRuleThreshold] = useState(90);
-  const [ruleCooldown, setRuleCooldown] = useState(15);
+  const [ruleCooldown] = useState(15);
 
   const fetchChannels = useCallback(async () => {
     try {

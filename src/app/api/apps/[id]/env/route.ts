@@ -259,7 +259,7 @@ export async function PUT(
         `docker exec ${safeId} sh -c 'echo "${b64}" | base64 -d > ${envPath}'`
       );
       result.saved = true;
-    } catch (writeErr) {
+    } catch {
       // If base64 not available, try heredoc approach
       // Escape single quotes in content for sh -c
       const escaped = envContent.replace(/'/g, "'\\''");

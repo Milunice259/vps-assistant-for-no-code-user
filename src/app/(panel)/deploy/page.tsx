@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { GitBranch, Box, Layers } from "lucide-react";
+import { GitBranch, Box, Layers, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { DeployForm } from "@/components/deploy/DeployForm";
 import { DeployLog } from "@/components/deploy/DeployLog";
 import { DockerImageDeploy } from "@/components/deploy/DockerImageDeploy";
@@ -26,12 +26,24 @@ export default function DeployPage() {
   return (
     <div className="space-y-8">
       {/* Deploy Type Selector */}
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-4">Deploy Application</h2>
+      <section className="rounded-xl border border-gray-700 bg-gray-800/40 p-5">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Deploy Application</h2>
+            <p className="mt-1 text-sm text-gray-400">
+              Choose the safest path for the app source you already have.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Review secrets and ports before pressing Deploy.
+          </div>
+        </div>
         <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={setActiveTab} />
-        <p className="mt-3 text-sm text-gray-400 leading-relaxed">
-          {TAB_DESCRIPTIONS[activeTab]}
-        </p>
+        <div className="mt-3 flex items-start gap-2 text-sm text-gray-400 leading-relaxed">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+          <p>{TAB_DESCRIPTIONS[activeTab]}</p>
+        </div>
       </section>
 
       {/* Deploy Form */}

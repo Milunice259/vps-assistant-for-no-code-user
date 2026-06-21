@@ -4,10 +4,8 @@
 
 import {
   Globe,
-  Box,
   Network,
   Server,
-  Container,
 } from "lucide-react";
 import type { DockerNetworkInfo } from "@/types";
 import type { CardRect } from "./types";

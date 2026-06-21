@@ -18,7 +18,6 @@ import { readFileSync, existsSync } from "fs";
 import type { ServerInfo } from "@/types";
 
 // ─── Bind-mount paths (set by docker-compose) ───
-const HOST_OS_RELEASE = "/host/os-release";
 const HOST_HOSTNAME   = "/host/hostname";
 
 // ─── Host access detection (cached) ───

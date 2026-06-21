@@ -121,6 +121,7 @@ function SidebarInner({
                         : "text-gray-400 hover:bg-gray-800 hover:text-white"
                     )}
                     title={!showLabels ? item.label : undefined}
+                    onClick={onMobileClose}
                   >
                     <span className="shrink-0">{item.icon}</span>
                     {showLabels && <span>{item.label}</span>}
@@ -137,13 +138,11 @@ function SidebarInner({
 
 export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
-  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close mobile menu on route change
-  useEffect(() => {
+  function closeMobileMenu() {
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
   // Close mobile menu on escape key
   useEffect(() => {
@@ -169,7 +168,7 @@ export function Sidebar() {
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-          onClick={() => setMobileOpen(false)}
+          onClick={closeMobileMenu}
         />
       )}
 
@@ -180,7 +179,7 @@ export function Sidebar() {
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <SidebarInner showLabels onMobileClose={() => setMobileOpen(false)} />
+        <SidebarInner showLabels onMobileClose={closeMobileMenu} />
       </aside>
 
       {/* Desktop sidebar — respects collapsed state */}

@@ -105,7 +105,7 @@ export function computeLayout(
     const contCount = net.containers.length;
     if (contCount > 0) {
       const contsWidth = contCount * (CONTAINER_W + COL_GAP) - COL_GAP;
-      let contStartX = netStartX + colW / 2 - contsWidth / 2;
+      const contStartX = netStartX + colW / 2 - contsWidth / 2;
 
       net.containers.forEach((cont, ci) => {
         const contId = `cont-${cont.id || cont.name}-${i}`;

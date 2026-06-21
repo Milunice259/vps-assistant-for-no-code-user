@@ -84,7 +84,7 @@ export async function DELETE(
     if (wasActive) {
       try {
         await recreateContainer(appId, {});
-      } catch (err) {
+      } catch {
         // Profile deleted but recreation failed
         return NextResponse.json({
           success: true,

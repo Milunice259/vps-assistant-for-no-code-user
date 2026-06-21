@@ -205,6 +205,14 @@ function TreeNode({
   );
 }
 
+const ALL_QUICK_DIRS = [
+  { name: "Root", path: "/" },
+  { name: "Home", path: "/home" },
+  { name: "Opt", path: "/opt" },
+  { name: "Var/www", path: "/var/www" },
+  { name: "Etc", path: "/etc" },
+];
+
 /* ── Main Component ── */
 
 export function FileBrowser({
@@ -250,15 +258,7 @@ export function FileBrowser({
     })),
   ];
 
-  // Quick access directories — dynamically filtered to only existing ones
-  const ALL_QUICK_DIRS = [
-    { name: "Root", path: "/" },
-    { name: "Home", path: "/home" },
-    { name: "Opt", path: "/opt" },
-    { name: "Var/www", path: "/var/www" },
-    { name: "Etc", path: "/etc" },
-  ];
-
+  // Quick access directories are filtered to only existing paths.
   const [quickDirs, setQuickDirs] = useState(ALL_QUICK_DIRS.slice(0, 1));
 
   useEffect(() => {

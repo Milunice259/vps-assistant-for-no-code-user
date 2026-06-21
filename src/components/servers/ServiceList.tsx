@@ -10,7 +10,6 @@ import {
   Play,
   Square,
   RotateCw,
-  HelpCircle,
   Ban,
   CheckCircle2,
   Shield,
@@ -113,18 +112,6 @@ function ImportanceBadge({ level }: { level: "critical" | "important" | "optiona
         </span>
       );
   }
-}
-
-/* ── Tooltip ── */
-function Tip({ text }: { text: string }) {
-  return (
-    <span className="relative group inline-flex ml-1.5 cursor-help">
-      <HelpCircle className="h-3 w-3 text-gray-600 group-hover:text-gray-400 transition-colors" />
-      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 rounded-lg bg-gray-700 px-3 py-2 text-xs text-gray-200 leading-relaxed shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-        {text}
-      </span>
-    </span>
-  );
 }
 
 /* ══════════════════════════════════════════════════════════

@@ -8,6 +8,7 @@ import {
   FileText,
   Server,
   ChevronRight,
+  Rocket,
 } from "lucide-react";
 import type { AppInfo, ApiResponse, AppStatusType } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -122,9 +123,15 @@ export function AppList() {
             </span>
           )}
         </div>
-        <Button variant="ghost" size="sm" onClick={fetchApps}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="primary" size="sm" onClick={() => router.push("/deploy")}>
+            <Rocket className="h-4 w-4 mr-1" />
+            Deploy App
+          </Button>
+          <Button variant="ghost" size="sm" onClick={fetchApps} title="Refresh app status">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Grouped by server */}
@@ -169,7 +176,7 @@ export function AppList() {
                       </Badge>
                     </td>
                     <td className="py-3 text-gray-400 text-xs">
-                      {app.domain || "—"}
+                      {app.domain || <span className="text-gray-600">No domain</span>}
                     </td>
                     <td className="py-3 text-right">
                       {app.containerId && (

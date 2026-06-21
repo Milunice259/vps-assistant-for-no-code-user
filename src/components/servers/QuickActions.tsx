@@ -439,8 +439,7 @@ function ActionCard({
                   if (e.key === "Enter") onConfirm();
                   if (e.key === "Escape") onCancel();
                 }}
-                // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
+                //                autoFocus
               />
             </div>
           )}

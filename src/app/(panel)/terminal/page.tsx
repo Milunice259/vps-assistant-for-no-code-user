@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, KeyboardEvent } from "react";
-import { Terminal as TerminalIcon, ChevronDown } from "lucide-react";
+import { Terminal as TerminalIcon, ChevronDown, AlertTriangle } from "lucide-react";
 
 interface ServerOption {
   id: string;
@@ -162,6 +162,13 @@ export default function TerminalPage() {
         <span className="text-xs text-gray-600">
           Type commands below • Use ↑↓ for history • &quot;clear&quot; to reset
         </span>
+      </div>
+
+      <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          Advanced area: commands run on the real server. Prefer the guided pages for apps, deploys, backups, and network changes.
+        </p>
       </div>
 
       {/* Terminal Window */}

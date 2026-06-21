@@ -75,6 +75,7 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventSource = useRef<EventSource | null>(null);
   const fallbackTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectRef = useRef<() => void>(() => {});
 
   const cleanup = useCallback(() => {
     if (eventSource.current) {
@@ -177,9 +178,13 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
         return;
       }
 
-      retryTimer.current = setTimeout(connect, delay);
+      retryTimer.current = setTimeout(() => connectRef.current(), delay);
     };
   }, [url, enabled, cleanup, fallbackPollMs, startPollingFallback]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

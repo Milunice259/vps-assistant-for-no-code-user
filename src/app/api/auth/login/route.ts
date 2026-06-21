@@ -5,7 +5,7 @@ import {
   createSessionToken,
   setSessionCookie,
 } from "@/lib/auth";
-import { auditLog, getClientIp } from "@/lib/audit";
+import { auditLog } from "@/lib/audit";
 import type { ApiResponse, UserInfo, LoginInput } from "@/types";
 
 export const dynamic = "force-dynamic";

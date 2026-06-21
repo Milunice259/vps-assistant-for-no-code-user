@@ -28,7 +28,7 @@ import type { NetworkTopology, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
-import { containerStatusColor, formatPortsBadge, NETWORK_PALETTE } from "./types";
+import { containerStatusColor } from "./types";
 import { computeLayout } from "./layout";
 import { SvgEdge } from "./SvgEdge";
 import {

@@ -66,7 +66,7 @@ export default function LoginPage() {
           label="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="admin"
+          placeholder="Username"
           autoComplete="username"
           required
         />

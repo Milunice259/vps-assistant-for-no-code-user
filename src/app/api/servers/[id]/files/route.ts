@@ -195,7 +195,6 @@ function parseLsOutput(output: string, parentPath: string): FileEntry[] {
     if (parts.length < 8) continue;
 
     const perms = parts[0];
-    const name = parts.slice(7).join(" "); // Everything after the time/date is the name (handles spaces)
 
     // In case of non-long-iso format (month day time|year), adjust
     // Try to detect: if parts[5] looks like a date (YYYY-MM-DD) it's long-iso

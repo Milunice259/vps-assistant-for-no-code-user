@@ -195,6 +195,7 @@ export interface ServiceInfo {
   loadState: string;
   activeState: string;
   subState: string;
+  unitFileState?: string;
   description: string;
 }
 

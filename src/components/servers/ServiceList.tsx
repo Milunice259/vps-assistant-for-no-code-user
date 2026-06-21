@@ -355,6 +355,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
                 const desc = info?.desc || s.description || "—";
                 const importance = info?.importance || "unknown";
                 const isActive = s.activeState === "active";
+                const isEnabled = ["enabled", "enabled-runtime", "static", "generated"].includes(s.unitFileState || "");
                 const isFailed = s.activeState === "failed";
                 const isLoadingThis = (action: string) => actionLoading === `${s.name}-${action}`;
                 const isAnyLoading = actionLoading?.startsWith(s.name);
@@ -388,7 +389,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
 
                     {/* Actions */}
                     <td className="px-4 py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
                         {isActive ? (
                           <>
                             <button
@@ -424,7 +425,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
                         {/* Divider */}
                         <span className="w-px h-4 bg-gray-700 mx-0.5" />
                         {/* Enable / Disable */}
-                        {isActive ? (
+                        {isEnabled ? (
                           <button
                             onClick={() => {
                               if (importance === "critical") {

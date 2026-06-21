@@ -30,6 +30,7 @@ export async function GET(
         loadState: s.loadState,
         activeState: s.activeState,
         subState: s.subState,
+        unitFileState: s.unitFileState,
         description: s.description,
       }));
       return NextResponse.json({

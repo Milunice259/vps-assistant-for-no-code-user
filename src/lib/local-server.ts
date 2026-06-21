@@ -194,7 +194,7 @@ export function getLocalContainers() {
  * Get local systemd services via nsenter (runs on the host).
  * Returns empty array when host access is unavailable (no throw).
  */
-export function getLocalServices(): { services: Array<{ name: string; loadState: string; activeState: string; subState: string; description: string }>; hostAccess: boolean } {
+export function getLocalServices(): { services: Array<{ name: string; loadState: string; activeState: string; subState: string; unitFileState: string; description: string }>; hostAccess: boolean } {
   if (!canAccessHost()) {
     return { services: [], hostAccess: false };
   }
@@ -207,11 +207,27 @@ export function getLocalServices(): { services: Array<{ name: string; loadState:
 
     const services = raw.split("\n").filter(Boolean).map((line) => {
       const parts = line.trim().split(/\s+/);
+      const unitName = parts[0] || "";
+      const safeUnit = unitName.replace(/[^a-zA-Z0-9_.@-]/g, "");
+      let unitFileState = "unknown";
+
+      if (safeUnit) {
+        try {
+          unitFileState = execOnHost(
+            `systemctl show ${safeUnit} -p UnitFileState --value 2>/dev/null || true`,
+            5_000
+          ).trim() || "unknown";
+        } catch {
+          unitFileState = "unknown";
+        }
+      }
+
       return {
-        name: (parts[0] || "").replace(".service", ""),
+        name: unitName.replace(".service", ""),
         loadState: parts[1] || "unknown",
         activeState: parts[2] || "unknown",
         subState: parts[3] || "unknown",
+        unitFileState,
         description: parts.slice(4).join(" ") || "",
       };
     });

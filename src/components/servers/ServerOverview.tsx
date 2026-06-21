@@ -36,7 +36,7 @@ function HealthChecklist({ stats }: { stats: SystemStats }) {
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-white">Easy Health Checklist</h3>
-          <p className="text-xs text-gray-400">Tom tat de hieu de biet server dang on hay can chu y.</p>
+          <p className="text-xs text-gray-400">Tóm tắt dễ hiểu để biết server đang ổn hay cần chú ý.</p>
         </div>
         <span className={issues ? "text-xs text-yellow-300" : "text-xs text-emerald-300"}>{issues ? `${issues} item needs attention` : "Server looks OK"}</span>
       </div>

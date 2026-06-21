@@ -144,7 +144,7 @@ export function AppList() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-[760px] w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700 text-gray-400 text-left">
                   <th className="pb-3 font-medium">Name</th>

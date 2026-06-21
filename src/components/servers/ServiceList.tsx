@@ -339,7 +339,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
         </div>
       ) : (
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto rounded-xl border border-gray-700">
-          <table className="w-full text-sm">
+          <table className="min-w-[980px] w-full text-sm">
             <thead className="sticky top-0 bg-gray-900 z-10">
               <tr className="border-b border-gray-700 text-gray-400 text-left text-xs uppercase">
                 <th className="px-4 py-3 font-medium">Service</th>

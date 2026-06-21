@@ -19,6 +19,8 @@ export type AuditAction =
   | "service_start"
   | "service_stop"
   | "service_restart"
+  | "service_enable"
+  | "service_disable"
   | "deploy_git"
   | "deploy_docker"
   | "deploy_compose"

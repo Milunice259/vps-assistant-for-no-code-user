@@ -3,6 +3,8 @@ import { execOnHost } from "@/lib/local-server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { getSession } from "@/lib/auth";
 import SSH2Promise from "ssh2-promise";
 
 const ALLOWED_ACTIONS = ["start", "stop", "restart", "enable", "disable"] as const;
@@ -76,6 +78,17 @@ export async function POST(
         ssh.close();
       }
     }
+
+    const session = await getSession();
+    const ip = getClientIp(request);
+    await auditLog({
+      action: `service_${action}` as `service_${ServiceAction}`,
+      userId: session?.sub as string | undefined,
+      username: session?.username as string | undefined,
+      target: `${serverId}:${service}`,
+      details: `Service ${service} ${action} on server ${serverId}`,
+      ip,
+    });
 
     const pastTense: Record<string, string> = { start: "started", stop: "stopped", restart: "restarted", enable: "enabled", disable: "disabled" };
     return NextResponse.json({

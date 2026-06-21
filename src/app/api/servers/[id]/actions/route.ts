@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { quickAction, closeSSH } from "@/lib/ssh";
 import { isLocalServer, localQuickAction } from "@/lib/local-server";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { getSession } from "@/lib/auth";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +113,15 @@ export async function POST(
           { status: 500 },
         );
       }
+      const session = await getSession();
+      await auditLog({
+        action: "quick_action",
+        userId: session?.sub as string | undefined,
+        username: session?.username as string | undefined,
+        target: id,
+        details: param ? `${action}: ${param}` : action,
+        ip: getClientIp(request),
+      });
       return NextResponse.json({
         success: true,
         data: { output: result.output },
@@ -130,6 +141,15 @@ export async function POST(
       );
     }
 
+    const session = await getSession();
+    await auditLog({
+      action: "quick_action",
+      userId: session?.sub as string | undefined,
+      username: session?.username as string | undefined,
+      target: id,
+      details: param ? `${action}: ${param}` : action,
+      ip: getClientIp(request),
+    });
     return NextResponse.json({
       success: true,
       data: { output: actionResult.output },

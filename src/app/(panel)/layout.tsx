@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { SidebarProvider, useSidebar } from "@/contexts/SidebarContext";
+import { SafeModeProvider } from "@/contexts/SafeModeContext";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { I18nProvider } from "@/lib/i18n";
@@ -73,7 +74,9 @@ export default function PanelLayout({
   return (
     <I18nProvider>
       <SidebarProvider>
-        <PanelContent>{children}</PanelContent>
+        <SafeModeProvider>
+          <PanelContent>{children}</PanelContent>
+        </SafeModeProvider>
       </SidebarProvider>
     </I18nProvider>
   );

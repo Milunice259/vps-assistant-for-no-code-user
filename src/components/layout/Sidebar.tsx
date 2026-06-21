@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import { useState, useEffect } from "react";
 
 interface NavItem {
@@ -75,6 +76,7 @@ function SidebarInner({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
+  const { safeMode, setSafeMode } = useSafeMode();
 
   return (
     <>
@@ -106,7 +108,7 @@ function SidebarInner({
               </span>
             )}
             <div className="space-y-1">
-              {group.items.map((item) => {
+              {group.items.filter((item) => !safeMode || item.href !== "/terminal").map((item) => {
                 const isActive =
                   pathname === item.href || pathname.startsWith(item.href + "/");
 
@@ -132,6 +134,17 @@ function SidebarInner({
           </div>
         ))}
       </nav>
+      {showLabels && (
+        <div className="border-t border-gray-700 p-3">
+          <button
+            onClick={() => setSafeMode(!safeMode)}
+            className="flex w-full items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-300 hover:border-gray-600"
+          >
+            <span>{safeMode ? "Safe Mode On" : "Advanced Mode"}</span>
+            <span className={safeMode ? "text-emerald-400" : "text-yellow-400"}>{safeMode ? "Safe" : "Risk"}</span>
+          </button>
+        </div>
+      )}
     </>
   );
 }

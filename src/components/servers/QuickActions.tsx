@@ -22,6 +22,7 @@ import {
   HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 /* ══════════════════════════════════════════════════════════
    Helper: friendly error mapping
@@ -70,6 +71,7 @@ interface ActionDef {
   icon: React.ReactNode;
   category: "maintenance" | "update" | "diagnostics" | "cleanup" | "security" | "system";
   confirmMessage?: string;
+  risk?: "safe" | "caution" | "danger";
   /** If set, shows an input prompt before executing. */
   promptInput?: {
     label: string;
@@ -255,6 +257,7 @@ interface QuickActionsProps {
 }
 
 export function QuickActions({ serverId }: QuickActionsProps) {
+  const { safeMode, setSafeMode } = useSafeMode();
   const [results, setResults] = useState<Record<string, ActionResult>>({});
   const [confirming, setConfirming] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
@@ -271,6 +274,13 @@ export function QuickActions({ serverId }: QuickActionsProps) {
       updateResult(actionKey, { status: "loading" });
 
       try {
+        if (["os-update", "docker-prune", "restart-docker", "restart-server"].includes(actionKey)) {
+          await fetch("/api/backup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: `pre-${actionKey}`, serverId }),
+          });
+        }
         const body: Record<string, string> = { action: actionKey };
         if (param) body.param = param;
 
@@ -329,14 +339,32 @@ export function QuickActions({ serverId }: QuickActionsProps) {
   }
 
   // Group actions by category
+  const visibleActions = ACTIONS.map((action) => ({
+    ...action,
+    risk: action.risk ?? (action.confirmMessage ? "danger" : "safe"),
+  })).filter((action) => !safeMode || action.risk !== "danger");
+
   const grouped = CATEGORY_ORDER.map((cat) => ({
     category: cat,
     label: CATEGORY_LABELS[cat],
-    actions: ACTIONS.filter((a) => a.category === cat),
+    actions: visibleActions.filter((a) => a.category === cat),
   })).filter((g) => g.actions.length > 0);
 
   return (
     <div className="space-y-8">
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Safe Mode</h3>
+            <p className="text-xs text-gray-400">
+              {safeMode ? "Dangerous actions are hidden. Turn off only when you know exactly what will change." : "Advanced actions are visible. Large actions create a database snapshot first."}
+            </p>
+          </div>
+          <Button variant={safeMode ? "secondary" : "danger"} size="sm" onClick={() => setSafeMode(!safeMode)}>
+            {safeMode ? "Show advanced actions" : "Return to Safe Mode"}
+          </Button>
+        </div>
+      </div>
       {grouped.map((group) => (
         <div key={group.category}>
           <h3 className="text-sm font-medium text-gray-400 mb-3">

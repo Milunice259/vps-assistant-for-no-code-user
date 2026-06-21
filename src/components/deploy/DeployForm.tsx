@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Rocket, Monitor, Server, HelpCircle, FolderSearch } from "lucide-react";
+import { Rocket, Monitor, Server, HelpCircle, FolderSearch, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
@@ -88,6 +88,26 @@ export function DeployForm() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-white">Guided Deploy Wizard</h3>
+        <div className="grid gap-2 sm:grid-cols-4">
+          {[
+            { label: "1. Source", done: Boolean(repoUrl), text: "Paste GitHub URL" },
+            { label: "2. Destination", done: deployTarget === "local" || Boolean(selectedServerId), text: "Choose server" },
+            { label: "3. Access", done: true, text: "Domain/env optional" },
+            { label: "4. Review", done: Boolean(repoUrl) && (deployTarget === "local" || Boolean(selectedServerId)), text: "Press Deploy" },
+          ].map((step) => (
+            <div key={step.label} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
+              <div className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-200">
+                <CheckCircle className={`h-3.5 w-3.5 ${step.done ? "text-emerald-400" : "text-gray-600"}`} />
+                {step.label}
+              </div>
+              <p className="text-[11px] text-gray-500">{step.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <p className="rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">

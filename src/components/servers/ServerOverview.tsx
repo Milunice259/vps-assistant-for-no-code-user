@@ -21,6 +21,41 @@ import { MemoryBar } from "@/components/dashboard/MemoryBar";
 import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import type { SystemStats } from "@/types";
 
+
+function HealthChecklist({ stats }: { stats: SystemStats }) {
+  const checks = [
+    { label: "CPU load", ok: stats.cpu.usagePercent < 80, value: `${stats.cpu.usagePercent.toFixed(0)}%`, help: "Under 80% is comfortable for most small VPS workloads." },
+    { label: "Memory pressure", ok: stats.memory.usagePercent < 85, value: `${stats.memory.usagePercent.toFixed(0)}%`, help: "High memory can make apps slow or crash. Restarting unused apps may help." },
+    { label: "Disk space", ok: stats.disk.usagePercent < 85, value: `${stats.disk.usagePercent.toFixed(0)}%`, help: "Keep free disk space for logs, databases, uploads, and deployments." },
+    { label: "Uptime", ok: Number(stats.uptime) > 600, value: typeof stats.uptime === "number" ? "Stable" : String(stats.uptime), help: "Very recent restarts are normal after maintenance but worth noticing." },
+  ];
+  const issues = checks.filter((check) => !check.ok).length;
+
+  return (
+    <div className={`rounded-xl border p-4 ${issues ? "border-yellow-500/25 bg-yellow-500/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Easy Health Checklist</h3>
+          <p className="text-xs text-gray-400">Tom tat de hieu de biet server dang on hay can chu y.</p>
+        </div>
+        <span className={issues ? "text-xs text-yellow-300" : "text-xs text-emerald-300"}>{issues ? `${issues} item needs attention` : "Server looks OK"}</span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {checks.map((check) => (
+          <div key={check.label} className="rounded-lg border border-gray-700/70 bg-gray-900/60 p-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-gray-300">{check.label}</span>
+              <span className={check.ok ? "text-xs text-emerald-400" : "text-xs text-yellow-300"}>{check.value}</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-gray-500">{check.help}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 /* ══════════════════════════════════════════════════════════
    Helper: friendly error mapping
    ══════════════════════════════════════════════════════════ */
@@ -779,6 +814,8 @@ export function ServerOverview({ serverId }: ServerOverviewProps) {
             />
           </div>
 
+          <HealthChecklist stats={stats} />
+
           {/* Resource Gauges */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="flex justify-center rounded-xl bg-gray-800/60 border border-gray-700/40 p-5 backdrop-blur-sm">
@@ -831,3 +868,4 @@ export function ServerOverview({ serverId }: ServerOverviewProps) {
     </div>
   );
 }
+

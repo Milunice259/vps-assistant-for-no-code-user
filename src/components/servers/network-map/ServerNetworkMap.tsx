@@ -23,6 +23,7 @@ import {
   Maximize2,
   Info,
   Container,
+  RotateCcw,
 } from "lucide-react";
 import type { NetworkTopology, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -137,6 +138,11 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const zoomIn = () => setZoom(z => Math.min(2, z + 0.15));
   const zoomOut = () => setZoom(z => Math.max(0.3, z - 0.15));
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const resetCanvasLayout = () => {
+    setNodePositions({});
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   // ── Loading ──
   if (loading) {
@@ -236,7 +242,11 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Button variant="ghost" size="sm" onClick={fetchTopology}>
+          <Button variant="secondary" size="sm" onClick={resetCanvasLayout} title="Reset node layout">
+            <RotateCcw className="h-4 w-4 mr-1" />
+            Reset layout
+          </Button>
+          <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh network data">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>

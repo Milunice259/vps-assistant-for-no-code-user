@@ -1,13 +1,14 @@
 "use client";
 
 import { useSSE } from "@/hooks/useSSE";
-import type { SystemStats } from "@/types";
+import type { DashboardSummary, SystemStats } from "@/types";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { CpuGauge } from "@/components/dashboard/CpuGauge";
 import { MemoryBar } from "@/components/dashboard/MemoryBar";
 import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import { QuickOverview } from "@/components/dashboard/QuickOverview";
 import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
+import { RiskOverview } from "@/components/dashboard/RiskOverview";
 import { Cpu, MemoryStick, HardDrive, Clock, Server, Wifi } from "lucide-react";
 
 function formatUptime(seconds: number): string {
@@ -21,6 +22,7 @@ function formatUptime(seconds: number): string {
 
 export default function DashboardPage() {
   const { data: stats, connected, error } = useSSE<SystemStats>("/api/stats/stream");
+  const { data: summary } = useSSE<DashboardSummary>("/api/dashboard/stream");
 
   if (error) {
     return (
@@ -55,6 +57,8 @@ export default function DashboardPage() {
         <span className="text-gray-600">|</span>
         <span className="text-gray-500 text-xs">{stats.platform}</span>
       </div>
+
+      <RiskOverview stats={stats} summary={summary} />
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -74,11 +74,11 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     if (!viewport || width <= 0 || height <= 0) return;
 
     const viewportWidth = viewport.clientWidth || 900;
-    const viewportHeight = Math.min(Math.max(420, height * 0.72), 700);
+    const viewportHeight = viewport.clientHeight || Math.min(height + 40, 700);
     const nextZoom = Math.min(1, Math.max(0.35, Math.min((viewportWidth - 48) / width, (viewportHeight - 48) / height)));
     const nextPan = {
-      x: Math.max(24, (viewportWidth - width * nextZoom) / 2),
-      y: Math.max(24, (viewportHeight - height * nextZoom) / 2),
+      x: (viewportWidth - width * nextZoom) / 2,
+      y: (viewportHeight - height * nextZoom) / 2,
     };
 
     setZoom(nextZoom);
@@ -254,30 +254,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <StatChip icon={<Globe className="h-3.5 w-3.5" />} label="Open Ports" value={listeningPorts.length} color="text-amber-400" />
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Zoom controls */}
-          <div className="flex items-center gap-0.5 bg-gray-800 rounded-lg border border-gray-700 p-0.5">
-            <button onClick={zoomOut} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Zoom out">
-              <ZoomOut className="h-3.5 w-3.5" />
-            </button>
-            <span className="text-xs text-gray-500 px-1 min-w-[3rem] text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button onClick={zoomIn} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Zoom in">
-              <ZoomIn className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={resetView} className="p-1.5 text-gray-400 hover:text-white transition-colors rounded" title="Reset view">
-              <Maximize2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <Button variant="secondary" size="sm" onClick={resetCanvasLayout} title="Reset node layout">
-            <RotateCcw className="h-4 w-4 mr-1" />
-            Reset layout
-          </Button>
-          <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh network data">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+        <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh network data">
+          <RefreshCw className="h-4 w-4 mr-1" />
+          Refresh
+        </Button>
       </div>
 
       {/* ── Warning ── */}
@@ -322,6 +302,28 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
       >
+        <div
+          className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-xl border border-gray-700/80 bg-gray-950/80 p-1 shadow-xl backdrop-blur"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button onClick={zoomOut} className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white" title="Zoom out">
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+          <span className="min-w-[3rem] px-1 text-center text-xs text-gray-400">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button onClick={zoomIn} className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white" title="Zoom in">
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={resetView} className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white" title="Fit content">
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={resetCanvasLayout} className="ml-1 flex items-center gap-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-sky-500/60 hover:bg-sky-500/10 hover:text-white" title="Reset node layout">
+            <RotateCcw className="h-3.5 w-3.5" />
+            Layout
+          </button>
+        </div>
         {cards.length <= 2 ? (
           <div className="flex flex-col items-center gap-3 py-16 h-full justify-center">
             <Network className="h-8 w-8 text-gray-600" />
@@ -332,7 +334,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <div
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: "top center",
+              transformOrigin: "top left",
               width: canvasW,
               height: canvasH,
               position: "relative",

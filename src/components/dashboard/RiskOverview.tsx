@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, HardDrive, HelpCircle, MemoryStick, RefreshCw, ServerCrash, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, AlertTriangle, CheckCircle2, HardDrive, HelpCircle, Loader2, MemoryStick, RefreshCw, ServerCrash, Sparkles } from "lucide-react";
 import type { ApiResponse } from "@/types";
 
 interface RiskAlert {
@@ -74,9 +75,12 @@ function alertTooltip(alert: RiskAlert) {
 }
 
 export function RiskOverview() {
+  const router = useRouter();
   const [risk, setRisk] = useState<RiskSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<string | null>(null);
+  const [guideMessage, setGuideMessage] = useState<string | null>(null);
 
   async function fetchRisk() {
     setLoading(true);
@@ -91,6 +95,56 @@ export function RiskOverview() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function runServerAction(action: string) {
+    const res = await fetch("/api/servers/local/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const json: ApiResponse<{ output: string }> = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
+    return json.data?.output || "Done";
+  }
+
+  async function fixAlert(server: ServerRisk, alert: RiskAlert) {
+    const key = `${server.serverId}-${alert.id}`;
+    setFixing(key);
+    setGuideMessage(null);
+    try {
+      if (server.serverId !== "local") {
+        router.push(`/servers/${encodeURIComponent(server.serverId)}`);
+        return;
+      }
+
+      if (alert.id === "disk") {
+        const backup = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+        const backupJson: ApiResponse<{ name: string }> = await backup.json();
+        if (!backup.ok || !backupJson.success) throw new Error(backupJson.error || "Backup failed");
+        const logs = await runServerAction("clear-logs");
+        const cache = await runServerAction("clear-apt-cache");
+        setGuideMessage(`Safe disk cleanup completed after backup ${backupJson.data?.name || "created"}.\n\n${logs}\n\n${cache}`);
+        await fetchRisk();
+        return;
+      }
+
+      if (alert.id === "memory" || alert.id === "cpu") {
+        const output = await runServerAction("system-health-check");
+        setGuideMessage(`Read-only diagnosis completed. Review the output before restarting anything.\n\n${output}`);
+        return;
+      }
+
+      router.push(`/servers/${encodeURIComponent(server.serverId)}`);
+    } catch (err) {
+      setGuideMessage(err instanceof Error ? err.message : "Guided fix failed");
+    } finally {
+      setFixing(null);
+    }
+  }
+
+  function explainAlert(server: ServerRisk, alert: RiskAlert) {
+    setGuideMessage(`${server.serverName}: ${alert.title}\n\n${alert.detail}\n\nSafe next step: ${alert.nextStep}`);
   }
 
   useEffect(() => {
@@ -234,6 +288,29 @@ export function RiskOverview() {
                       )}
                     </div>
 
+                    {!serverHealthy && (
+                      <div className="mt-3 space-y-2">
+                        {server.alerts.slice(0, 2).map((alert, index) => {
+                          const key = `${server.serverId}-${alert.id}`;
+                          const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Fix safely" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Diagnose" : "View details";
+                          return (
+                            <div key={`${alert.id}-fix-${index}`} className="rounded-lg border border-gray-700/70 bg-gray-950/60 p-2">
+                              <p className="truncate text-xs font-medium text-gray-200">{alert.title}</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button onClick={() => explainAlert(server, alert)} className="rounded-md border border-gray-700 px-2 py-1 text-[11px] text-gray-300 hover:text-white">
+                                  Explain
+                                </button>
+                                <button onClick={() => fixAlert(server, alert)} disabled={fixing !== null} className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
+                                  {fixing === key ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                  {fixLabel}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     <div className="mt-3 border-t border-gray-700/70 pt-3 text-xs text-gray-500">
                       {server.stats ? (
                         <span>CPU {server.stats.cpu.toFixed(0)}% · RAM {server.stats.memory.toFixed(0)}% · Disk {server.stats.disk.toFixed(0)}%</span>
@@ -245,6 +322,18 @@ export function RiskOverview() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {guideMessage && (
+          <div className="mt-4 rounded-xl border border-gray-700 bg-gray-950 p-4">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-white">Guided fix</p>
+              <button onClick={() => setGuideMessage(null)} className="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white">
+                Close
+              </button>
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-5 text-gray-300">{guideMessage}</pre>
           </div>
         )}
       </div>

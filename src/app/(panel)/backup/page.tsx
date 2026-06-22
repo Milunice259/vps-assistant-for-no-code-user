@@ -97,8 +97,8 @@ export default function BackupPage() {
         <div className="flex items-center gap-3">
           <Database className="h-6 w-6 text-brand-400" />
           <div>
-            <h1 className="text-xl font-semibold text-white">Database Backups</h1>
-            <p className="text-sm text-gray-400">Create, restore, and manage database snapshots</p>
+            <h1 className="text-xl font-semibold text-white">Backup & Restore</h1>
+            <p className="text-sm text-gray-400">Save a safe checkpoint before fixes, updates, or risky changes</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -108,6 +108,21 @@ export default function BackupPage() {
           <Button variant="primary" size="sm" onClick={handleCreate} loading={creating}>
             <Plus className="h-4 w-4 mr-1" /> Create Backup
           </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+          <p className="text-sm font-semibold text-emerald-200">When to create one</p>
+          <p className="mt-1 text-xs leading-5 text-emerald-100/80">Before guided fixes, deploys, settings changes, or any action that may affect the control panel database.</p>
+        </div>
+        <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
+          <p className="text-sm font-semibold text-sky-200">What is included</p>
+          <p className="mt-1 text-xs leading-5 text-sky-100/80">This snapshot protects panel data such as servers, apps, users, audit logs, and settings. App files and Docker volumes are not deleted or changed.</p>
+        </div>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+          <p className="text-sm font-semibold text-amber-200">Restore safety</p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/80">Restoring automatically creates a pre-restore backup first, so you can go back if the restored snapshot is not what you expected.</p>
         </div>
       </div>
 
@@ -140,8 +155,8 @@ export default function BackupPage() {
           </Button>
         </div>
       ) : (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-800/50">
+          <table className="min-w-[760px] w-full text-sm">
             <thead>
               <tr className="border-b border-gray-700 text-gray-400 text-left">
                 <th className="px-4 py-3 font-medium">Name</th>

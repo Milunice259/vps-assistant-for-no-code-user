@@ -16,7 +16,7 @@ import { NETWORK_PALETTE, containerStatusColor, parsePortString, formatPortsBadg
 export function InternetCard({ card, onMouseDown }: { card: CardRect; onMouseDown?: (e: React.MouseEvent) => void }) {
   return (
     <div
-      className="absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-all hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
+      className="absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-colors hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
       onMouseDown={onMouseDown}
     >
@@ -31,7 +31,7 @@ export function InternetCard({ card, onMouseDown }: { card: CardRect; onMouseDow
 export function ServerCard({ card, hostname, onMouseDown }: { card: CardRect; hostname?: string; onMouseDown?: (e: React.MouseEvent) => void }) {
   return (
     <div
-      className="absolute flex items-center gap-3 rounded-2xl border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-sm px-4 cursor-default select-none transition-all hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
+      className="absolute flex items-center gap-3 rounded-2xl border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-sm px-4 cursor-default select-none transition-colors hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
       onMouseDown={onMouseDown}
     >
@@ -63,7 +63,7 @@ export function NetworkCard({
 
   return (
     <div
-      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-2.5 cursor-default select-none transition-all hover:shadow-lg group"
+      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-2.5 cursor-default select-none transition-colors hover:shadow-lg group"
       style={{
         left: card.x,
         top: card.y,
@@ -110,7 +110,7 @@ export function ContainerCard({
 
   return (
     <div
-      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-3 cursor-pointer select-none transition-all hover:shadow-lg hover:brightness-110 group"
+      className="absolute rounded-xl border backdrop-blur-sm px-3.5 py-3 cursor-pointer select-none transition-colors hover:shadow-lg hover:brightness-110 group"
       style={{
         left: card.x,
         top: card.y,

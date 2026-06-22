@@ -61,8 +61,29 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [lockedEdges, setLockedEdges] = useState<Record<string, boolean>>({});
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
+  const [fitRequest, setFitRequest] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  const requestFitToContent = useCallback(() => {
+    setFitRequest((current) => current + 1);
+  }, []);
+
+  const fitCanvasToViewport = useCallback((width: number, height: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport || width <= 0 || height <= 0) return;
+
+    const viewportWidth = viewport.clientWidth || 900;
+    const viewportHeight = Math.min(Math.max(420, height * 0.72), 700);
+    const nextZoom = Math.min(1, Math.max(0.35, Math.min((viewportWidth - 48) / width, (viewportHeight - 48) / height)));
+    const nextPan = {
+      x: Math.max(24, (viewportWidth - width * nextZoom) / 2),
+      y: Math.max(24, (viewportHeight - height * nextZoom) / 2),
+    };
+
+    setZoom(nextZoom);
+    setPan(nextPan);
+  }, []);
 
   const fetchTopology = useCallback(async () => {
     setLoading(true);
@@ -82,17 +103,25 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         setTopology(json.data || null);
       setNodePositions({});
       setLockedEdges({});
+      requestFitToContent();
       if (json.warning) setWarning(json.warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
-  }, [serverId]);
+  }, [requestFitToContent, serverId]);
 
   useEffect(() => {
     fetchTopology();
   }, [fetchTopology]);
+
+  useEffect(() => {
+    if (!topology || fitRequest === 0) return;
+    const { canvasW: nextCanvasW, canvasH: nextCanvasH } = computeLayout(topology.networks, topology.hostPorts);
+    const frame = requestAnimationFrame(() => fitCanvasToViewport(nextCanvasW, nextCanvasH));
+    return () => cancelAnimationFrame(frame);
+  }, [fitCanvasToViewport, fitRequest, topology]);
 
   /* ─── Mouse drag handlers ─── */
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -137,11 +166,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   /* ─── Zoom controls ─── */
   const zoomIn = () => setZoom(z => Math.min(2, z + 0.15));
   const zoomOut = () => setZoom(z => Math.max(0.3, z - 0.15));
-  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const resetView = requestFitToContent;
   const resetCanvasLayout = () => {
     setNodePositions({});
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    requestFitToContent();
   };
 
   // ── Loading ──

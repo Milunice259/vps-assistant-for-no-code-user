@@ -19,7 +19,7 @@ const pageTitles: Record<string, string> = {
   "/audit": "Audit Log",
   "/settings": "Settings",
   "/users": "User Management",
-  "/backup": "Database Backups",
+  "/backup": "Backup & Restore",
 };
 
 function PanelContent({ children }: { children: React.ReactNode }) {

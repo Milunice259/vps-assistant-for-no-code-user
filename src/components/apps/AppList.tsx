@@ -169,7 +169,7 @@ export function AppList() {
                   <tr key={app.id} className="hover:bg-gray-800/50">
                     <td className="py-3 text-white font-medium">
                       <button
-                        onClick={() => router.push(`/apps/${app.id}`)}
+                        onClick={() => router.push(`/apps/${encodeURIComponent(app.id)}`)}
                         className="flex items-center gap-2 hover:text-brand-400 transition-colors"
                       >
                         <AppWindow className="h-4 w-4 text-blue-400 shrink-0" />

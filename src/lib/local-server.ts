@@ -510,17 +510,30 @@ export function getLocalDockerNetworks(): Array<{
     for (const net of networks) {
       try {
         const inspectRaw = execLocal(
-          `docker network inspect ${net.id} --format "{{range .Containers}}{{.Name}}\\t{{.IPv4Address}}\\n{{end}}"`,
+          `docker network inspect ${net.id} --format "{{range $id,$c := .Containers}}{{$id}}\\t{{$c.Name}}\\t{{$c.IPv4Address}}\\n{{end}}"`,
           5_000
         );
         if (inspectRaw.trim()) {
           for (const cLine of inspectRaw.trim().split("\n").filter(Boolean)) {
-            const [cName, ipv4] = cLine.split("\t");
+            const [cId, cName, ipv4] = cLine.split("\t");
             if (cName) {
+              let image = "";
+              let state = "";
+              let ports = "";
+              try {
+                const details = execLocal(
+                  `docker inspect --format "{{.Config.Image}}\\t{{.State.Status}}\\t{{range $p,$conf := .NetworkSettings.Ports}}{{$p}} {{end}}" ${cId}`,
+                  5_000,
+                );
+                [image, state, ports] = details.split("\t");
+              } catch { /* optional details */ }
               net.containers.push({
-                id: "", // Inspect doesn't give container ID easily in this format
+                id: cId || cName,
                 name: cName,
-                ipv4: (ipv4 || "").replace(/\/\d+$/, ""), // Remove CIDR
+                ipv4: (ipv4 || "").replace(/\/\d+$/, ""),
+                image,
+                state,
+                ports,
               });
             }
           }

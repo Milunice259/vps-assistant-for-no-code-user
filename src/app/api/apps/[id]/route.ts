@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { validateHealthCheck, validateDomain } from "@/lib/validation";
 import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
-import { isLocalAppId, parseLocalContainerId, getLocalContainerDetail, execLocal } from "@/lib/local-server";
+import { isLocalAppId, parseLocalContainerId, getLocalContainerDetail, execLocal, tryExecOnHost } from "@/lib/local-server";
 import type {
   ApiResponse,
   AppDetailInfo,
@@ -110,6 +110,51 @@ function parseBytes(s: string): number {
   return n;
 }
 
+function isLocalServiceAppId(id: string): boolean {
+  return id.startsWith("local-service::");
+}
+
+function parseLocalServiceUnit(id: string): string {
+  return decodeURIComponent(id.replace(/^local-service::/, ""));
+}
+
+function getLocalServiceDetail(id: string, unit: string): AppDetailInfo | null {
+  const safeUnit = unit.replace(/[^a-zA-Z0-9_.@-]/g, "");
+  if (!safeUnit) return null;
+  const raw = tryExecOnHost(
+    `systemctl show ${safeUnit} --property=Id,Description,ActiveState,SubState,LoadState,UnitFileState,MainPID,ExecMainStartTimestamp,FragmentPath --no-pager`,
+    10_000,
+  );
+  if (!raw.trim() || raw.includes("LoadState=not-found")) return null;
+  const props = Object.fromEntries(raw.split("\n").map((line) => {
+    const idx = line.indexOf("=");
+    return idx >= 0 ? [line.slice(0, idx), line.slice(idx + 1)] : [line, ""];
+  }));
+  const activeState = props.ActiveState || "unknown";
+
+  return {
+    id,
+    name: unit.replace(/\.service$/, ""),
+    appSource: "systemd",
+    containerId: null,
+    containerName: null,
+    image: unit,
+    serverId: "local",
+    serverName: "This Server",
+    status: activeState === "active" ? "RUNNING" : activeState === "inactive" ? "STOPPED" : "UNKNOWN",
+    domain: null,
+    cpuLimit: null,
+    memoryLimit: null,
+    storageLimit: null,
+    restartPolicy: props.UnitFileState || null,
+    healthCheck: `${props.ActiveState || "unknown"} / ${props.SubState || "unknown"}`,
+    volumes: props.FragmentPath || null,
+    ports: props.MainPID && props.MainPID !== "0" ? `Main PID: ${props.MainPID}` : null,
+    createdAt: props.ExecMainStartTimestamp ? new Date(props.ExecMainStartTimestamp).toISOString() : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * GET /api/apps/[id] - Get full app detail with optional live stats.
  * Query: ?stats=true to include live container stats.
@@ -123,6 +168,18 @@ export async function GET(
     const url = new URL(request.url);
     const includeStats = url.searchParams.get("stats") === "true";
     const includeMetrics = url.searchParams.get("metrics") === "true";
+
+    if (isLocalServiceAppId(id)) {
+      const unit = parseLocalServiceUnit(id);
+      const detail = getLocalServiceDetail(id, unit);
+      if (!detail) {
+        return NextResponse.json(
+          { success: false, error: "System service not found" },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json({ success: true, data: { ...detail, liveStats: null, metrics: [] } });
+    }
 
     // ── Local container: build virtual AppDetailInfo from Docker ──
     if (isLocalAppId(id)) {
@@ -354,3 +411,4 @@ export async function DELETE(
     );
   }
 }
+

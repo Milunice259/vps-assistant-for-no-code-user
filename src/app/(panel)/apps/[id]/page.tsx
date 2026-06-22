@@ -155,7 +155,7 @@ export default function AppDetailPage() {
   const isStatsTab = activeTab === "overview" || activeTab === "resources";
   const { data: streamStats } = useSSE<AppStreamData>(
     `/api/apps/${appId}/stream`,
-    { enabled: isStatsTab, fallbackPollMs: 10_000 },
+    { enabled: isStatsTab && app?.appSource !== "systemd", fallbackPollMs: 10_000 },
   );
 
   // Compute liveStats from SSE stream
@@ -251,6 +251,10 @@ export default function AppDetailPage() {
   }
 
   const displayName = deriveAppName(app);
+  const isSystemService = app.appSource === "systemd";
+  const visibleTabs = isSystemService
+    ? APP_TABS.filter((tab) => tab.key === "overview")
+    : APP_TABS;
 
   return (
     <div className="space-y-6">
@@ -266,11 +270,9 @@ export default function AppDetailPage() {
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-white sm:text-xl">{displayName}</h2>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-400 mt-0.5 sm:text-sm">
-              {app.image && (
-                <span className="truncate max-w-[160px] font-mono text-xs bg-gray-800 px-1.5 py-0.5 rounded sm:max-w-[240px] sm:px-2">
-                  {app.image}
-                </span>
-              )}
+              <span className="truncate max-w-[160px] font-mono text-xs bg-gray-800 px-1.5 py-0.5 rounded sm:max-w-[240px] sm:px-2">
+                {isSystemService ? "System Service" : app.image || "Manual App"}
+              </span>
               <span>•</span>
               <span className="truncate">{app.serverName}</span>
               {app.domain && (
@@ -327,9 +329,11 @@ export default function AppDetailPage() {
               )}
             </>
           )}
-          <Button variant="danger" size="sm" onClick={handleDelete}>
-            <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
-          </Button>
+          {!app.id.startsWith("local-service::") && !app.id.startsWith("local::") && (
+            <Button variant="danger" size="sm" onClick={handleDelete}>
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -361,7 +365,7 @@ export default function AppDetailPage() {
       )}
 
       {/* Tabs */}
-      <Tabs tabs={APP_TABS} activeTab={activeTab} onChange={setActiveTab} />
+      <Tabs tabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* Tab description */}
       {TAB_DESCRIPTIONS[activeTab] && (
@@ -528,8 +532,8 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
         "—"
       ),
     },
-    { label: "Container Name", value: app.containerName || "—" },
-    { label: "Image", value: app.image || "—" },
+    { label: app.appSource === "systemd" ? "Service Unit" : "Container Name", value: app.appSource === "systemd" ? app.image || "—" : app.containerName || "—" },
+    { label: app.appSource === "systemd" ? "Service File" : "Image", value: app.appSource === "systemd" ? app.volumes || "—" : app.image || "—" },
     {
       label: "Domain",
       value: app.domain || (
@@ -537,7 +541,7 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
       ),
     },
     { label: "Server", value: app.serverName },
-    { label: "Restart Policy", value: app.restartPolicy || "none" },
+    { label: app.appSource === "systemd" ? "Startup State" : "Restart Policy", value: app.restartPolicy || "none" },
     {
       label: "CPU Limit",
       value: app.cpuLimit ? `${app.cpuLimit} cores` : "Unlimited",
@@ -547,16 +551,18 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
       value: app.memoryLimit ? `${app.memoryLimit} MB` : "Unlimited",
     },
     {
-      label: "Volumes",
+      label: app.appSource === "systemd" ? "Unit File" : "Volumes",
       value: app.volumes || <span className="text-gray-600 italic">None</span>,
     },
     {
-      label: "Ports",
+      label: app.appSource === "systemd" ? "Main Process" : "Ports",
       value: app.ports || <span className="text-gray-600 italic">None</span>,
     },
     {
-      label: "Health Check",
-      value: app.containerId ? (
+      label: app.appSource === "systemd" ? "Service State" : "Health Check",
+      value: app.appSource === "systemd" ? (
+        app.healthCheck || <span className="text-gray-600 italic">Unknown</span>
+      ) : app.containerId ? (
         <InlineHealthCheck appId={appId} />
       ) : (
         <span className="text-gray-600 italic">No container</span>
@@ -590,3 +596,4 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
   return `${bytes.toFixed(0)} B`;
 }
+

@@ -113,6 +113,13 @@ function offlineRisk(server: ServerInfo, detail: string): ServerRisk {
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
+}
+
 async function getServerRisk(server: ServerInfo): Promise<ServerRisk> {
   if (isLocalServer(server.id)) {
     return buildStatsRisk(server, getHostStats());
@@ -120,9 +127,9 @@ async function getServerRisk(server: ServerInfo): Promise<ServerRisk> {
 
   let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
   try {
-    const result = await connectToServer(server.id);
+    const result = await withTimeout(connectToServer(server.id), 6_000, "SSH connection timed out");
     ssh = result.ssh;
-    const stats = await getRemoteStats(ssh);
+    const stats = await withTimeout(getRemoteStats(ssh), 6_000, "Stats command timed out");
     return buildStatsRisk(server, stats);
   } catch (error) {
     const detail = isDisconnectedError(error)

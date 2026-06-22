@@ -7,6 +7,7 @@ interface StatsCardProps {
   subtitle?: string;
   icon: ReactNode;
   color?: string;
+  hint?: string;
 }
 
 export function StatsCard({
@@ -15,6 +16,7 @@ export function StatsCard({
   subtitle,
   icon,
   color = "text-brand-400",
+  hint,
 }: StatsCardProps) {
   return (
     <div className="flex items-start gap-4 rounded-xl bg-gray-800 p-4">
@@ -27,7 +29,14 @@ export function StatsCard({
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-gray-400">{title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm text-gray-400">{title}</p>
+          {hint && (
+            <span className="cursor-help rounded-full border border-gray-700 px-1.5 text-[10px] text-gray-500" title={hint}>
+              ?
+            </span>
+          )}
+        </div>
         <p className="mt-0.5 text-2xl font-bold text-white">{value}</p>
         {subtitle && (
           <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>

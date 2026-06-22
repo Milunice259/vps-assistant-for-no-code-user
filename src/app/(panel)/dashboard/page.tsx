@@ -69,24 +69,28 @@ export default function DashboardPage() {
           value={`${stats.cpu.usagePercent.toFixed(1)}%`}
           subtitle={`${stats.cpu.cores} cores`}
           icon={<Cpu className="w-5 h-5" />}
+          hint="How busy the processor is right now. Short spikes are normal; sustained usage above 80-90% can make apps slow."
         />
         <StatsCard
           title="Memory"
           value={`${stats.memory.usagePercent.toFixed(1)}%`}
           subtitle={`${(stats.memory.used / 1e9).toFixed(1)} / ${(stats.memory.total / 1e9).toFixed(1)} GB`}
           icon={<MemoryStick className="w-5 h-5" />}
+          hint="RAM currently used by the server and apps. High memory pressure can cause crashes; diagnose before killing processes."
         />
         <StatsCard
           title="Disk"
           value={`${stats.disk.usagePercent.toFixed(1)}%`}
           subtitle={`${(stats.disk.used / 1e9).toFixed(1)} / ${(stats.disk.total / 1e9).toFixed(1)} GB`}
           icon={<HardDrive className="w-5 h-5" />}
+          hint="Storage used on the main disk. Keep free space for logs, uploads, databases, backups, and deployments."
         />
         <StatsCard
           title="Uptime"
           value={typeof stats.uptime === "number" ? formatUptime(stats.uptime) : stats.uptime}
           subtitle="Since last reboot"
           icon={<Clock className="w-5 h-5" />}
+          hint="How long the server has been running since the last reboot. Recent restarts are normal after maintenance but worth noticing."
         />
       </div>
 

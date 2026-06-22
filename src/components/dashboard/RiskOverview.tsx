@@ -191,7 +191,7 @@ export function RiskOverview() {
       <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wider text-gray-500">Fleet Risk Score</p>
+            <p className="text-xs uppercase tracking-wider text-gray-500" title="A simple 0-100 health score across all servers. Offline servers and critical alerts lower this score.">Fleet Risk Score</p>
             <h2 className={`mt-2 text-4xl font-bold ${color}`}>{risk.score}</h2>
             <p className="mt-1 text-sm font-medium text-white">{risk.label}</p>
           </div>

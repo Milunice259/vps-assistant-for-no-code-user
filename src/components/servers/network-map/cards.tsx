@@ -13,11 +13,12 @@ import { NETWORK_PALETTE, containerStatusColor, parsePortString, formatPortsBadg
 
 /* ── Internet Card ── */
 
-export function InternetCard({ card }: { card: CardRect }) {
+export function InternetCard({ card, onMouseDown }: { card: CardRect; onMouseDown?: (e: React.MouseEvent) => void }) {
   return (
     <div
       className="absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-all hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
+      onMouseDown={onMouseDown}
     >
       <Globe className="h-5 w-5 text-amber-400" />
       <span className="text-sm font-semibold text-amber-200">Internet</span>
@@ -27,11 +28,12 @@ export function InternetCard({ card }: { card: CardRect }) {
 
 /* ── Server Card ── */
 
-export function ServerCard({ card, hostname }: { card: CardRect; hostname?: string }) {
+export function ServerCard({ card, hostname, onMouseDown }: { card: CardRect; hostname?: string; onMouseDown?: (e: React.MouseEvent) => void }) {
   return (
     <div
       className="absolute flex items-center gap-3 rounded-2xl border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-sm px-4 cursor-default select-none transition-all hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
+      onMouseDown={onMouseDown}
     >
       <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
         <Server className="h-5 w-5 text-blue-400" />
@@ -50,10 +52,12 @@ export function NetworkCard({
   card,
   net,
   colorIdx,
+  onMouseDown,
 }: {
   card: CardRect;
   net: DockerNetworkInfo;
   colorIdx: number;
+  onMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const palette = NETWORK_PALETTE[colorIdx % NETWORK_PALETTE.length];
 
@@ -68,6 +72,7 @@ export function NetworkCard({
         backgroundColor: palette.bgFade,
         borderColor: palette.border,
       }}
+      onMouseDown={onMouseDown}
     >
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
@@ -92,10 +97,12 @@ export function ContainerCard({
   card,
   container,
   onSelect,
+  onMouseDown,
 }: {
   card: CardRect;
   container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
   onSelect?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
 }) {
   const status = containerStatusColor(container.state);
   const ports = parsePortString(container.ports);
@@ -113,6 +120,7 @@ export function ContainerCard({
         borderColor: status.border,
       }}
       title={fullInfo}
+      onMouseDown={onMouseDown}
       onClick={(e) => { e.stopPropagation(); onSelect?.(container); }}
     >
       {/* Status bar left */}
@@ -259,3 +267,4 @@ export function NetworkDetailList({
     </div>
   );
 }
+

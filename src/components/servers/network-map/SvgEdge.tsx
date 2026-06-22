@@ -1,5 +1,5 @@
 /**
- * SVG edge component — animated dashed connection line with port label.
+ * SVG edge component — animated connection line with click-to-lock affordance.
  */
 
 import type { CardRect } from "./types";
@@ -9,11 +9,15 @@ export function SvgEdge({
   to,
   color,
   label,
+  locked,
+  onToggle,
 }: {
   from: CardRect;
   to: CardRect;
   color: string;
   label?: string;
+  locked?: boolean;
+  onToggle?: () => void;
 }) {
   const x1 = from.x + from.w / 2;
   const y1 = from.y + from.h;
@@ -23,57 +27,50 @@ export function SvgEdge({
   const midY = (y1 + y2) / 2;
   const pathD = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
 
+  const labelText = locked ? "Blocked" : label;
   const labelX = (x1 + x2) / 2;
   const labelY = midY - 4;
+  const labelWidth = Math.max((labelText || "Flow").length * 7, 44) + 16;
 
   return (
-    <g>
-      {/* Shadow */}
-      <path d={pathD} fill="none" stroke={`${color}15`} strokeWidth={6} />
-      {/* Main line */}
+    <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onToggle?.(); }}>
+      <title>{locked ? "Blocked in this map. Click to unlock." : "Click to lock this flow in the map."}</title>
+      <path d={pathD} fill="none" stroke={locked ? "#ef444420" : `${color}18`} strokeWidth={8} />
       <path
         d={pathD}
         fill="none"
-        stroke={`${color}50`}
-        strokeWidth={2}
-        strokeDasharray="6 4"
+        stroke={locked ? "#ef4444" : `${color}75`}
+        strokeWidth={locked ? 3 : 2}
+        strokeDasharray={locked ? "10 7" : "6 4"}
       >
-        <animate
-          attributeName="stroke-dashoffset"
-          from="0"
-          to="-20"
-          dur="2s"
-          repeatCount="indefinite"
-        />
+        {!locked && (
+          <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="2s" repeatCount="indefinite" />
+        )}
       </path>
-      {/* Start dot */}
-      <circle cx={x1} cy={y1} r={3} fill={color} opacity={0.5} />
-      {/* End dot */}
-      <circle cx={x2} cy={y2} r={3} fill={color} opacity={0.7} />
-      {/* Port label */}
-      {label && (
+      <circle cx={x1} cy={y1} r={4} fill={locked ? "#ef4444" : color} opacity={0.6} />
+      <circle cx={x2} cy={y2} r={4} fill={locked ? "#ef4444" : color} opacity={0.85} />
+      {labelText && (
         <g>
           <rect
-            x={labelX - Math.max(label.length * 3.5, 20) - 8}
+            x={labelX - labelWidth / 2}
             y={labelY - 10}
-            width={Math.max(label.length * 7, 40) + 16}
-            height={18}
-            rx={9}
-            fill="#1e293b"
-            stroke={`${color}40`}
+            width={labelWidth}
+            height={20}
+            rx={10}
+            fill="#0f172a"
+            stroke={locked ? "#ef444480" : `${color}55`}
             strokeWidth={1}
           />
           <text
             x={labelX}
-            y={labelY + 2}
+            y={labelY + 3}
             textAnchor="middle"
-            fill={color}
+            fill={locked ? "#f87171" : color}
             fontSize={10}
             fontFamily="ui-monospace, monospace"
-            fontWeight={600}
+            fontWeight={700}
           >
-            <title>{label}</title>
-            {label}
+            {labelText}
           </text>
         </g>
       )}

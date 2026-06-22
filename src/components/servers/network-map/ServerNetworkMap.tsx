@@ -57,7 +57,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [lockedEdges, setLockedEdges] = useState<Record<string, boolean>>({});
+  const [draggedNode, setDraggedNode] = useState<string | null>(null);
+  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const fetchTopology = useCallback(async () => {
@@ -75,7 +78,9 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         }
         throw new Error(json.error || "Failed to load network data");
       }
-      setTopology(json.data || null);
+        setTopology(json.data || null);
+      setNodePositions({});
+      setLockedEdges({});
       if (json.warning) setWarning(json.warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -92,18 +97,33 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     setIsDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: 0, nodeY: 0 };
+  }, [pan]);
+
+  const handleNodeMouseDown = useCallback((cardId: string, x: number, y: number) => (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setDraggedNode(cardId);
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: x, nodeY: y };
   }, [pan]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
+    if (draggedNode) {
+      setNodePositions((prev) => ({
+        ...prev,
+        [draggedNode]: { x: dragStart.current.nodeX + dx / zoom, y: dragStart.current.nodeY + dy / zoom },
+      }));
+      return;
+    }
+    if (!isDragging) return;
     setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy });
-  }, [isDragging]);
+  }, [draggedNode, isDragging, zoom]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setDraggedNode(null);
   }, []);
 
   /* ─── Scroll zoom ─── */
@@ -169,7 +189,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const listeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
 
   // Compute layout
-  const { cards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
+  const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
+  const cards = layoutCards.map((card) => ({ ...card, ...(nodePositions[card.id] || {}) }));
   const cardMap = new Map(cards.map(c => [c.id, c]));
 
   // Flatten containers indexed by network
@@ -229,11 +250,21 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         </div>
       )}
 
+      <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
+        <h3 className="mb-2 text-sm font-semibold text-white">Network Map Guide</h3>
+        <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-3">
+          <div><span className="text-amber-300">Internet</span> là traffic từ bên ngoài vào server.</div>
+          <div><span className="text-blue-300">Docker Host</span> là máy chủ đang chạy app.</div>
+          <div><span className="text-emerald-300">App nodes</span> là từng container riêng; kéo thả để sắp xếp lại.</div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">Click vào đường kết nối để đánh dấu Blocked/Allowed trên canvas. Bước này giúp mô phỏng và kiểm tra luồng trước khi áp firewall thật.</p>
+      </div>
+
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Drag to pan · Scroll to zoom</span>
+          <span>Drag canvas to pan · Drag any node to rearrange · Click a line to lock/unlock it</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Running</span>
@@ -295,6 +326,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                     to={toCard}
                     color={edge.color}
                     label={edge.label}
+                    locked={Boolean(lockedEdges[`${edge.fromId}->${edge.toId}`])}
+                    onToggle={() => setLockedEdges((prev) => ({ ...prev, [`${edge.fromId}->${edge.toId}`]: !prev[`${edge.fromId}->${edge.toId}`] }))}
                   />
                 );
               })}
@@ -303,21 +336,21 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
             {/* Render HTML cards */}
             {cards.map(card => {
               if (card.type === "internet") {
-                return <InternetCard key={card.id} card={card} />;
+                return <InternetCard key={card.id} card={card} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               if (card.type === "server") {
-                return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} />;
+                return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               if (card.type === "network") {
                 const netData = orderedNets.find(n => card.id === `net-${n.id}`);
                 if (!netData) return null;
                 const colorIdx = orderedNets.indexOf(netData);
-                return <NetworkCard key={card.id} card={card} net={netData} colorIdx={colorIdx >= 0 ? colorIdx : 0} />;
+                return <NetworkCard key={card.id} card={card} net={netData} colorIdx={colorIdx >= 0 ? colorIdx : 0} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               return null;
             })}
@@ -381,3 +414,4 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     </div>
   );
 }
+

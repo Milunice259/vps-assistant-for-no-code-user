@@ -1,7 +1,7 @@
 "use client";
 
 import { useSSE } from "@/hooks/useSSE";
-import type { DashboardSummary, SystemStats } from "@/types";
+import type { SystemStats } from "@/types";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { CpuGauge } from "@/components/dashboard/CpuGauge";
 import { MemoryBar } from "@/components/dashboard/MemoryBar";
@@ -22,7 +22,6 @@ function formatUptime(seconds: number): string {
 
 export default function DashboardPage() {
   const { data: stats, connected, error } = useSSE<SystemStats>("/api/stats/stream");
-  const { data: summary } = useSSE<DashboardSummary>("/api/dashboard/stream");
 
   if (error) {
     return (
@@ -58,7 +57,7 @@ export default function DashboardPage() {
         <span className="text-gray-500 text-xs">{stats.platform}</span>
       </div>
 
-      <RiskOverview stats={stats} summary={summary} />
+      <RiskOverview />
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

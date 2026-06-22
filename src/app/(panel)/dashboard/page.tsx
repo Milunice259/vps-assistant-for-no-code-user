@@ -9,6 +9,7 @@ import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import { QuickOverview } from "@/components/dashboard/QuickOverview";
 import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
 import { RiskOverview } from "@/components/dashboard/RiskOverview";
+import { SafeRepairCenter } from "@/components/dashboard/SafeRepairCenter";
 import { Cpu, MemoryStick, HardDrive, Clock, Server, Wifi } from "lucide-react";
 
 function formatUptime(seconds: number): string {
@@ -58,6 +59,8 @@ export default function DashboardPage() {
       </div>
 
       <RiskOverview />
+
+      <SafeRepairCenter />
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

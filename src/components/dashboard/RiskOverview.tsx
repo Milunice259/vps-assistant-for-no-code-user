@@ -177,10 +177,7 @@ export function RiskOverview() {
       <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <div>
-              <p className="text-xs uppercase tracking-wider text-gray-500">Alert Center</p>
-              <h3 className="mt-1 text-lg font-semibold text-white">Server alerts</h3>
-            </div>
+            <p className="text-xs uppercase tracking-wider text-gray-500">Alert Center</p>
             <span title="Alerts are grouped by server. Hover an icon to see the issue and the safest next step.">
               <HelpCircle className="h-4 w-4 text-gray-500" />
             </span>

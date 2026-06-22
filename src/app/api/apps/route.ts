@@ -173,12 +173,15 @@ async function discoverRemoteSystemServices(ssh: Awaited<ReturnType<typeof creat
  * DB records are merged with live data when container IDs match.
  * Containers not in the DB are included as "discovered" apps.
  */
-export async function GET(): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
+export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
   try {
-    // Fetch all DB apps and all active servers in parallel
+    const includeRemoteLive = request.nextUrl.searchParams.get("liveRemote") === "true";
+
+    // Fetch DB apps immediately; remote SSH discovery is opt-in because offline
+    // servers can add several seconds to the Apps page initial load.
     const [dbApps, servers] = await Promise.all([
       prisma.app.findMany({ include: { server: true } }),
-      prisma.server.findMany({ where: { isActive: true } }),
+      includeRemoteLive ? prisma.server.findMany({ where: { isActive: true } }) : Promise.resolve([]),
     ]);
 
     const allApps: AppInfo[] = [];

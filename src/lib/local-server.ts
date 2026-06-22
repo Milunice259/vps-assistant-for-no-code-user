@@ -510,7 +510,7 @@ export function getLocalDockerNetworks(): Array<{
     for (const net of networks) {
       try {
         const inspectRaw = execLocal(
-          `docker network inspect ${net.id} --format "{{range $id,$c := .Containers}}{{$id}}\\t{{$c.Name}}\\t{{$c.IPv4Address}}\\n{{end}}"`,
+          `docker network inspect ${net.id} --format '{{range $id,$c := .Containers}}{{printf "%s\\t%s\\t%s\\n" $id $c.Name $c.IPv4Address}}{{end}}'`,
           5_000
         );
         if (inspectRaw.trim()) {

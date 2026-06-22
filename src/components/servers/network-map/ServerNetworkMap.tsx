@@ -253,11 +253,11 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
         <h3 className="mb-2 text-sm font-semibold text-white">Network Map Guide</h3>
         <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-3">
-          <div><span className="text-amber-300">Internet</span> là traffic từ bên ngoài vào server.</div>
-          <div><span className="text-blue-300">Docker Host</span> là máy chủ đang chạy app.</div>
-          <div><span className="text-emerald-300">App nodes</span> là từng container riêng; kéo thả để sắp xếp lại.</div>
+          <div><span className="text-amber-300">Internet</span> means traffic coming from outside the server.</div>
+          <div><span className="text-blue-300">Docker Host</span> is the server running your applications.</div>
+          <div><span className="text-emerald-300">App nodes</span> are individual containers. Drag them to rearrange the map.</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Click vào đường kết nối để đánh dấu Blocked/Allowed trên canvas. Bước này giúp mô phỏng và kiểm tra luồng trước khi áp firewall thật.</p>
+        <p className="mt-2 text-xs text-gray-500">Click a connection line to mark it Blocked or Allowed on the canvas. This is a visual planning step before applying real firewall rules.</p>
       </div>
 
       {/* ── Legend ── */}
@@ -305,7 +305,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
             <svg
               width={canvasW}
               height={canvasH}
-              className="absolute inset-0 pointer-events-none"
+              className="absolute inset-0"
             >
               <defs>
                 <pattern id="mapGrid" width="40" height="40" patternUnits="userSpaceOnUse">

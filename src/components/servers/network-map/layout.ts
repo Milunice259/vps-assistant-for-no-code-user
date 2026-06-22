@@ -6,19 +6,13 @@ import type { DockerNetworkInfo, PortInfo } from "@/types";
 import type { CardRect, EdgeDef, LayoutResult } from "./types";
 import { NETWORK_PALETTE, formatPortsBadge } from "./types";
 
-const INTERNET_W = 160;
-const INTERNET_H = 60;
-const SERVER_W = 180;
-const SERVER_H = 70;
-const NETWORK_W = 220;
-const NETWORK_H = 64;
-const CONTAINER_W = 280;
-const CONTAINER_H = 100;
-
-const PADDING = 60;
-const LANE_GAP = 64;
-const COL_GAP = 80;
-const CONTAINER_GAP = 28;
+const NODE_W = 220;
+const NODE_H = 76;
+const PADDING = 64;
+const COL_GAP = 88;
+const ROW_GAP = 28;
+const NETWORK_GAP = 72;
+const APPS_PER_ROW = 3;
 
 export function computeLayout(
   networks: DockerNetworkInfo[],
@@ -34,34 +28,36 @@ export function computeLayout(
   const orderedNets = [...netsWithContainers, ...emptyNets];
 
   const internetX = PADDING;
-  const serverX = internetX + INTERNET_W + COL_GAP;
-  const networkX = serverX + SERVER_W + COL_GAP;
-  const containerStartX = networkX + NETWORK_W + COL_GAP;
+  const serverX = internetX + NODE_W + COL_GAP;
+  const networkX = serverX + NODE_W + COL_GAP;
+  const appStartX = networkX + NODE_W + COL_GAP;
 
-  const laneHeights = orderedNets.map((net) => Math.max(NETWORK_H, net.containers.length > 0 ? CONTAINER_H : NETWORK_H));
-  const contentH = laneHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, orderedNets.length - 1) * LANE_GAP;
-  const canvasH = Math.max(contentH + PADDING * 2, 360);
+  const laneHeights = orderedNets.map((net) => {
+    const appRows = Math.max(1, Math.ceil(net.containers.length / APPS_PER_ROW));
+    return Math.max(NODE_H, appRows * NODE_H + Math.max(0, appRows - 1) * ROW_GAP);
+  });
+  const contentH = laneHeights.reduce((sum, h) => sum + h, 0) + Math.max(0, orderedNets.length - 1) * NETWORK_GAP;
+  const canvasH = Math.max(contentH + PADDING * 2, 380);
   const centerY = canvasH / 2;
-
-  const maxContainers = Math.max(1, ...orderedNets.map((net) => net.containers.length));
-  const canvasW = Math.max(containerStartX + maxContainers * (CONTAINER_W + CONTAINER_GAP) - CONTAINER_GAP + PADDING, 900);
+  const appColumns = Math.min(APPS_PER_ROW, Math.max(1, ...orderedNets.map((net) => net.containers.length)));
+  const canvasW = Math.max(appStartX + appColumns * NODE_W + Math.max(0, appColumns - 1) * COL_GAP + PADDING, 980);
 
   cards.push({
     id: internetId,
     type: "internet",
     x: internetX,
-    y: centerY - INTERNET_H / 2,
-    w: INTERNET_W,
-    h: INTERNET_H,
+    y: centerY - NODE_H / 2,
+    w: NODE_W,
+    h: NODE_H,
   });
 
   cards.push({
     id: serverId,
     type: "server",
     x: serverX,
-    y: centerY - SERVER_H / 2,
-    w: SERVER_W,
-    h: SERVER_H,
+    y: centerY - NODE_H / 2,
+    w: NODE_W,
+    h: NODE_H,
   });
 
   const openPorts = hostPorts.filter((p) => p.localPort > 0 && p.process);
@@ -75,38 +71,40 @@ export function computeLayout(
     const palette = NETWORK_PALETTE[i % NETWORK_PALETTE.length];
     const laneH = laneHeights[i];
     const netId = `net-${net.id}`;
-    const netY = laneY + laneH / 2 - NETWORK_H / 2;
+    const netY = laneY + laneH / 2 - NODE_H / 2;
 
     cards.push({
       id: netId,
       type: "network",
       x: networkX,
       y: netY,
-      w: NETWORK_W,
-      h: NETWORK_H,
+      w: NODE_W,
+      h: NODE_H,
     });
 
     edges.push({ fromId: serverId, toId: netId, color: palette.bg });
 
     net.containers.forEach((cont, ci) => {
       const contId = `cont-${cont.id || cont.name}-${i}`;
-      const cx = containerStartX + ci * (CONTAINER_W + CONTAINER_GAP);
-      const cy = laneY + laneH / 2 - CONTAINER_H / 2;
+      const col = ci % APPS_PER_ROW;
+      const row = Math.floor(ci / APPS_PER_ROW);
+      const cx = appStartX + col * (NODE_W + COL_GAP);
+      const cy = laneY + row * (NODE_H + ROW_GAP);
 
       cards.push({
         id: contId,
         type: "container",
         x: cx,
         y: cy,
-        w: CONTAINER_W,
-        h: CONTAINER_H,
+        w: NODE_W,
+        h: NODE_H,
       });
 
       const portStr = formatPortsBadge(cont.ports);
       edges.push({ fromId: netId, toId: contId, color: palette.bg, label: portStr || undefined });
     });
 
-    laneY += laneH + LANE_GAP;
+    laneY += laneH + NETWORK_GAP;
   });
 
   return { cards, edges, canvasW, canvasH };

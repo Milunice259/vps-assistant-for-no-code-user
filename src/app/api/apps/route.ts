@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { createSSHConnection, getRemoteContainers, closeSSH, executeCommandSafe } from "@/lib/ssh";
-import { execLocal } from "@/lib/local-server";
+import { execLocal, tryExecOnHost } from "@/lib/local-server";
 import type {
   ApiResponse,
   AppInfo,
@@ -105,7 +105,7 @@ const CORE_SERVICE_PATTERN = /^(systemd-|dbus|cron|ssh|docker|containerd|network
 
 function discoverLocalSystemServices(): AppInfo[] {
   try {
-    const raw = execLocal(
+    const raw = tryExecOnHost(
       "systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'",
       10_000,
     );

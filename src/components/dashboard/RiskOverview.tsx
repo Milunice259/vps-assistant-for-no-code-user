@@ -281,7 +281,7 @@ export function RiskOverview() {
                                 <span className={`h-2.5 w-2.5 rounded-full ${server.status === "online" ? "bg-emerald-400" : "bg-red-400"}`} />
                                 <p className="truncate text-sm font-semibold text-white">{displayName}</p>
                               </div>
-                              <p className="mt-1 truncate text-xs text-gray-500">{server.serverId === "local" ? "Local server" : server.host}</p>
+                              <p className="mt-1 truncate text-xs text-gray-500">{server.serverId === "local" ? `IP: ${server.host}` : server.host}</p>
                             </div>
                             <div className="text-right">
                               <p className={`text-sm font-semibold ${scoreColor(server.score)}`}>{server.score}</p>

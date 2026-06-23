@@ -140,12 +140,24 @@ function getHostHostname(): string {
   return os.hostname();
 }
 
+function getHostPrimaryIp(): string {
+  const fromNsenter = tryExecOnHost("hostname -I | awk '{print $1}'");
+  if (fromNsenter) return fromNsenter;
+
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address.family === "IPv4" && !address.internal) return address.address;
+    }
+  }
+  return "127.0.0.1";
+}
+
 /** Build a virtual ServerInfo for the local machine. */
 export function getLocalServerInfo(): ServerInfo {
   return {
     id: LOCAL_SERVER_ID,
     name: "Local Server",
-    host: "127.0.0.1",
+    host: getHostPrimaryIp(),
     port: 0,
     username: os.userInfo().username,
     authMethod: "PASSWORD",

@@ -145,6 +145,67 @@ const sections = [
   },
 ];
 
+const walkthroughs = [
+  {
+    id: "setup-step-by-step",
+    title: "First-time settings setup",
+    steps: [
+      "Open Backup & Restore and click Create backup.",
+      "Open Settings, add one notification channel, then click Test delivery.",
+      "Add recommended alert rules: CPU >85%, memory >85%, disk >80%, server unreachable.",
+      "Keep Safe Mode on for daily use.",
+      "Open Dashboard and confirm the Fleet Risk Score and Alert Center load correctly.",
+    ],
+  },
+  {
+    id: "deploy-step-by-step",
+    title: "Deploy an app safely",
+    steps: [
+      "Open Deploy and choose Git, Docker Image, or Docker Compose.",
+      "Pick the target server. Use local server if you are unsure.",
+      "Enter repository/image/compose details and the public domain if needed.",
+      "Check port conflicts before starting. Change the port if another app already uses it.",
+      "Start deploy, watch the deployment log, and fix the first error if it fails.",
+      "After success, open Apps and check health, logs, domain, and resource usage.",
+    ],
+  },
+  {
+    id: "alert-step-by-step",
+    title: "Handle an alert",
+    steps: [
+      "Open Dashboard, then Alert Center.",
+      "Find the server card with the highest severity icon.",
+      "Hover the alert icon or click Explain to understand impact.",
+      "If Fix safely appears, create/confirm backup and run it.",
+      "If the alert is CPU/RAM or remote offline, diagnose first; do not restart random apps.",
+      "Open Audit Log after the action to confirm what changed.",
+    ],
+  },
+  {
+    id: "backup-step-by-step",
+    title: "Create and restore a backup",
+    steps: [
+      "Open Backup & Restore.",
+      "Click Create backup before settings, deploys, repairs, or user changes.",
+      "Name the backup by purpose, for example before-deploy-chatbot.",
+      "To restore, choose the snapshot and read the warning carefully.",
+      "Confirm restore. The app creates a pre-restore snapshot first.",
+      "Reload Dashboard and Audit Log to verify the panel is healthy.",
+    ],
+  },
+  {
+    id: "server-step-by-step",
+    title: "Add and check a remote server",
+    steps: [
+      "Open Servers and click Add server.",
+      "Enter name, host/IP, SSH port, username, and authentication details.",
+      "Save, then open the server detail page.",
+      "Check stats, Docker containers, system services, SSL, and network information.",
+      "If it shows offline, verify power, firewall, SSH port, credentials, and network access.",
+    ],
+  },
+];
+
 const glossary = [
   ["CPU", "How busy the processor is. High for a short time is normal; high for a long time means the server is overloaded."],
   ["Memory", "Working space for apps. Very high memory can make the VPS slow or trigger crashes."],
@@ -198,6 +259,11 @@ export default function DocsPage() {
       <nav className="rounded-2xl border border-gray-700 bg-gray-800 p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><HelpCircle className="h-4 w-4 text-brand-300" /> Find a topic</div>
         <div className="flex flex-wrap gap-2">
+          {walkthroughs.map((guide) => (
+            <a key={guide.id} href={`#${guide.id}`} className="rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-sm text-brand-100 hover:bg-brand-500/20">
+              {guide.title}
+            </a>
+          ))}
           {sections.map((section) => (
             <a key={section.id} href={`#${section.id}`} className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 hover:border-brand-500 hover:text-white">
               {section.title}
@@ -205,6 +271,26 @@ export default function DocsPage() {
           ))}
         </div>
       </nav>
+
+      <section className="rounded-2xl border border-brand-500/20 bg-gray-800 p-5">
+        <h2 className="text-xl font-semibold text-white">Step-by-step guides</h2>
+        <p className="mt-1 text-sm text-gray-400">Follow these when you are setting up the panel, deploying, or handling alerts.</p>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          {walkthroughs.map((guide) => (
+            <article id={guide.id} key={guide.id} className="scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-900 p-5">
+              <h3 className="font-semibold text-white">{guide.title}</h3>
+              <ol className="mt-4 space-y-3">
+                {guide.steps.map((step, index) => (
+                  <li key={step} className="flex gap-3 text-sm leading-6 text-gray-300">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-xs font-bold text-brand-300">{index + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {sections.map((section) => {

@@ -62,15 +62,16 @@ export default function DashboardPage() {
               </span>
               <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-gray-400">{stats.platform}</span>
             </div>
-            <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">Command Center</h1>
+            <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">VPS Management Dashboard</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">
-              One screen for fleet risk, local host health, apps, deployments, and safe maintenance.
+              Overview for this management app: local server health, remote VPS status, apps, deploys, and safe maintenance.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3 lg:w-[520px]">
             <div className="rounded-2xl border border-gray-700 bg-gray-950/60 p-4">
-              <p className="flex items-center gap-2 text-xs text-gray-500"><Server className="h-4 w-4" /> Host</p>
+              <p className="flex items-center gap-2 text-xs text-gray-500"><Server className="h-4 w-4" /> Local server</p>
               <p className="mt-2 truncate text-sm font-semibold text-white">{stats.hostname}</p>
+              <p className="mt-1 truncate text-xs text-gray-500">IP: {stats.localIp || "Unavailable"}</p>
             </div>
             <div className="rounded-2xl border border-gray-700 bg-gray-950/60 p-4">
               <p className="flex items-center gap-2 text-xs text-gray-500"><Clock className="h-4 w-4" /> Uptime</p>
@@ -83,6 +84,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      <OnboardingWizard />
 
       <RiskOverview />
 
@@ -119,7 +122,6 @@ export default function DashboardPage() {
       </section>
 
       <SafeRepairCenter />
-      <OnboardingWizard />
     </div>
   );
 }

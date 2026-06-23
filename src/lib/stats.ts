@@ -12,6 +12,7 @@ import { execSync } from "child_process";
 
 export interface SystemStats {
   hostname: string;
+  localIp: string;
   platform: string;
   uptime: number;
   cpu: {
@@ -112,6 +113,26 @@ let cachedDisk: SystemStats["disk"] = {
 let diskCacheExpiry = 0;
 const DISK_CACHE_MS = 5000;
 
+function getPrimaryLocalIp(): string {
+  try {
+    const hostIp = execSync("nsenter -t 1 -m -u -n -i -- hostname -I | awk '{print $1}'", {
+      encoding: "utf-8",
+      timeout: 3000,
+    }).trim();
+    if (hostIp) return hostIp;
+  } catch {
+    // Fallback to container-visible interfaces in local development.
+  }
+
+  const nets = os.networkInterfaces();
+  for (const addresses of Object.values(nets)) {
+    for (const address of addresses || []) {
+      if (address.family === "IPv4" && !address.internal) return address.address;
+    }
+  }
+  return "Unavailable";
+}
+
 function getDiskStats(): SystemStats["disk"] {
   const now = Date.now();
   if (now < diskCacheExpiry) return cachedDisk;
@@ -153,6 +174,7 @@ export function getHostStats(): SystemStats {
 
     return {
       hostname: os.hostname(),
+      localIp: getPrimaryLocalIp(),
       platform: `${os.type()} ${os.release()}`,
       uptime: os.uptime(),
       cpu: {
@@ -174,6 +196,7 @@ export function getHostStats(): SystemStats {
     console.error("[stats] Failed to collect host stats:", err);
     return {
       hostname: "unknown",
+      localIp: "Unavailable",
       platform: "Linux",
       uptime: 0,
       cpu: { model: "Unknown", cores: 1, usagePercent: 0 },

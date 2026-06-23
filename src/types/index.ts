@@ -32,6 +32,7 @@ export interface OSDetails {
 
 export interface SystemStats {
   hostname: string;
+  localIp?: string;
   platform: string;
   uptime: number | string;
   cpu: CpuStats;

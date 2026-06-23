@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
 import {
   AlertTriangle,
   AppWindow,
@@ -216,6 +219,19 @@ const glossary = [
 ];
 
 export default function DocsPage() {
+  useEffect(() => {
+    function openHashTopic() {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (!id) return;
+      const topic = document.getElementById(id);
+      if (topic instanceof HTMLDetailsElement) topic.open = true;
+    }
+
+    openHashTopic();
+    window.addEventListener("hashchange", openHashTopic);
+    return () => window.removeEventListener("hashchange", openHashTopic);
+  }, []);
+
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-3xl border border-brand-500/20 bg-gradient-to-br from-gray-900 via-gray-800 to-slate-950 p-6 shadow-2xl">

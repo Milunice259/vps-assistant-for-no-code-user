@@ -18,6 +18,7 @@ import {
   X,
   Users,
   Database,
+  BookOpen,
 } from "lucide-react";
 import clsx from "clsx";
 import { useSidebar } from "@/contexts/SidebarContext";
@@ -58,6 +59,7 @@ const navGroups: NavGroup[] = [
       { label: "Users", href: "/users", icon: <Users className="h-5 w-5" /> },
       { label: "Backups", href: "/backup", icon: <Database className="h-5 w-5" /> },
       { label: "Audit Log", href: "/audit", icon: <Shield className="h-5 w-5" /> },
+      { label: "Docs", href: "/docs", icon: <BookOpen className="h-5 w-5" /> },
       { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
     ],
   },

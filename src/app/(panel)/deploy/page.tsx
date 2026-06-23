@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { GitBranch, Box, Layers, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { DeployForm } from "@/components/deploy/DeployForm";
 import { DeployLog } from "@/components/deploy/DeployLog";
@@ -15,9 +16,9 @@ const DEPLOY_TABS = [
 ];
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
-  git: "Clone a Git repository and auto-deploy. The app will detect the stack (Node.js, Python, etc.) and configure Docker automatically.",
-  image: "Pull a Docker image from any registry and run it as a container with custom port mappings and resource limits.",
-  compose: "Deploy a multi-container stack using a docker-compose.yml file. Browse the server's file system to select the project directory.",
+  git: "Best when your app is already in GitHub.",
+  image: "Best when you already have a Docker image.",
+  compose: "Best for multi-container apps with docker-compose.yml.",
 };
 
 export default function DeployPage() {
@@ -30,9 +31,7 @@ export default function DeployPage() {
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-white">Deploy Application</h2>
-            <p className="mt-1 text-sm text-gray-400">
-              Choose the safest path for the app source you already have.
-            </p>
+            <p className="mt-1 text-sm text-gray-400">Choose the source type. More detail is in <Link href="/docs#deploy" className="text-brand-400 hover:text-brand-300">Deploy docs</Link>.</p>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
             <AlertTriangle className="h-4 w-4 shrink-0" />

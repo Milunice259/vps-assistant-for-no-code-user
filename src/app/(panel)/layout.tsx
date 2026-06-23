@@ -20,6 +20,7 @@ const pageTitles: Record<string, string> = {
   "/settings": "Settings",
   "/users": "User Management",
   "/backup": "Backup & Restore",
+  "/docs": "Docs",
 };
 
 function PanelContent({ children }: { children: React.ReactNode }) {

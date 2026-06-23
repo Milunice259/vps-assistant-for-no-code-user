@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
   Database,
@@ -111,19 +112,8 @@ export default function BackupPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-          <p className="text-sm font-semibold text-emerald-200">When to create one</p>
-          <p className="mt-1 text-xs leading-5 text-emerald-100/80">Before guided fixes, deploys, settings changes, or any action that may affect the control panel database.</p>
-        </div>
-        <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
-          <p className="text-sm font-semibold text-sky-200">What is included</p>
-          <p className="mt-1 text-xs leading-5 text-sky-100/80">This snapshot protects panel data such as servers, apps, users, audit logs, and settings. App files and Docker volumes are not deleted or changed.</p>
-        </div>
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
-          <p className="text-sm font-semibold text-amber-200">Restore safety</p>
-          <p className="mt-1 text-xs leading-5 text-amber-100/80">Restoring automatically creates a pre-restore backup first, so you can go back if the restored snapshot is not what you expected.</p>
-        </div>
+      <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4 text-sm text-gray-400">
+        Backups protect panel data. For what is included and when to restore, see <Link href="/docs#backup" className="text-brand-400 hover:text-brand-300">Backup docs</Link>.
       </div>
 
       {/* Alerts */}

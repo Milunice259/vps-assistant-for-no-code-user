@@ -71,7 +71,7 @@ export function SafeRepairCenter() {
             <ShieldCheck className="h-5 w-5 text-emerald-400" /> Guided maintenance for beginners
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-gray-400">
-            Start with read-only checks, then run low-risk cleanup actions. Every action is audited and avoids app data, databases, and Docker volumes.
+            Low-risk checks and cleanup actions. Read the <a href="/docs#safe-repair" className="text-brand-400 hover:text-brand-300">safe repair docs</a> first if unsure.
           </p>
         </div>
       </div>

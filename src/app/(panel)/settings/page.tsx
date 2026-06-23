@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
@@ -165,19 +166,8 @@ export default function SettingsPage() {
           Configure webhook channels and alert rules to get notified when your servers need attention.
         </p>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
-            <p className="text-sm font-semibold text-sky-200">1. Add a channel</p>
-            <p className="mt-1 text-xs leading-5 text-sky-100/80">Use Discord, Slack, or Telegram. The saved webhook is hidden after setup to avoid exposing secrets.</p>
-          </div>
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-            <p className="text-sm font-semibold text-emerald-200">2. Test delivery</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-100/80">Send a test message first. If it arrives, alerts can reach you even when you are away from the panel.</p>
-          </div>
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
-            <p className="text-sm font-semibold text-amber-200">3. Add safe rules</p>
-            <p className="mt-1 text-xs leading-5 text-amber-100/80">Recommended beginner rules: CPU above 85%, memory above 85%, disk above 80%, with cooldown to prevent alert spam.</p>
-          </div>
+        <div className="mb-4 rounded-xl border border-gray-700 bg-gray-800/50 p-4 text-sm text-gray-400">
+          Keep this page for setup only. Delivery concepts and recommended alert rules are in <Link href="/docs#notifications" className="text-brand-400 hover:text-brand-300">Notification docs</Link>.
         </div>
 
         {/* Add Channel Form */}

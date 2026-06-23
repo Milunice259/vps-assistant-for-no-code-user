@@ -15,6 +15,7 @@ import {
   Settings,
   Users,
   Database,
+  BookOpen,
   X,
 } from "lucide-react";
 
@@ -43,6 +44,7 @@ export function CommandPalette() {
     { id: "terminal", label: "Terminal", description: "SSH terminal", icon: <Terminal className="h-4 w-4" />, action: () => router.push("/terminal"), keywords: ["ssh", "shell", "console"] },
     { id: "audit", label: "Audit Log", description: "Security audit trail", icon: <Shield className="h-4 w-4" />, action: () => router.push("/audit"), keywords: ["logs", "security", "activity"] },
     { id: "backup", label: "Backups", description: "Database backups", icon: <Database className="h-4 w-4" />, action: () => router.push("/backup"), keywords: ["database", "snapshot", "restore"] },
+    { id: "docs", label: "Docs", description: "Beginner VPS guide", icon: <BookOpen className="h-4 w-4" />, action: () => router.push("/docs"), keywords: ["help", "guide", "documentation"] },
     { id: "users", label: "Users", description: "User management", icon: <Users className="h-4 w-4" />, action: () => router.push("/users"), keywords: ["accounts", "roles", "team"] },
     { id: "settings", label: "Settings", description: "App configuration", icon: <Settings className="h-4 w-4" />, action: () => router.push("/settings"), keywords: ["config", "preferences"] },
   ];

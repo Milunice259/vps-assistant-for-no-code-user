@@ -39,6 +39,22 @@ const CHANNEL_COLORS: Record<string, string> = {
   telegram: "text-sky-400",
 };
 
+const ALERT_PRESETS = [
+  { metric: "cpu", threshold: 85, label: "CPU high" },
+  { metric: "memory", threshold: 85, label: "Memory high" },
+  { metric: "disk", threshold: 80, label: "Disk filling up" },
+];
+
+function redactWebhook(url: string) {
+  if (!url) return "No webhook URL";
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname.slice(0, 18)}... [hidden]`;
+  } catch {
+    return "Webhook saved [hidden]";
+  }
+}
+
 export default function SettingsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,22 +98,30 @@ export default function SettingsPage() {
     }
   }
 
-  async function addRule(channelId: string) {
+  async function createRule(channelId: string, metric: string, threshold: number) {
     const res = await fetch("/api/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "alert",
-        metric: ruleMetric,
-        threshold: ruleThreshold,
+        metric,
+        threshold,
         channelId,
         cooldownMin: ruleCooldown,
       }),
     });
     const json = await res.json();
-    if (json.success) {
-      setShowAddRule(null);
-      fetchChannels();
+    if (json.success) fetchChannels();
+  }
+
+  async function addRule(channelId: string) {
+    await createRule(channelId, ruleMetric, ruleThreshold);
+    setShowAddRule(null);
+  }
+
+  async function addPresetRules(channelId: string) {
+    for (const preset of ALERT_PRESETS) {
+      await createRule(channelId, preset.metric, preset.threshold);
     }
   }
 
@@ -140,6 +164,21 @@ export default function SettingsPage() {
         <p className="text-sm text-gray-400 mb-4">
           Configure webhook channels and alert rules to get notified when your servers need attention.
         </p>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
+            <p className="text-sm font-semibold text-sky-200">1. Add a channel</p>
+            <p className="mt-1 text-xs leading-5 text-sky-100/80">Use Discord, Slack, or Telegram. The saved webhook is hidden after setup to avoid exposing secrets.</p>
+          </div>
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <p className="text-sm font-semibold text-emerald-200">2. Test delivery</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-100/80">Send a test message first. If it arrives, alerts can reach you even when you are away from the panel.</p>
+          </div>
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+            <p className="text-sm font-semibold text-amber-200">3. Add safe rules</p>
+            <p className="mt-1 text-xs leading-5 text-amber-100/80">Recommended beginner rules: CPU above 85%, memory above 85%, disk above 80%, with cooldown to prevent alert spam.</p>
+          </div>
+        </div>
 
         {/* Add Channel Form */}
         {showAddChannel && (
@@ -206,7 +245,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-gray-500 font-mono mb-3 truncate">{ch.webhookUrl}</p>
+                <p className="text-xs text-gray-500 font-mono mb-3 truncate" title="Webhook URL is hidden after saving to protect the secret token.">{redactWebhook(ch.webhookUrl)}</p>
 
                 {/* Alert Rules */}
                 <div className="space-y-1">
@@ -227,6 +266,15 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   ))}
+
+                  {ch.alertRules.length === 0 && (
+                    <div className="mb-2 rounded-lg border border-dashed border-gray-700 bg-gray-800/30 p-3">
+                      <p className="text-xs text-gray-400">No alert rules yet. Add the recommended starter rules for CPU, memory, and disk.</p>
+                      <button onClick={() => addPresetRules(ch.id)} className="mt-2 text-xs text-emerald-400 hover:text-emerald-300">
+                        Add recommended rules
+                      </button>
+                    </div>
+                  )}
 
                   {showAddRule === ch.id ? (
                     <div className="flex items-center gap-2 mt-2">

@@ -18,7 +18,12 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ success: true, data: channels });
+    const safeChannels = channels.map((channel) => ({
+      ...channel,
+      webhookUrl: "[hidden]",
+    }));
+
+    return NextResponse.json({ success: true, data: safeChannels });
   } catch (error) {
     const msg = safeErrorMessage(error, "Failed to fetch channels");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest) {
         data: { name, type: channelType, webhookUrl },
       });
 
-      return NextResponse.json({ success: true, data: channel });
+      return NextResponse.json({ success: true, data: { ...channel, webhookUrl: "[hidden]" } });
     }
 
     if (actionType === "alert") {

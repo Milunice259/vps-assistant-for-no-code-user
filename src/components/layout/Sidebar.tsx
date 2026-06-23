@@ -8,7 +8,6 @@ import {
   Network,
   AppWindow,
   GitBranch,
-  Terminal,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -84,7 +83,7 @@ function SidebarInner({
     <>
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-700 px-4">
-        <Terminal className="h-6 w-6 shrink-0 text-brand-400" />
+        <img src="/logo.svg" alt="VPS Control" className="h-8 w-8 shrink-0 rounded-lg" />
         {showLabels && (
           <span className="text-lg font-bold text-white">VPS Control</span>
         )}

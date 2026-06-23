@@ -274,12 +274,16 @@ export default function DocsPage() {
 
       <section className="rounded-2xl border border-brand-500/20 bg-gray-800 p-5">
         <h2 className="text-xl font-semibold text-white">Step-by-step guides</h2>
-        <p className="mt-1 text-sm text-gray-400">Follow these when you are setting up the panel, deploying, or handling alerts.</p>
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {walkthroughs.map((guide) => (
-            <article id={guide.id} key={guide.id} className="scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-900 p-5">
-              <h3 className="font-semibold text-white">{guide.title}</h3>
-              <ol className="mt-4 space-y-3">
+        <p className="mt-1 text-sm text-gray-400">Open only the guide you need.</p>
+        <div className="mt-5 space-y-3">
+          {walkthroughs.map((guide, guideIndex) => (
+            <details id={guide.id} key={guide.id} open={guideIndex === 0} className="group scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-900 p-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-white">
+                <span>{guide.title}</span>
+                <span className="text-xs text-brand-300 group-open:hidden">Open</span>
+                <span className="hidden text-xs text-gray-400 group-open:inline">Close</span>
+              </summary>
+              <ol className="mt-4 space-y-3 border-t border-gray-700 pt-4">
                 {guide.steps.map((step, index) => (
                   <li key={step} className="flex gap-3 text-sm leading-6 text-gray-300">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-xs font-bold text-brand-300">{index + 1}</span>
@@ -287,44 +291,52 @@ export default function DocsPage() {
                   </li>
                 ))}
               </ol>
-            </article>
+            </details>
           ))}
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return (
-            <section id={section.id} key={section.id} className="scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-800 p-5">
-              <div className="mb-4 flex items-start gap-3">
-                <div className="rounded-xl bg-gray-900 p-2 ring-1 ring-gray-700"><Icon className="h-5 w-5 text-brand-300" /></div>
-                <div>
-                  <h2 className="text-lg font-semibold text-white">{section.title}</h2>
-                  <p className="mt-1 text-sm text-gray-400">{section.summary}</p>
-                </div>
-              </div>
-              <ul className="space-y-2 text-sm leading-6 text-gray-300">
-                {section.bullets.map((item) => (
-                  <li key={item} className="flex gap-2 rounded-lg border border-gray-700/70 bg-gray-900/50 px-3 py-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
+      <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
+        <h2 className="text-xl font-semibold text-white">Feature reference</h2>
+        <p className="mt-1 text-sm text-gray-400">Short summaries stay visible; details expand on demand.</p>
+        <div className="mt-5 space-y-3">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            return (
+              <details id={section.id} key={section.id} className="group scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-900 p-4">
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                  <span className="flex gap-3">
+                    <span className="rounded-xl bg-gray-800 p-2 ring-1 ring-gray-700"><Icon className="h-5 w-5 text-brand-300" /></span>
+                    <span>
+                      <span className="block font-semibold text-white">{section.title}</span>
+                      <span className="mt-1 block text-sm text-gray-400">{section.summary}</span>
+                    </span>
+                  </span>
+                  <span className="mt-1 shrink-0 text-xs text-brand-300 group-open:hidden">Open</span>
+                  <span className="mt-1 hidden shrink-0 text-xs text-gray-400 group-open:inline">Close</span>
+                </summary>
+                <ul className="mt-4 space-y-2 border-t border-gray-700 pt-4 text-sm leading-6 text-gray-300">
+                  {section.bullets.map((item) => (
+                    <li key={item} className="flex gap-2 rounded-lg border border-gray-700/70 bg-gray-800/70 px-3 py-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
         <h2 className="mb-4 text-lg font-semibold text-white">Plain-English glossary</h2>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {glossary.map(([term, text]) => (
-            <div key={term} className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-              <h3 className="font-semibold text-white">{term}</h3>
-              <p className="mt-1 text-sm leading-6 text-gray-400">{text}</p>
-            </div>
+            <details key={term} className="rounded-xl border border-gray-700 bg-gray-900 p-4">
+              <summary className="cursor-pointer list-none font-semibold text-white">{term}</summary>
+              <p className="mt-2 text-sm leading-6 text-gray-400">{text}</p>
+            </details>
           ))}
         </div>
       </section>

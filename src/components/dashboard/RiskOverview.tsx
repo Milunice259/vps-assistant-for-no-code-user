@@ -154,11 +154,15 @@ export function RiskOverview() {
   }, []);
 
   const serverGroups = useMemo(() => {
-    if (!risk) return [];
-    return [...risk.servers].sort((a, b) => {
+    if (!risk) return { local: [] as ServerRisk[], remote: [] as ServerRisk[] };
+    const sorted = [...risk.servers].sort((a, b) => {
       if (b.alerts.length !== a.alerts.length) return b.alerts.length - a.alerts.length;
       return a.score - b.score;
     });
+    return {
+      local: sorted.filter((server) => server.serverId === "local"),
+      remote: sorted.filter((server) => server.serverId !== "local"),
+    };
   }, [risk]);
 
   if (loading && !risk) {
@@ -248,80 +252,100 @@ export function RiskOverview() {
             No urgent issue detected across connected servers. Keep backups enabled and review public ports after each deployment.
           </div>
         ) : (
-          <div className="max-h-[430px] overflow-y-auto pr-1">
-            <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-              {serverGroups.map((server) => {
-                const serverHealthy = server.alerts.length === 0;
-                return (
-                  <div key={server.serverId} className="rounded-xl border border-gray-700 bg-gray-900/60 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`h-2.5 w-2.5 rounded-full ${server.status === "online" ? "bg-emerald-400" : "bg-red-400"}`} />
-                          <p className="truncate text-sm font-semibold text-white">{server.serverName}</p>
-                        </div>
-                        <p className="mt-1 truncate text-xs text-gray-500">{server.host}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-semibold ${scoreColor(server.score)}`}>{server.score}</p>
-                        <p className="text-[10px] uppercase text-gray-500">{server.status}</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex min-h-8 flex-wrap gap-2">
-                      {serverHealthy ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300" title="No current alert for this server">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Healthy
-                        </span>
-                      ) : (
-                        server.alerts.map((alert, index) => (
-                          <span
-                            key={`${alert.id}-${index}`}
-                            title={alertTooltip(alert)}
-                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${severityClass[alert.severity]}`}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${severityDot[alert.severity]}`} />
-                            {severityIcon(alert)}
-                            <span className="max-w-28 truncate">{alert.title}</span>
-                          </span>
-                        ))
-                      )}
-                    </div>
-
-                    {!serverHealthy && (
-                      <div className="mt-3 space-y-2">
-                        {server.alerts.slice(0, 2).map((alert, index) => {
-                          const key = `${server.serverId}-${alert.id}`;
-                          const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Fix safely" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Diagnose" : "View details";
-                          return (
-                            <div key={`${alert.id}-fix-${index}`} className="rounded-lg border border-gray-700/70 bg-gray-950/60 p-2">
-                              <p className="truncate text-xs font-medium text-gray-200">{alert.title}</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <button onClick={() => explainAlert(server, alert)} className="rounded-md border border-gray-700 px-2 py-1 text-[11px] text-gray-300 hover:text-white">
-                                  Explain
-                                </button>
-                                <button onClick={() => fixAlert(server, alert)} disabled={fixing !== null} className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
-                                  {fixing === key ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                                  {fixLabel}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div className="mt-3 border-t border-gray-700/70 pt-3 text-xs text-gray-500">
-                      {server.stats ? (
-                        <span>CPU {server.stats.cpu.toFixed(0)}% · RAM {server.stats.memory.toFixed(0)}% · Disk {server.stats.disk.toFixed(0)}%</span>
-                      ) : (
-                        <span>Stats unavailable</span>
-                      )}
-                    </div>
+          <div className="max-h-[430px] space-y-4 overflow-y-auto pr-1">
+            {[
+              { title: "Local server", helper: "This machine running the panel", servers: serverGroups.local },
+              { title: "Remote servers", helper: "Other VPS machines connected by SSH", servers: serverGroups.remote },
+            ].map((group) => (
+              <div key={group.title} className="rounded-2xl border border-gray-700/70 bg-gray-950/30 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">{group.title}</h3>
+                    <p className="text-xs text-gray-500">{group.helper}</p>
                   </div>
-                );
-              })}
-            </div>
+                  <span className="rounded-full border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs text-gray-400">{group.servers.length}</span>
+                </div>
+
+                {group.servers.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-700 p-4 text-sm text-gray-500">{group.title === "Local server" ? "Local server data unavailable." : "No remote server added yet."}</div>
+                ) : (
+                  <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                    {group.servers.map((server) => {
+                      const serverHealthy = server.alerts.length === 0;
+                      const displayName = server.serverId === "local" ? "Local" : server.serverName;
+                      return (
+                        <div key={server.serverId} className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`h-2.5 w-2.5 rounded-full ${server.status === "online" ? "bg-emerald-400" : "bg-red-400"}`} />
+                                <p className="truncate text-sm font-semibold text-white">{displayName}</p>
+                              </div>
+                              <p className="mt-1 truncate text-xs text-gray-500">{server.serverId === "local" ? "Local server" : server.host}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`text-sm font-semibold ${scoreColor(server.score)}`}>{server.score}</p>
+                              <p className="text-[10px] uppercase text-gray-500">{server.status}</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex min-h-8 flex-wrap gap-2">
+                            {serverHealthy ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300" title="No current alert for this server">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Healthy
+                              </span>
+                            ) : (
+                              server.alerts.map((alert, index) => (
+                                <span
+                                  key={`${alert.id}-${index}`}
+                                  title={alertTooltip(alert)}
+                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${severityClass[alert.severity]}`}
+                                >
+                                  <span className={`h-1.5 w-1.5 rounded-full ${severityDot[alert.severity]}`} />
+                                  {severityIcon(alert)}
+                                  <span className="max-w-28 truncate">{alert.title}</span>
+                                </span>
+                              ))
+                            )}
+                          </div>
+
+                          {!serverHealthy && (
+                            <div className="mt-3 space-y-2">
+                              {server.alerts.slice(0, 2).map((alert, index) => {
+                                const key = `${server.serverId}-${alert.id}`;
+                                const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Fix safely" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Diagnose" : "View details";
+                                return (
+                                  <div key={`${alert.id}-fix-${index}`} className="rounded-lg border border-gray-700/70 bg-gray-950/60 p-2">
+                                    <p className="truncate text-xs font-medium text-gray-200">{alert.title}</p>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <button onClick={() => explainAlert(server, alert)} className="rounded-md border border-gray-700 px-2 py-1 text-[11px] text-gray-300 hover:text-white">
+                                        Explain
+                                      </button>
+                                      <button onClick={() => fixAlert(server, alert)} disabled={fixing !== null} className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
+                                        {fixing === key ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                        {fixLabel}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <div className="mt-3 border-t border-gray-700/70 pt-3 text-xs text-gray-500">
+                            {server.stats ? (
+                              <span>CPU {server.stats.cpu.toFixed(0)}% · RAM {server.stats.memory.toFixed(0)}% · Disk {server.stats.disk.toFixed(0)}%</span>
+                            ) : (
+                              <span>Stats unavailable</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

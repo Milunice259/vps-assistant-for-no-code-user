@@ -9,8 +9,9 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 type LogSource = "system" | "service" | "docker";
 
-const MAX_LINES = 500;
+const MAX_LINES = 1000;
 const SAFE_NAME = /^[a-zA-Z0-9_.@/-]+$/;
+const SINCE_VALUES = new Set(["15m", "1h", "6h", "24h", "7d"]);
 
 function lineLimit(value: string | null) {
   const n = Number(value || 100);
@@ -22,17 +23,34 @@ function safeName(value: string | null) {
   return value;
 }
 
+function sinceValue(value: string | null) {
+  return value && SINCE_VALUES.has(value) ? value : "1h";
+}
+
+function dockerSince(value: string) {
+  const amount = Number.parseInt(value, 10) || 1;
+  if (value.endsWith("m")) return `${amount}m`;
+  if (value.endsWith("d")) return `${amount * 24}h`;
+  return `${amount}h`;
+}
+
+function journalSince(value: string) {
+  if (value.endsWith("m")) return `${Number.parseInt(value, 10)} minutes ago`;
+  if (value.endsWith("h")) return `${Number.parseInt(value, 10)} hours ago`;
+  return `${Number.parseInt(value, 10)} days ago`;
+}
+
 function redact(text: string) {
   return text
     .replace(/(password|passwd|pwd|token|secret|api[_-]?key|authorization|bearer)(\s*[:=]\s*)([^\s'"`]+)/gi, "$1$2[REDACTED]")
     .replace(/(https?:\/\/[^\s:]+:)([^@\s]+)(@)/gi, "$1[REDACTED]$3");
 }
 
-function buildCommand(source: LogSource, lines: number, name: string | null) {
-  if (source === "system") return `journalctl -n ${lines} --no-pager --output=short-iso 2>&1`;
+function buildCommand(source: LogSource, lines: number, name: string | null, since: string) {
+  if (source === "system") return `journalctl --since '${journalSince(since)}' -n ${lines} --no-pager --output=short-iso 2>&1`;
   if (!name) throw new Error(`${source} name is required`);
-  if (source === "service") return `journalctl -u ${name} -n ${lines} --no-pager --output=short-iso 2>&1`;
-  return `docker logs --tail ${lines} ${name} 2>&1`;
+  if (source === "service") return `journalctl -u ${name} --since '${journalSince(since)}' -n ${lines} --no-pager --output=short-iso 2>&1`;
+  return `docker logs --since ${dockerSince(since)} --tail ${lines} ${name} 2>&1`;
 }
 
 export async function GET(request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<{ output: string }>>> {
@@ -43,13 +61,14 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
     const params = request.nextUrl.searchParams;
     const source = (params.get("source") || "system") as LogSource;
     const lines = lineLimit(params.get("lines"));
+    const since = sinceValue(params.get("since"));
     const name = safeName(params.get("name"));
 
     if (!["system", "service", "docker"].includes(source)) {
       return NextResponse.json({ success: false, error: "Invalid log source" }, { status: 400 });
     }
 
-    const command = buildCommand(source, lines, name);
+    const command = buildCommand(source, lines, name, since);
     const output = isLocalServer(id)
       ? source === "docker" ? execLocal(command, 20_000) : execOnHost(command, 20_000)
       : await (async () => {

@@ -64,8 +64,8 @@ function countStoppedContainers(containers: Array<{ state: string }>) {
   return containers.filter((c) => c.state && c.state !== "running").length;
 }
 
-function countImportantFailedServices(services: Array<{ name: string; activeState: string }>) {
-  return services.filter((s) => IMPORTANT_SERVICES.has(s.name) && s.activeState !== "active").length;
+function countImportantFailedServices(services: Array<{ name: string; activeState: string; loadState?: string }>) {
+  return services.filter((s) => IMPORTANT_SERVICES.has(s.name) && s.loadState !== "not-found" && s.activeState !== "active").length;
 }
 
 function uniqueDomains(apps: Array<{ domain: string | null }>) {
@@ -152,5 +152,5 @@ export async function runNotificationChecks(): Promise<NotificationCheckSummary>
 
 export function notificationCheckSelfTest() {
   console.assert(countStoppedContainers([{ state: "running" }, { state: "exited" }]) === 1);
-  console.assert(countImportantFailedServices([{ name: "docker", activeState: "failed" }, { name: "cups", activeState: "failed" }]) === 1);
+  console.assert(countImportantFailedServices([{ name: "docker", activeState: "failed" }, { name: "sshd", activeState: "inactive", loadState: "not-found" }, { name: "cups", activeState: "failed" }]) === 1);
 }

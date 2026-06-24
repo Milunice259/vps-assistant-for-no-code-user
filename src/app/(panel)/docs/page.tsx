@@ -22,7 +22,7 @@ const quickStart = [
   ["1", "Open Dashboard", "Check Fleet Risk Score first. Green means normal, amber means watch, red means act."],
   ["2", "Read alerts", "Open Alert Center and use Explain before trying any fix."],
   ["3", "Back up", "Create a backup before deploys, settings changes, or repairs."],
-  ["4", "Set notifications", "Add Telegram, Discord, Slack, or Email so the panel can warn you."],
+  ["4", "Set the Watchdog", "Use Notification Watchdog rules to choose when the panel should warn you in-app or through chat."],
 ];
 
 const sections = [
@@ -36,6 +36,7 @@ const sections = [
       "Many servers are summarized; open server groups in Alert Center instead of scanning a very long table.",
       "Use trend and severity, not one-second spikes. A short CPU spike is normal; repeated critical alerts need action.",
       "Start here every day: score, offline servers, disk alerts, then app/service alerts.",
+      "Fleet Risk Score shows current health; Notification Watchdog controls when alerts are fired and repeated.",
     ],
   },
   {
@@ -124,14 +125,15 @@ const sections = [
   },
   {
     id: "settings",
-    title: "Settings and Notifications",
+    title: "Settings and Notification Watchdog",
     icon: Settings,
-    summary: "Configure channels, alert rules, safe defaults, and user-facing behavior.",
+    summary: "Control when the panel warns you and where external alerts are sent.",
     bullets: [
-      "Add a notification channel, test delivery, then add safe alert rules.",
-      "Good starter rules: CPU >85%, memory >85%, disk >80%, and server unreachable.",
-      "Use cooldowns so one long incident does not spam your chat.",
-      "Webhook URLs and credentials should stay hidden; the UI should never expose secrets back to the browser.",
+      "In-app checks work without a channel; channels are only for Discord, Slack, or Telegram delivery.",
+      "Rules control what to watch: offline server, CPU, memory, disk, app/container down, important service down, SSL expiring, and stale backup.",
+      "Threshold decides when a rule fires; cooldown decides how long to wait before repeating the same alert.",
+      "Use Watching/Muted to enable or pause a rule without deleting it; use channel Enabled/Disabled to pause external delivery.",
+      "Webhook URLs and credentials stay hidden; the UI must never expose secrets back to the browser.",
     ],
   },
   {
@@ -170,6 +172,18 @@ const walkthroughs = [
       "Check port conflicts before starting. Change the port if another app already uses it.",
       "Start deploy, watch the deployment log, and fix the first error if it fails.",
       "After success, open Apps and check health, logs, domain, and resource usage.",
+    ],
+  },
+  {
+    id: "watchdog-step-by-step",
+    title: "Set up Notification Watchdog",
+    steps: [
+      "Open Settings > Notifications.",
+      "Add a channel only if you want external delivery; in-app checks work without one.",
+      "Add recommended rules, then tune thresholds for your VPS size.",
+      "Set cooldown: 15 minutes for urgent checks, 60+ minutes for noisy resource alerts.",
+      "Use Watching/Muted to pause a rule without deleting its settings.",
+      "Open Dashboard and use Check now to confirm what the watchdog sees.",
     ],
   },
   {
@@ -216,6 +230,10 @@ const glossary = [
   ["Docker", "A common way to run apps in isolated containers."],
   ["System service", "A Linux background service managed by systemd, such as nginx or traefik."],
   ["Traefik", "The reverse proxy that routes domains to apps and handles HTTPS."],
+  ["Fleet Risk Score", "A current 0-100 health summary across servers."],
+  ["Notification Watchdog", "Controllable rules that decide when to alert, repeat, mute, or send messages to external channels."],
+  ["Threshold", "The value that triggers a rule, such as disk above 80%."],
+  ["Cooldown", "How long the panel waits before sending the same alert again."],
 ];
 
 export default function DocsPage() {

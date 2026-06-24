@@ -3,7 +3,6 @@ import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteStats, getRemoteOSDetails, closeSSH } from "@/lib/ssh";
 import { isLocalServer } from "@/lib/local-server";
 import { getHostStats } from "@/lib/stats";
-import { getVirtualServerStats } from "@/lib/virtual-server-data";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +29,6 @@ export async function GET(
       return NextResponse.json({ success: true, data: { ...stats, os: { distro: stats.platform, kernel: "", arch: process.arch } } });
     }
 
-    const virtualStats = getVirtualServerStats(id);
-    if (virtualStats) {
-      return NextResponse.json({ success: true, data: virtualStats });
-    }
 
     const result = await connectToServer(id);
     ssh = result.ssh;

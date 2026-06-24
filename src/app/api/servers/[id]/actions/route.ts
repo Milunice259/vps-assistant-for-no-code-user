@@ -3,7 +3,6 @@ import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { quickAction, closeSSH } from "@/lib/ssh";
 import { isLocalServer, localQuickAction } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
-import { getVirtualActionOutput } from "@/lib/virtual-server-data";
 import { getSession } from "@/lib/auth";
 import type { ApiResponse } from "@/types";
 
@@ -129,10 +128,6 @@ export async function POST(
       });
     }
 
-    const virtualOutput = getVirtualActionOutput(id, action);
-    if (virtualOutput) {
-      return NextResponse.json({ success: true, data: { output: virtualOutput } });
-    }
 
     // Remote server — use SSH
     const result = await connectToServer(id);

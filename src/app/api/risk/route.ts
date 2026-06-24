@@ -4,7 +4,6 @@ import { getLocalServerInfo, isLocalServer } from "@/lib/local-server";
 import { getHostStats } from "@/lib/stats";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { closeSSH, getRemoteStats } from "@/lib/ssh";
-import { getVirtualServerStats } from "@/lib/virtual-server-data";
 import type { ApiResponse, ServerInfo, SystemStats } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -126,8 +125,6 @@ async function getServerRisk(server: ServerInfo): Promise<ServerRisk> {
     return buildStatsRisk(server, getHostStats());
   }
 
-  const virtualStats = getVirtualServerStats(server.id);
-  if (virtualStats) return buildStatsRisk(server, virtualStats);
 
   let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
   try {

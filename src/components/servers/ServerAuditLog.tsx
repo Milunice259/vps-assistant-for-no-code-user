@@ -63,6 +63,12 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<ActionGroup>("all");
   const [severityFilter, setSeverityFilter] = useState<"all" | "info" | "warning" | "critical">("all");
+  const [logSource, setLogSource] = useState<"system" | "service" | "docker">("system");
+  const [logName, setLogName] = useState("");
+  const [logLines, setLogLines] = useState("100");
+  const [logOutput, setLogOutput] = useState("");
+  const [logLoading, setLogLoading] = useState(false);
+  const [logError, setLogError] = useState("");
   const perPage = 25;
 
   const fetchLogs = useCallback(async () => {
@@ -79,6 +85,23 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
       setLoading(false);
     }
   }, [page, serverId]);
+
+  const fetchServerLogs = useCallback(async () => {
+    setLogLoading(true);
+    setLogError("");
+    try {
+      const params = new URLSearchParams({ source: logSource, lines: logLines });
+      if (logSource !== "system") params.set("name", logName.trim());
+      const res = await fetch(`/api/servers/${serverId}/logs?${params}`);
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to read logs");
+      setLogOutput(json.data?.output || "No logs found.");
+    } catch (error) {
+      setLogError(error instanceof Error ? error.message : "Failed to read logs");
+    } finally {
+      setLogLoading(false);
+    }
+  }, [logLines, logName, logSource, serverId]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -111,6 +134,34 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-700/60 bg-gray-900/70 p-4">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Real server logs</h3>
+            <p className="text-xs text-gray-500">Read-only logs from the actual server. Sensitive-looking values are redacted.</p>
+          </div>
+          <button onClick={fetchServerLogs} disabled={logLoading || (logSource !== "system" && !logName.trim())} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-300 hover:border-gray-600 hover:text-white disabled:opacity-40">
+            <RefreshCw className={`h-3.5 w-3.5 ${logLoading ? "animate-spin" : ""}`} /> Read logs
+          </button>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[auto_1fr_auto]">
+          <select value={logSource} onChange={(event) => setLogSource(event.target.value as typeof logSource)} className="rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-brand-500 focus:outline-none">
+            <option value="system">System logs</option>
+            <option value="service">Service logs</option>
+            <option value="docker">Docker app logs</option>
+          </select>
+          <input value={logName} onChange={(event) => setLogName(event.target.value)} disabled={logSource === "system"} placeholder={logSource === "service" ? "service name, e.g. nginx.service" : logSource === "docker" ? "container name or id" : "No name needed for system logs"} className="rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:border-brand-500 focus:outline-none disabled:opacity-40" />
+          <select value={logLines} onChange={(event) => setLogLines(event.target.value)} className="rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 focus:border-brand-500 focus:outline-none">
+            <option value="50">50 lines</option>
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+            <option value="500">500 lines</option>
+          </select>
+        </div>
+        {logError && <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{logError}</div>}
+        {logOutput && <pre className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-gray-800 bg-gray-950 p-3 text-xs leading-relaxed text-gray-300">{logOutput}</pre>}
       </div>
 
       <div className="grid gap-3 rounded-xl border border-gray-700/60 bg-gray-900/70 p-3 lg:grid-cols-[1fr_auto_auto]">

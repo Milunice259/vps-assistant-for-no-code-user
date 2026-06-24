@@ -51,6 +51,7 @@ interface NotificationCheckSummary {
   serviceDown: number;
   sslExpiring: number;
   backupStale: number;
+  results: Array<{ serverId: string; serverName: string; status: "checked" | "offline"; alerts: string[] }>;
 }
 
 const severityClass = {
@@ -283,13 +284,13 @@ export function RiskOverview() {
               <div>
                 <p className="text-sm font-semibold text-white">Smart Notifications</p>
                 <p className="mt-1 text-xs text-gray-400">
-                  {notificationReady ? `Armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "Not armed yet. Add a channel and at least one rule in Settings."}
+                  {notificationReady ? `External alerts armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "In-app check is ready. Add a channel/rule only if you want Discord, Slack, or Telegram alerts."}
                 </p>
               </div>
             </div>
             <button
               onClick={runNotificationCheck}
-              disabled={!notificationReady || checkingNotifications}
+              disabled={checkingNotifications}
               className="inline-flex items-center rounded-lg border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-xs text-gray-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {checkingNotifications ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
@@ -297,9 +298,22 @@ export function RiskOverview() {
             </button>
           </div>
           {notificationCheck && (
-            <p className="mt-2 text-xs text-gray-400">
-              Last check: {notificationCheck.checked} servers · {notificationCheck.offline} offline · {notificationCheck.appDown} app down · {notificationCheck.serviceDown} service down · {notificationCheck.sslExpiring} SSL · {notificationCheck.backupStale} backup
-            </p>
+            <div className="mt-2 space-y-2 text-xs text-gray-400">
+              <p>
+                Last check: {notificationCheck.checked} servers · {notificationCheck.offline} offline · {notificationCheck.appDown} app down · {notificationCheck.serviceDown} service down · {notificationCheck.sslExpiring} SSL · {notificationCheck.backupStale} backup
+              </p>
+              {notificationCheck.results.some((result) => result.status === "offline" || result.alerts.length > 0) ? (
+                <div className="space-y-1">
+                  {notificationCheck.results.filter((result) => result.status === "offline" || result.alerts.length > 0).slice(0, 4).map((result) => (
+                    <div key={result.serverId} className="rounded-lg border border-gray-700/70 bg-gray-950/50 px-2 py-1">
+                      <span className="font-medium text-gray-200">{result.serverName}</span>: {result.status === "offline" ? "offline" : result.alerts.join(", ").replace(/_/g, " ")}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-emerald-300">No smart-alert issue found in this check.</p>
+              )}
+            </div>
           )}
         </div>
       </div>

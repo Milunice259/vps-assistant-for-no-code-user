@@ -138,12 +138,6 @@ async function checkServer(server: ServerInfo): Promise<NotificationCheckResult>
 }
 
 export async function runNotificationChecks(): Promise<NotificationCheckSummary> {
-  const [channels, rules] = await Promise.all([
-    prisma.notificationChannel.count({ where: { enabled: true } }),
-    prisma.alertRule.count({ where: { enabled: true } }),
-  ]);
-  if (!channels || !rules) return { checked: 0, offline: 0, appDown: 0, serviceDown: 0, sslExpiring: 0, backupStale: 0, results: [] };
-
   const results = await Promise.all((await listServers()).map(checkServer));
   return {
     checked: results.length,

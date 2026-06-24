@@ -36,7 +36,6 @@ const sections = [
       "Many servers are summarized; open server groups in Alert Center instead of scanning a very long table.",
       "Use trend and severity, not one-second spikes. A short CPU spike is normal; repeated critical alerts need action.",
       "Start here every day: score, offline servers, disk alerts, then app/service alerts.",
-      "Fleet Risk Score shows current health; Notification Watchdog controls when alerts are fired and repeated.",
     ],
   },
   {
@@ -127,12 +126,11 @@ const sections = [
     id: "settings",
     title: "Settings and Notification Watchdog",
     icon: Settings,
-    summary: "Control when the panel warns you and where external alerts are sent.",
+    summary: "Tune alert rules, cooldowns, and external delivery.",
     bullets: [
-      "In-app checks work without a channel; channels are only for Discord, Slack, or Telegram delivery.",
-      "Rules control what to watch: offline server, CPU, memory, disk, app/container down, important service down, SSL expiring, and stale backup.",
-      "Threshold decides when a rule fires; cooldown decides how long to wait before repeating the same alert.",
-      "Use Watching/Muted to enable or pause a rule without deleting it; use channel Enabled/Disabled to pause external delivery.",
+      "In-app checks work without a channel; channels only send alerts to Discord, Slack, or Telegram.",
+      "Threshold decides when a rule fires; cooldown prevents repeated spam during one incident.",
+      "Use Watching/Muted for rules and Enabled/Disabled for external delivery.",
       "Webhook URLs and credentials stay hidden; the UI must never expose secrets back to the browser.",
     ],
   },
@@ -180,7 +178,7 @@ const walkthroughs = [
     steps: [
       "Open Settings > Notifications.",
       "Add a channel only if you want external delivery; in-app checks work without one.",
-      "Add recommended rules, then tune thresholds for your VPS size.",
+      "Add recommended rules, then tune thresholds and cooldowns.",
       "Set cooldown: 15 minutes for urgent checks, 60+ minutes for noisy resource alerts.",
       "Use Watching/Muted to pause a rule without deleting its settings.",
       "Open Dashboard and use Check now to confirm what the watchdog sees.",
@@ -231,7 +229,7 @@ const glossary = [
   ["System service", "A Linux background service managed by systemd, such as nginx or traefik."],
   ["Traefik", "The reverse proxy that routes domains to apps and handles HTTPS."],
   ["Fleet Risk Score", "A current 0-100 health summary across servers."],
-  ["Notification Watchdog", "Controllable rules that decide when to alert, repeat, mute, or send messages to external channels."],
+  ["Notification Watchdog", "Controllable alert rules, cooldowns, mute state, and external delivery."],
   ["Threshold", "The value that triggers a rule, such as disk above 80%."],
   ["Cooldown", "How long the panel waits before sending the same alert again."],
 ];

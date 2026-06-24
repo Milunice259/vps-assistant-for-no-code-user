@@ -100,6 +100,8 @@ export function RiskOverview() {
   const [notificationChannels, setNotificationChannels] = useState<NotificationChannel[]>([]);
   const [notificationCheck, setNotificationCheck] = useState<NotificationCheckSummary | null>(null);
   const [checkingNotifications, setCheckingNotifications] = useState(false);
+  const [fleetSearch, setFleetSearch] = useState("");
+  const [fleetFilter, setFleetFilter] = useState<"all" | "critical" | "warning" | "healthy" | "offline">("all");
 
   async function fetchRisk() {
     setLoading(true);
@@ -198,7 +200,18 @@ export function RiskOverview() {
 
   const serverGroups = useMemo(() => {
     if (!risk) return { local: [] as ServerRisk[], remote: [] as ServerRisk[] };
-    const sorted = [...risk.servers].sort((a, b) => {
+    const query = fleetSearch.trim().toLowerCase();
+    const filtered = risk.servers.filter((server) => {
+      const matchesSearch = !query || `${server.serverName} ${server.host} ${server.serverId}`.toLowerCase().includes(query);
+      const matchesFilter =
+        fleetFilter === "all" ||
+        (fleetFilter === "offline" && server.status !== "online") ||
+        (fleetFilter === "healthy" && server.alerts.length === 0 && server.status === "online") ||
+        (fleetFilter === "critical" && server.alerts.some((alert) => alert.severity === "critical")) ||
+        (fleetFilter === "warning" && server.alerts.some((alert) => alert.severity === "warning"));
+      return matchesSearch && matchesFilter;
+    });
+    const sorted = filtered.sort((a, b) => {
       if (b.alerts.length !== a.alerts.length) return b.alerts.length - a.alerts.length;
       return a.score - b.score;
     });
@@ -206,7 +219,7 @@ export function RiskOverview() {
       local: sorted.filter((server) => server.serverId === "local"),
       remote: sorted.filter((server) => server.serverId !== "local"),
     };
-  }, [risk]);
+  }, [fleetFilter, fleetSearch, risk]);
 
   if (loading && !risk) {
     return (
@@ -334,7 +347,33 @@ export function RiskOverview() {
           </div>
         </div>
 
-        {healthy ? (
+        <div className="mb-4 grid gap-2 lg:grid-cols-[1fr_auto]">
+          <input
+            value={fleetSearch}
+            onChange={(event) => setFleetSearch(event.target.value)}
+            placeholder="Search server, IP, or id..."
+            className="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-brand-500"
+          />
+          <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
+            {[
+              ["all", "All"],
+              ["critical", "Critical"],
+              ["warning", "Warning"],
+              ["offline", "Offline"],
+              ["healthy", "Healthy"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setFleetFilter(value as typeof fleetFilter)}
+                className={`whitespace-nowrap rounded-full border px-3 py-1.5 ${fleetFilter === value ? "border-brand-500/60 bg-brand-500/15 text-brand-200" : "border-gray-700 bg-gray-900 text-gray-400 hover:text-white"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {healthy && fleetFilter === "all" && !fleetSearch ? (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
             No urgent issue detected across connected servers. Keep backups enabled and review public ports after each deployment.
           </div>
@@ -382,17 +421,20 @@ export function RiskOverview() {
                                 <CheckCircle2 className="h-3.5 w-3.5" /> Healthy
                               </span>
                             ) : (
-                              server.alerts.map((alert, index) => (
-                                <span
-                                  key={`${alert.id}-${index}`}
-                                  title={alertTooltip(alert)}
-                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${severityClass[alert.severity]}`}
-                                >
-                                  <span className={`h-1.5 w-1.5 rounded-full ${severityDot[alert.severity]}`} />
-                                  {severityIcon(alert)}
-                                  <span className="max-w-28 truncate">{alert.title}</span>
-                                </span>
-                              ))
+                              <>
+                                {server.alerts.slice(0, 4).map((alert, index) => (
+                                  <span
+                                    key={`${alert.id}-${index}`}
+                                    title={alertTooltip(alert)}
+                                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${severityClass[alert.severity]}`}
+                                  >
+                                    <span className={`h-1.5 w-1.5 rounded-full ${severityDot[alert.severity]}`} />
+                                    {severityIcon(alert)}
+                                    <span className="max-w-28 truncate">{alert.title}</span>
+                                  </span>
+                                ))}
+                                {server.alerts.length > 4 && <span className="rounded-full border border-gray-700 bg-gray-950 px-2.5 py-1 text-xs text-gray-400">+{server.alerts.length - 4} more</span>}
+                              </>
                             )}
                           </div>
 

@@ -34,34 +34,6 @@ function buildHealthChecks(stats: SystemStats) {
   ];
 }
 
-function HealthChecklist({ stats }: { stats: SystemStats }) {
-  const checks = buildHealthChecks(stats);
-  const issues = checks.filter((check) => !check.ok).length;
-
-  return (
-    <div className={`rounded-xl border p-4 ${issues ? "border-yellow-500/25 bg-yellow-500/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-white">Easy Health Checklist</h3>
-          <p className="text-xs text-gray-400">Simple summary of what is healthy and what needs attention.</p>
-        </div>
-        <span className={issues ? "text-xs text-yellow-300" : "text-xs text-emerald-300"}>{issues ? `${issues} item needs attention` : "Server looks OK"}</span>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {checks.map((check) => (
-          <div key={check.label} className="rounded-lg border border-gray-700/70 bg-gray-900/60 p-3">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-gray-300">{check.label}</span>
-              <span className={check.ok ? "text-xs text-emerald-400" : "text-xs text-yellow-300"}>{check.value}</span>
-            </div>
-            <p className="text-[11px] leading-relaxed text-gray-500">{check.help}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function ControlCenterSummary({ stats }: { stats: SystemStats }) {
   const checks = buildHealthChecks(stats);
   const issues = checks.filter((check) => !check.ok);
@@ -83,11 +55,9 @@ function ControlCenterSummary({ stats }: { stats: SystemStats }) {
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[320px]">
-          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">CPU</p><p className="text-lg font-semibold text-white">{stats.cpu.usagePercent.toFixed(0)}%</p></div>
-          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">RAM</p><p className="text-lg font-semibold text-white">{stats.memory.usagePercent.toFixed(0)}%</p></div>
-          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">Disk</p><p className="text-lg font-semibold text-white">{stats.disk.usagePercent.toFixed(0)}%</p></div>
-        </div>
+        <span className={issues.length ? "rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs text-yellow-200" : "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200"}>
+          {issues.length ? `${issues.length} issue${issues.length > 1 ? "s" : ""} found` : "No urgent issue"}
+        </span>
       </div>
     </div>
   );
@@ -135,7 +105,7 @@ function GuidedNextSteps({ stats, onOpenActions, onOpenLogs }: { stats: SystemSt
     stats.memory.usagePercent >= 80 ? { title: "Memory pressure", body: "Inspect Docker Stats before restarting apps or services.", action: onOpenActions } : null,
     stats.cpu.usagePercent >= 75 ? { title: "CPU load", body: "Check Docker Stats and recent Activity Log to find the busy app.", action: onOpenLogs } : null,
   ].filter(Boolean) as Array<{ title: string; body: string; action?: () => void }>;
-  const visible = steps.length ? steps : [{ title: "Routine check", body: "Review Applications, Services, and Activity Log before making changes.", action: onOpenLogs }];
+  if (steps.length === 0) return null;
 
   return (
     <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
@@ -144,7 +114,7 @@ function GuidedNextSteps({ stats, onOpenActions, onOpenLogs }: { stats: SystemSt
         <h3 className="text-sm font-semibold text-white">Guided next steps</h3>
       </div>
       <div className="grid gap-2 lg:grid-cols-3">
-        {visible.map((step) => (
+        {steps.map((step) => (
           <button key={step.title} onClick={step.action} className="rounded-lg border border-gray-700/60 bg-gray-950/40 p-3 text-left hover:border-brand-500/40">
             <p className="text-sm font-medium text-white">{step.title}</p>
             <p className="mt-1 text-xs leading-relaxed text-gray-400">{step.body}</p>
@@ -720,14 +690,6 @@ function QuickStatCard({
   );
 }
 
-function formatBytesShort(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const val = bytes / Math.pow(1024, i);
-  return `${val.toFixed(1)} ${units[i]}`;
-}
-
 /* ══════════════════════════════════════════════════════════
    Main component — ServerOverview
    ══════════════════════════════════════════════════════════ */
@@ -889,7 +851,7 @@ export function ServerOverview({ serverId, onOpenActions, onOpenLogs }: ServerOv
           </div>
 
           {/* Server Quick Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <QuickStatCard
               icon={<Globe className="h-4 w-4 text-blue-400" />}
               label="Operating System"
@@ -904,23 +866,7 @@ export function ServerOverview({ serverId, onOpenActions, onOpenLogs }: ServerOv
               sub={stats.cpu.model && stats.cpu.cores ? `${stats.cpu.cores} Cores` : undefined}
               accentColor="bg-cyan-500"
             />
-            <QuickStatCard
-              icon={<MemoryStick className="h-4 w-4 text-purple-400" />}
-              label="Total Memory"
-              value={formatBytesShort(stats.memory.total)}
-              sub={`${stats.memory.usagePercent.toFixed(0)}% in use`}
-              accentColor="bg-purple-500"
-            />
-            <QuickStatCard
-              icon={<Timer className="h-4 w-4 text-emerald-400" />}
-              label="Uptime"
-              value={formatUptime(stats.uptime)}
-              sub="Since last reboot"
-              accentColor="bg-emerald-500"
-            />
           </div>
-
-          <HealthChecklist stats={stats} />
 
           {/* Resource Gauges */}
           <div className="grid gap-4 sm:grid-cols-3">

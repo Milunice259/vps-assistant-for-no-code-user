@@ -163,7 +163,13 @@ export default function ServerDetailPage() {
       <Tabs tabs={SERVER_TABS} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* Tab Content */}
-      {activeTab === "overview" && <ServerOverview serverId={serverId} />}
+      {activeTab === "overview" && (
+        <ServerOverview
+          serverId={serverId}
+          onOpenActions={() => setActiveTab("actions")}
+          onOpenLogs={() => setActiveTab("logs")}
+        />
+      )}
       {activeTab === "containers" && <DockerContainerList serverId={serverId} />}
       {activeTab === "networks" && <ServerNetworkMap serverId={serverId} />}
       {activeTab === "services" && <ServiceList serverId={serverId} />}

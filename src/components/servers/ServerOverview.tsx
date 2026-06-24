@@ -14,6 +14,9 @@ import {
   Cpu,
   Globe,
   Server,
+  ShieldCheck,
+  Wrench,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CpuGauge } from "@/components/dashboard/CpuGauge";
@@ -22,13 +25,17 @@ import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import type { SystemStats } from "@/types";
 
 
-function HealthChecklist({ stats }: { stats: SystemStats }) {
-  const checks = [
+function buildHealthChecks(stats: SystemStats) {
+  return [
     { label: "CPU load", ok: stats.cpu.usagePercent < 80, value: `${stats.cpu.usagePercent.toFixed(0)}%`, help: "Under 80% is comfortable for most small VPS workloads." },
     { label: "Memory pressure", ok: stats.memory.usagePercent < 85, value: `${stats.memory.usagePercent.toFixed(0)}%`, help: "High memory can make apps slow or crash. Restarting unused apps may help." },
     { label: "Disk space", ok: stats.disk.usagePercent < 85, value: `${stats.disk.usagePercent.toFixed(0)}%`, help: "Keep free disk space for logs, databases, uploads, and deployments." },
     { label: "Uptime", ok: Number(stats.uptime) > 600, value: typeof stats.uptime === "number" ? "Stable" : String(stats.uptime), help: "Very recent restarts are normal after maintenance but worth noticing." },
   ];
+}
+
+function HealthChecklist({ stats }: { stats: SystemStats }) {
+  const checks = buildHealthChecks(stats);
   const issues = checks.filter((check) => !check.ok).length;
 
   return (
@@ -36,7 +43,7 @@ function HealthChecklist({ stats }: { stats: SystemStats }) {
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-white">Easy Health Checklist</h3>
-          <p className="text-xs text-gray-400">Tóm tắt dễ hiểu để biết server đang ổn hay cần chú ý.</p>
+          <p className="text-xs text-gray-400">Simple summary of what is healthy and what needs attention.</p>
         </div>
         <span className={issues ? "text-xs text-yellow-300" : "text-xs text-emerald-300"}>{issues ? `${issues} item needs attention` : "Server looks OK"}</span>
       </div>
@@ -49,6 +56,99 @@ function HealthChecklist({ stats }: { stats: SystemStats }) {
             </div>
             <p className="text-[11px] leading-relaxed text-gray-500">{check.help}</p>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ControlCenterSummary({ stats }: { stats: SystemStats }) {
+  const checks = buildHealthChecks(stats);
+  const issues = checks.filter((check) => !check.ok);
+  const label = issues.length === 0 ? "Healthy" : issues.length === 1 ? "Needs attention" : "Action recommended";
+  const accent = issues.length === 0 ? "from-emerald-500/20 to-brand-500/10 border-emerald-500/25" : "from-yellow-500/20 to-orange-500/10 border-yellow-500/25";
+
+  return (
+    <div className={`rounded-2xl border bg-gradient-to-br ${accent} p-5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-4">
+          <div className="rounded-2xl border border-white/10 bg-white/10 p-3">
+            <ShieldCheck className={issues.length ? "h-6 w-6 text-yellow-300" : "h-6 w-6 text-emerald-300"} />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-gray-400">Server Control Center</p>
+            <h3 className="mt-1 text-2xl font-semibold text-white">{label}</h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-400">
+              {issues.length ? "Review the alerts below, then run only the guided action you need." : "No urgent resource issue detected. Keep monitoring apps, services, and backups."}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[320px]">
+          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">CPU</p><p className="text-lg font-semibold text-white">{stats.cpu.usagePercent.toFixed(0)}%</p></div>
+          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">RAM</p><p className="text-lg font-semibold text-white">{stats.memory.usagePercent.toFixed(0)}%</p></div>
+          <div className="rounded-xl border border-gray-700/60 bg-gray-950/40 p-3"><p className="text-[10px] uppercase text-gray-500">Disk</p><p className="text-lg font-semibold text-white">{stats.disk.usagePercent.toFixed(0)}%</p></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PerServerAlerts({ stats, onOpenActions }: { stats: SystemStats; onOpenActions?: () => void }) {
+  const issues = buildHealthChecks(stats).filter((check) => !check.ok);
+
+  return (
+    <div className="rounded-xl border border-gray-700/50 bg-gray-900/70 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <AlertCircle className={issues.length ? "h-4 w-4 text-yellow-300" : "h-4 w-4 text-emerald-300"} />
+          <h3 className="text-sm font-semibold text-white">Alerts for this server</h3>
+        </div>
+        <span className="text-xs text-gray-500">{issues.length ? `${issues.length} active` : "Clear"}</span>
+      </div>
+      {issues.length ? (
+        <div className="grid gap-2 md:grid-cols-2">
+          {issues.map((issue) => (
+            <div key={issue.label} className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-yellow-100">{issue.label}</p>
+                <span className="text-xs text-yellow-300">{issue.value}</span>
+              </div>
+              <p className="mt-1 text-xs text-yellow-100/70">{issue.help}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400">No CPU, memory, disk, or uptime alert for this server right now.</p>
+      )}
+      {issues.length > 0 && onOpenActions && (
+        <Button className="mt-4" variant="secondary" size="sm" onClick={onOpenActions}>
+          <Wrench className="mr-1.5 h-4 w-4" /> Open guided actions
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function GuidedNextSteps({ stats, onOpenActions, onOpenLogs }: { stats: SystemStats; onOpenActions?: () => void; onOpenLogs?: () => void }) {
+  const steps = [
+    stats.disk.usagePercent >= 75 ? { title: "Disk is high", body: "Start with Disk Usage, then use Safe Cleanup only after checking backups.", action: onOpenActions } : null,
+    stats.memory.usagePercent >= 80 ? { title: "Memory pressure", body: "Inspect Docker Stats before restarting apps or services.", action: onOpenActions } : null,
+    stats.cpu.usagePercent >= 75 ? { title: "CPU load", body: "Check Docker Stats and recent Activity Log to find the busy app.", action: onOpenLogs } : null,
+  ].filter(Boolean) as Array<{ title: string; body: string; action?: () => void }>;
+  const visible = steps.length ? steps : [{ title: "Routine check", body: "Review Applications, Services, and Activity Log before making changes.", action: onOpenLogs }];
+
+  return (
+    <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Activity className="h-4 w-4 text-brand-300" />
+        <h3 className="text-sm font-semibold text-white">Guided next steps</h3>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-3">
+        {visible.map((step) => (
+          <button key={step.title} onClick={step.action} className="rounded-lg border border-gray-700/60 bg-gray-950/40 p-3 text-left hover:border-brand-500/40">
+            <p className="text-sm font-medium text-white">{step.title}</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-400">{step.body}</p>
+          </button>
         ))}
       </div>
     </div>
@@ -634,9 +734,11 @@ function formatBytesShort(bytes: number): string {
 
 interface ServerOverviewProps {
   serverId: string;
+  onOpenActions?: () => void;
+  onOpenLogs?: () => void;
 }
 
-export function ServerOverview({ serverId }: ServerOverviewProps) {
+export function ServerOverview({ serverId, onOpenActions, onOpenLogs }: ServerOverviewProps) {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -761,6 +863,10 @@ export function ServerOverview({ serverId }: ServerOverviewProps) {
 
       {stats && !statsLoading && (
         <>
+          <ControlCenterSummary stats={stats} />
+          <PerServerAlerts stats={stats} onOpenActions={onOpenActions} />
+          <GuidedNextSteps stats={stats} onOpenActions={onOpenActions} onOpenLogs={onOpenLogs} />
+
           {/* Server Identity & Quick Info */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

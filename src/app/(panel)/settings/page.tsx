@@ -61,6 +61,13 @@ function redactWebhook(url: string) {
   }
 }
 
+function ruleLabel(rule: AlertRule) {
+  const name = rule.metric.replace(/_/g, " ").toUpperCase();
+  if (rule.metric === "offline") return "SERVER OFFLINE";
+  if (["cpu", "memory", "disk"].includes(rule.metric)) return `${name} ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%`;
+  return `${name} ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}`;
+}
+
 export default function SettingsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +138,24 @@ export default function SettingsPage() {
     for (const preset of ALERT_PRESETS) {
       await createRule(channelId, preset.metric, preset.threshold);
     }
+  }
+
+  async function updateChannel(id: string, enabled: boolean) {
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, type: "channel", enabled }),
+    });
+    fetchChannels();
+  }
+
+  async function updateRule(id: string, data: Partial<Pick<AlertRule, "enabled" | "threshold" | "cooldownMin">>) {
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, type: "alert", ...data }),
+    });
+    fetchChannels();
   }
 
   async function deleteItem(id: string, type: "channel" | "alert") {
@@ -253,6 +278,12 @@ export default function SettingsPage() {
                     <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
                       {ch.type}
                     </span>
+                    <button
+                      onClick={() => updateChannel(ch.id, !ch.enabled)}
+                      className={`text-xs rounded-full border px-2 py-0.5 ${ch.enabled ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-gray-700 bg-gray-800 text-gray-500"}`}
+                    >
+                      {ch.enabled ? "Enabled" : "Disabled"}
+                    </button>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button
@@ -273,20 +304,47 @@ export default function SettingsPage() {
                 {/* Alert Rules */}
                 <div className="space-y-1">
                   {ch.alertRules.map((rule) => (
-                    <div key={rule.id} className="flex items-center justify-between bg-gray-800/50 rounded px-3 py-1.5">
-                      <div className="flex items-center gap-2 text-xs">
-                        <AlertTriangle className="h-3.5 w-3.5 text-yellow-400" />
-                        <span className="text-gray-300">
-                          {rule.metric === "offline" ? "SERVER OFFLINE" : `${rule.metric.toUpperCase()} ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%`}
-                        </span>
-                        <span className="text-gray-600">cooldown {rule.cooldownMin}min</span>
+                    <div key={rule.id} className="grid gap-2 rounded bg-gray-800/50 px-3 py-2 md:grid-cols-[1fr_auto] md:items-center">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <AlertTriangle className={`h-3.5 w-3.5 ${rule.enabled ? "text-yellow-400" : "text-gray-600"}`} />
+                        <span className={rule.enabled ? "text-gray-300" : "text-gray-600"}>{ruleLabel(rule)}</span>
+                        <button
+                          onClick={() => updateRule(rule.id, { enabled: !rule.enabled })}
+                          className={`rounded-full border px-2 py-0.5 ${rule.enabled ? "border-emerald-500/30 text-emerald-300" : "border-gray-700 text-gray-500"}`}
+                        >
+                          {rule.enabled ? "Watching" : "Muted"}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => deleteItem(rule.id, "alert")}
-                        className="text-gray-600 hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {rule.metric !== "offline" && (
+                          <label className="flex items-center gap-1 text-gray-500">
+                            threshold
+                            <input
+                              type="number"
+                              value={rule.threshold}
+                              min={0}
+                              max={rule.metric === "cpu" || rule.metric === "memory" || rule.metric === "disk" ? 100 : 999}
+                              onChange={(e) => updateRule(rule.id, { threshold: Number(e.target.value) })}
+                              className="w-16 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-200"
+                            />
+                          </label>
+                        )}
+                        <label className="flex items-center gap-1 text-gray-500">
+                          cooldown
+                          <input
+                            type="number"
+                            value={rule.cooldownMin}
+                            min={1}
+                            max={1440}
+                            onChange={(e) => updateRule(rule.id, { cooldownMin: Number(e.target.value) })}
+                            className="w-16 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-200"
+                          />
+                          min
+                        </label>
+                        <button onClick={() => deleteItem(rule.id, "alert")} className="text-gray-600 hover:text-red-400 transition-colors" title="Delete rule">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                   ))}
 

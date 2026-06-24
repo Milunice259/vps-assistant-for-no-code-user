@@ -116,6 +116,40 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ── PATCH — Toggle channel/rule or update rule settings ──
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, type } = body as { id?: string; type?: "channel" | "alert" };
+    if (!id || !type) {
+      return NextResponse.json({ success: false, error: "id and type are required" }, { status: 400 });
+    }
+
+    if (type === "channel") {
+      const { enabled } = body as { enabled?: boolean };
+      const channel = await prisma.notificationChannel.update({
+        where: { id },
+        data: { ...(enabled !== undefined ? { enabled } : {}) },
+      });
+      return NextResponse.json({ success: true, data: { ...channel, webhookUrl: "[hidden]" } });
+    }
+
+    const { enabled, threshold, cooldownMin } = body as { enabled?: boolean; threshold?: number; cooldownMin?: number };
+    const rule = await prisma.alertRule.update({
+      where: { id },
+      data: {
+        ...(enabled !== undefined ? { enabled } : {}),
+        ...(threshold !== undefined ? { threshold } : {}),
+        ...(cooldownMin !== undefined ? { cooldownMin } : {}),
+      },
+    });
+    return NextResponse.json({ success: true, data: rule });
+  } catch (error) {
+    const msg = safeErrorMessage(error, "Failed to update");
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+  }
+}
+
 // ── DELETE — Remove a channel or alert rule ──
 export async function DELETE(request: NextRequest) {
   try {

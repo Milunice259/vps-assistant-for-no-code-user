@@ -282,8 +282,11 @@ export function RiskOverview() {
             <div className="flex items-start gap-2">
               <Bell className={`mt-0.5 h-4 w-4 ${notificationReady ? "text-emerald-300" : "text-amber-300"}`} />
               <div>
-                <p className="text-sm font-semibold text-white">Smart Notifications</p>
+                <p className="text-sm font-semibold text-white">Notification Watchdog</p>
                 <p className="mt-1 text-xs text-gray-400">
+                  Fleet score shows current health. Watchdog runs controllable rules and sends alerts when thresholds/cooldowns allow.
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
                   {notificationReady ? `External alerts armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "In-app check is ready. Add a channel/rule only if you want Discord, Slack, or Telegram alerts."}
                 </p>
               </div>

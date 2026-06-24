@@ -41,6 +41,7 @@ const CHANNEL_COLORS: Record<string, string> = {
 };
 
 const ALERT_PRESETS = [
+  { metric: "offline", threshold: 0, label: "Server offline" },
   { metric: "cpu", threshold: 85, label: "CPU high" },
   { metric: "memory", threshold: 85, label: "Memory high" },
   { metric: "disk", threshold: 80, label: "Disk filling up" },
@@ -62,6 +63,8 @@ export default function SettingsPage() {
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddRule, setShowAddRule] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [checkingAlerts, setCheckingAlerts] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
 
   // Add channel form
   const [newName, setNewName] = useState("");
@@ -144,6 +147,21 @@ export default function SettingsPage() {
     }
   }
 
+  async function runSmartCheck() {
+    setCheckingAlerts(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch("/api/notifications/check", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Check failed");
+      setCheckResult(`Checked ${json.data.checked} servers · ${json.data.offline} offline`);
+    } catch (error) {
+      setCheckResult(error instanceof Error ? error.message : "Check failed");
+    } finally {
+      setCheckingAlerts(false);
+    }
+  }
+
   if (loading) {
     return <div className="text-gray-400 text-sm py-4">Loading settings...</div>;
   }
@@ -168,6 +186,17 @@ export default function SettingsPage() {
 
         <div className="mb-4 rounded-xl border border-gray-700 bg-gray-800/50 p-4 text-sm text-gray-400">
           Keep this page for setup only. Delivery concepts and recommended alert rules are in <Link href="/docs#notifications" className="text-brand-400 hover:text-brand-300">Notification docs</Link>.
+        </div>
+
+        <div className="mb-4 rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Smart notification check</h3>
+              <p className="text-xs text-gray-400">Runs real health checks now and sends alerts only when rules match and cooldown allows.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={runSmartCheck} loading={checkingAlerts}>Run Check Now</Button>
+          </div>
+          {checkResult && <p className="mt-2 text-xs text-gray-400">{checkResult}</p>}
         </div>
 
         {/* Add Channel Form */}
@@ -244,7 +273,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-2 text-xs">
                         <AlertTriangle className="h-3.5 w-3.5 text-yellow-400" />
                         <span className="text-gray-300">
-                          {rule.metric.toUpperCase()} {rule.operator === "gt" ? ">" : "<"} {rule.threshold}%
+                          {rule.metric === "offline" ? "SERVER OFFLINE" : `${rule.metric.toUpperCase()} ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%`}
                         </span>
                         <span className="text-gray-600">cooldown {rule.cooldownMin}min</span>
                       </div>
@@ -272,6 +301,7 @@ export default function SettingsPage() {
                         value={ruleMetric} onChange={(e) => setRuleMetric(e.target.value)}
                         className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
                       >
+                        <option value="offline">Offline</option>
                         <option value="cpu">CPU</option>
                         <option value="memory">Memory</option>
                         <option value="disk">Disk</option>

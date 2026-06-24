@@ -84,7 +84,7 @@ export async function broadcastNotification(
  * Check all alert rules against current stats and fire notifications.
  */
 export async function evaluateAlertRules(
-  stats: { cpu: number; memory: number; disk: number },
+  stats: { cpu: number; memory: number; disk: number; offline?: number },
   serverName: string,
   serverId?: string
 ): Promise<void> {
@@ -118,10 +118,13 @@ export async function evaluateAlertRules(
       }
 
       // Fire alert
+      const isOffline = rule.metric === "offline";
       const payload: AlertPayload = {
-        title: `${rule.metric.toUpperCase()} Alert — ${serverName}`,
-        message: `${rule.metric.toUpperCase()} is ${value.toFixed(1)}% (threshold: ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%)`,
-        severity: value > 95 ? "critical" : "warning",
+        title: `${isOffline ? "OFFLINE" : rule.metric.toUpperCase()} Alert — ${serverName}`,
+        message: isOffline
+          ? "This server could not be reached during the scheduled health check. Check VPS power/network first, then SSH credentials and firewall rules."
+          : `${rule.metric.toUpperCase()} is ${value.toFixed(1)}% (threshold: ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%)`,
+        severity: isOffline || value > 95 ? "critical" : "warning",
         server: serverName,
         metric: rule.metric,
         value,

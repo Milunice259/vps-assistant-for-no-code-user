@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, CheckCircle2, HardDrive, HelpCircle, Loader2, MemoryStick, RefreshCw, ServerCrash, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bell, CheckCircle2, HardDrive, HelpCircle, Loader2, MemoryStick, RefreshCw, ServerCrash, Sparkles } from "lucide-react";
 import type { ApiResponse } from "@/types";
 
 interface RiskAlert {
@@ -36,6 +36,21 @@ interface RiskSummary {
   label: "Healthy" | "Needs Attention" | "Critical";
   servers: ServerRisk[];
   alerts: RiskAlert[];
+}
+
+interface NotificationChannel {
+  id: string;
+  enabled: boolean;
+  alertRules: Array<{ id: string; enabled: boolean; metric: string }>;
+}
+
+interface NotificationCheckSummary {
+  checked: number;
+  offline: number;
+  appDown: number;
+  serviceDown: number;
+  sslExpiring: number;
+  backupStale: number;
 }
 
 const severityClass = {
@@ -81,6 +96,9 @@ export function RiskOverview() {
   const [error, setError] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
   const [guideMessage, setGuideMessage] = useState<string | null>(null);
+  const [notificationChannels, setNotificationChannels] = useState<NotificationChannel[]>([]);
+  const [notificationCheck, setNotificationCheck] = useState<NotificationCheckSummary | null>(null);
+  const [checkingNotifications, setCheckingNotifications] = useState(false);
 
   async function fetchRisk() {
     setLoading(true);
@@ -94,6 +112,29 @@ export function RiskOverview() {
       setError(err instanceof Error ? err.message : "Failed to load risk summary");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchNotificationChannels() {
+    try {
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      const json: ApiResponse<NotificationChannel[]> = await res.json();
+      if (res.ok && json.success && json.data) setNotificationChannels(json.data);
+    } catch { /* notification setup status is optional */ }
+  }
+
+  async function runNotificationCheck() {
+    setCheckingNotifications(true);
+    try {
+      const res = await fetch("/api/notifications/check", { method: "POST" });
+      const json: ApiResponse<NotificationCheckSummary> = await res.json();
+      if (!res.ok || !json.success || !json.data) throw new Error(json.error || "Notification check failed");
+      setNotificationCheck(json.data);
+      await fetchRisk();
+    } catch (err) {
+      setGuideMessage(err instanceof Error ? err.message : "Notification check failed");
+    } finally {
+      setCheckingNotifications(false);
     }
   }
 
@@ -149,6 +190,7 @@ export function RiskOverview() {
 
   useEffect(() => {
     fetchRisk();
+    fetchNotificationChannels();
     const timer = setInterval(fetchRisk, 30_000);
     return () => clearInterval(timer);
   }, []);
@@ -189,6 +231,9 @@ export function RiskOverview() {
   const warningCount = risk.alerts.filter((alert) => alert.severity === "warning").length;
   const offlineCount = risk.servers.filter((server) => server.status !== "online").length;
   const averageScore = Math.round(risk.servers.reduce((sum, server) => sum + server.score, 0) / Math.max(risk.servers.length, 1));
+  const enabledChannels = notificationChannels.filter((channel) => channel.enabled).length;
+  const enabledRules = notificationChannels.flatMap((channel) => channel.alertRules).filter((rule) => rule.enabled).length;
+  const notificationReady = enabledChannels > 0 && enabledRules > 0;
 
   return (
     <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -230,6 +275,33 @@ export function RiskOverview() {
         <p className="mt-4 text-sm text-gray-400">
           Compact fleet summary. Detailed alerts stay grouped by server so this card does not grow forever.
         </p>
+
+        <div className={`mt-4 rounded-xl border p-3 ${notificationReady ? "border-emerald-500/20 bg-emerald-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <Bell className={`mt-0.5 h-4 w-4 ${notificationReady ? "text-emerald-300" : "text-amber-300"}`} />
+              <div>
+                <p className="text-sm font-semibold text-white">Smart Notifications</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {notificationReady ? `Armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "Not armed yet. Add a channel and at least one rule in Settings."}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={runNotificationCheck}
+              disabled={!notificationReady || checkingNotifications}
+              className="inline-flex items-center rounded-lg border border-gray-700 bg-gray-900 px-2.5 py-1.5 text-xs text-gray-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {checkingNotifications ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+              Check now
+            </button>
+          </div>
+          {notificationCheck && (
+            <p className="mt-2 text-xs text-gray-400">
+              Last check: {notificationCheck.checked} servers · {notificationCheck.offline} offline · {notificationCheck.appDown} app down · {notificationCheck.serviceDown} service down · {notificationCheck.sslExpiring} SSL · {notificationCheck.backupStale} backup
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">

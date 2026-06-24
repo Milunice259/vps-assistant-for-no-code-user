@@ -45,6 +45,10 @@ const ALERT_PRESETS = [
   { metric: "cpu", threshold: 85, label: "CPU high" },
   { metric: "memory", threshold: 85, label: "Memory high" },
   { metric: "disk", threshold: 80, label: "Disk filling up" },
+  { metric: "app_down", threshold: 0, label: "App/container down" },
+  { metric: "service_down", threshold: 0, label: "Important service down" },
+  { metric: "ssl_expiring", threshold: 0, label: "SSL expiring soon" },
+  { metric: "backup_stale", threshold: 0, label: "Backup stale" },
 ];
 
 function redactWebhook(url: string) {
@@ -154,7 +158,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/notifications/check", { method: "POST" });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Check failed");
-      setCheckResult(`Checked ${json.data.checked} servers · ${json.data.offline} offline`);
+      setCheckResult(`Checked ${json.data.checked} servers · ${json.data.offline} offline · ${json.data.appDown} app down · ${json.data.serviceDown} service down · ${json.data.sslExpiring} SSL expiring · ${json.data.backupStale} backup stale`);
     } catch (error) {
       setCheckResult(error instanceof Error ? error.message : "Check failed");
     } finally {
@@ -192,7 +196,7 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-semibold text-white">Smart notification check</h3>
-              <p className="text-xs text-gray-400">Runs real health checks now and sends alerts only when rules match and cooldown allows.</p>
+              <p className="text-xs text-gray-400">Runs real health checks now. Docker checks run every 15 minutes automatically when rules and channels exist.</p>
             </div>
             <Button variant="secondary" size="sm" onClick={runSmartCheck} loading={checkingAlerts}>Run Check Now</Button>
           </div>
@@ -305,6 +309,10 @@ export default function SettingsPage() {
                         <option value="cpu">CPU</option>
                         <option value="memory">Memory</option>
                         <option value="disk">Disk</option>
+                        <option value="app_down">App/container down</option>
+                        <option value="service_down">Important service down</option>
+                        <option value="ssl_expiring">SSL expiring soon</option>
+                        <option value="backup_stale">Backup stale</option>
                       </select>
                       <span className="text-xs text-gray-500">&gt;</span>
                       <input

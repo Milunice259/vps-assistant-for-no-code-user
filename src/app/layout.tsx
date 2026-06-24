@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "@/lib/notification-scheduler";
 
 export const metadata: Metadata = {
   title: "VPS Control App",

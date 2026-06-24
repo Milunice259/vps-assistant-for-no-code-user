@@ -84,7 +84,7 @@ export async function broadcastNotification(
  * Check all alert rules against current stats and fire notifications.
  */
 export async function evaluateAlertRules(
-  stats: { cpu: number; memory: number; disk: number; offline?: number },
+  stats: Record<string, number>,
   serverName: string,
   serverId?: string
 ): Promise<void> {
@@ -117,14 +117,13 @@ export async function evaluateAlertRules(
         if (elapsed < rule.cooldownMin) continue;
       }
 
-      // Fire alert
-      const isOffline = rule.metric === "offline";
+      const metricLabel = rule.metric.replace(/_/g, " ").toUpperCase();
+      const isCritical = rule.metric === "offline" || value > 95;
+      const message = formatAlertMessage(rule.metric, value, rule.threshold, rule.operator);
       const payload: AlertPayload = {
-        title: `${isOffline ? "OFFLINE" : rule.metric.toUpperCase()} Alert — ${serverName}`,
-        message: isOffline
-          ? "This server could not be reached during the scheduled health check. Check VPS power/network first, then SSH credentials and firewall rules."
-          : `${rule.metric.toUpperCase()} is ${value.toFixed(1)}% (threshold: ${rule.operator === "gt" ? ">" : "<"} ${rule.threshold}%)`,
-        severity: isOffline || value > 95 ? "critical" : "warning",
+        title: `${metricLabel} Alert — ${serverName}`,
+        message,
+        severity: isCritical ? "critical" : "warning",
         server: serverName,
         metric: rule.metric,
         value,
@@ -147,6 +146,29 @@ export async function evaluateAlertRules(
 /**
  * Format payload for different webhook types.
  */
+function formatAlertMessage(metric: string, value: number, threshold: number, operator: string) {
+  const thresholdText = `${operator === "gt" ? ">" : "<"} ${threshold}`;
+  switch (metric) {
+    case "offline":
+      return "This server could not be reached during the scheduled health check. Check VPS power/network first, then SSH credentials and firewall rules.";
+    case "app_down":
+      return `${value} app/container is not running (threshold: ${thresholdText}).`;
+    case "service_down":
+      return `${value} important system service is not active (threshold: ${thresholdText}).`;
+    case "ssl_expiring":
+      return `${value} tracked domain has an SSL certificate expiring soon (threshold: ${thresholdText}).`;
+    case "backup_stale":
+      return "No recent database backup was found. Create a fresh backup from the Backup page.";
+    default:
+      return `${metric.toUpperCase()} is ${value.toFixed(1)}% (threshold: ${thresholdText}%)`;
+  }
+}
+
+function formatValue(metric: string | undefined, value: number) {
+  if (!metric || ["cpu", "memory", "disk"].includes(metric)) return `${value.toFixed(1)}%`;
+  return String(value);
+}
+
 function formatPayload(type: NotificationType, payload: AlertPayload): unknown {
   const emoji = SEVERITY_EMOJI[payload.severity];
 
@@ -161,7 +183,7 @@ function formatPayload(type: NotificationType, payload: AlertPayload): unknown {
             fields: [
               ...(payload.server ? [{ name: "Server", value: payload.server, inline: true }] : []),
               ...(payload.metric ? [{ name: "Metric", value: payload.metric.toUpperCase(), inline: true }] : []),
-              ...(payload.value !== undefined ? [{ name: "Value", value: `${payload.value.toFixed(1)}%`, inline: true }] : []),
+              ...(payload.value !== undefined ? [{ name: "Value", value: formatValue(payload.metric, payload.value), inline: true }] : []),
             ],
             timestamp: new Date().toISOString(),
           },
@@ -185,7 +207,7 @@ function formatPayload(type: NotificationType, payload: AlertPayload): unknown {
                   type: "context",
                   elements: [
                     { type: "mrkdwn", text: `*Server:* ${payload.server}` },
-                    ...(payload.metric ? [{ type: "mrkdwn", text: `*Metric:* ${payload.metric.toUpperCase()} = ${payload.value?.toFixed(1)}%` }] : []),
+                    ...(payload.metric ? [{ type: "mrkdwn", text: `*Metric:* ${payload.metric.toUpperCase()} = ${payload.value === undefined ? "n/a" : formatValue(payload.metric, payload.value)}` }] : []),
                   ],
                 },
               ]

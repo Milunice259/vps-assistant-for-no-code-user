@@ -7,13 +7,19 @@ import type { ApiResponse } from "@/types";
 export const dynamic = "force-dynamic";
 
 type DeployMode = "git" | "image" | "compose";
-type Requirement = { name: string; command: string; ok: boolean; detail: string };
+type Requirement = { name: string; command: string; ok: boolean; detail: string; installCommand?: string; packageId?: "git" | "docker-compose-plugin" };
 type RequirementResult = { target: "local" | "remote"; requirements: Requirement[] };
 
 const requirements: Record<DeployMode, Array<Omit<Requirement, "ok" | "detail">>> = {
-  git: [{ name: "Git", command: "git --version" }, { name: "Docker", command: "docker info" }],
-  image: [{ name: "Docker", command: "docker info" }],
-  compose: [{ name: "Docker", command: "docker info" }, { name: "Docker Compose", command: "docker compose version" }],
+  git: [
+    { name: "Git", command: "git --version", installCommand: "sudo apt-get update && sudo apt-get install -y git", packageId: "git" },
+    { name: "Docker", command: "docker info", installCommand: "Open Docs for Docker setup wizard." },
+  ],
+  image: [{ name: "Docker", command: "docker info", installCommand: "Open Docs for Docker setup wizard." }],
+  compose: [
+    { name: "Docker", command: "docker info", installCommand: "Open Docs for Docker setup wizard." },
+    { name: "Docker Compose", command: "docker compose version", installCommand: "sudo apt-get update && sudo apt-get install -y docker-compose-plugin", packageId: "docker-compose-plugin" },
+  ],
 };
 
 function runLocal(command: string) {

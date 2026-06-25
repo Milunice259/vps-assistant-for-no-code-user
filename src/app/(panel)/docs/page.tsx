@@ -111,6 +111,18 @@ const sections = [
     ],
   },
   {
+    id: "deploy-requirements",
+    title: "Deploy Requirements",
+    icon: GitBranch,
+    summary: "Fix missing server packages before filling long deploy forms.",
+    bullets: [
+      "Git deploy needs Git and Docker. Docker Image deploy needs Docker. Compose deploy needs Docker and Docker Compose.",
+      "Use Install for simple packages such as Git or Docker Compose plugin when the app offers it.",
+      "Use Copy command or Open terminal for manual install when you prefer to review the command first.",
+      "Docker engine setup is handled manually for now because it can change package sources, services, and permissions.",
+    ],
+  },
+  {
     id: "network",
     title: "Network Map",
     icon: Network,
@@ -165,9 +177,10 @@ const walkthroughs = [
     title: "Deploy an app safely",
     steps: [
       "Open Deploy and choose Git, Docker Image, or Docker Compose.",
+      "Read Server requirements at the top. Install or manually fix missing packages before filling the form.",
       "Pick the target server. Use local server if you are unsure.",
       "Enter repository/image/compose details and the public domain if needed.",
-      "Check port conflicts before starting. Change the port if another app already uses it.",
+      "Run pre-flight at the bottom of the Git form as the final safety check before deploying.",
       "Start deploy, watch the deployment log, and fix the first error if it fails.",
       "After success, open Apps and check health, logs, domain, and resource usage.",
     ],

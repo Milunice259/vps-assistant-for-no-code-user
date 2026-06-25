@@ -154,6 +154,11 @@ async function deployImage(
 
   const safeImage = image;
   let allLogs = `Deploying Docker image: ${safeImage}\n`;
+  const preflight = await dockerPreflight(ssh, extractHostPorts(ports || []));
+  if (!preflight.ready) {
+    return NextResponse.json({ success: false, error: preflight.logs }, { status: 400 });
+  }
+  allLogs += preflight.logs;
 
   // Create deployment log
   const logRecord = await prisma.deploymentLog.create({
@@ -230,6 +235,7 @@ async function deployImage(
     });
 
     allLogs += `Container started: ${containerId}\n`;
+    allLogs += await imageHealthCheck(ssh, containerId, extractHostPorts(ports || []));
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
@@ -305,6 +311,12 @@ async function deployCompose(
 
   const safePath = projectPath;
   let allLogs = `Deploying Docker Compose to ${safePath}\n`;
+  const composePorts = extractComposePorts(parsed);
+  const preflight = await dockerPreflight(ssh, composePorts);
+  if (!preflight.ready) {
+    return NextResponse.json({ success: false, error: preflight.logs }, { status: 400 });
+  }
+  allLogs += preflight.logs;
 
   const logRecord = await prisma.deploymentLog.create({
     data: {
@@ -346,6 +358,7 @@ async function deployCompose(
       15_000
     );
     allLogs += "Services:\n" + psOutput + "\n";
+    allLogs += await composeHealthCheck(ssh, safePath, nameFlag, composePorts);
 
     const updated = await prisma.deploymentLog.update({
       where: { id: logRecord.id },
@@ -375,6 +388,71 @@ async function deployCompose(
 }
 
 // ─── Helper ───
+
+function extractHostPorts(ports: string[]): number[] {
+  return ports
+    .map((item) => Number(String(item).split(":")[0]))
+    .filter((port) => Number.isInteger(port) && port > 0 && port < 65536);
+}
+
+function extractComposePorts(parsed: unknown): number[] {
+  if (!parsed || typeof parsed !== "object" || !("services" in parsed)) return [];
+  const services = (parsed as { services?: Record<string, { ports?: unknown[] }> }).services || {};
+  const ports: string[] = [];
+  for (const service of Object.values(services)) {
+    for (const port of service.ports || []) {
+      if (typeof port === "string") ports.push(port);
+      if (typeof port === "number") ports.push(String(port));
+    }
+  }
+  return extractHostPorts(ports);
+}
+
+async function dockerPreflight(ssh: Parameters<typeof executeCommand>[0], ports: number[]) {
+  let logs = "Pre-flight:\n";
+  const docker = await executeCommand(ssh, "docker info >/dev/null 2>&1 && echo ok || echo missing", 10_000);
+  if (docker !== "ok") return { ready: false, logs: "Docker is missing or not running on the target server." };
+  logs += "- Docker is running.\n";
+
+  const disk = await executeCommand(ssh, "df -P / | tail -1 | awk '{print $5}' | tr -d '%'", 10_000);
+  const diskUsed = Number(disk);
+  if (!Number.isNaN(diskUsed) && diskUsed >= 90) return { ready: false, logs: `Disk is ${diskUsed}% used. Free space before deploying.` };
+  logs += `- Disk usage: ${Number.isNaN(diskUsed) ? "unknown" : `${diskUsed}%`}.\n`;
+
+  const mem = await executeCommand(ssh, "awk '/MemTotal/ {t=$2} /MemAvailable/ {a=$2} END {if (t > 0) printf \"%.0f\", a/t*100; else print 0}' /proc/meminfo", 10_000);
+  const memAvail = Number(mem);
+  if (!Number.isNaN(memAvail) && memAvail < 8) return { ready: false, logs: `Only ${memAvail}% memory available. Free memory before deploying.` };
+  logs += `- Memory available: ${Number.isNaN(memAvail) ? "unknown" : `${memAvail}%`}.\n`;
+
+  for (const port of ports) {
+    const inUse = await executeCommand(ssh, `ss -ltnH '( sport = :${port} )' | head -1`, 10_000);
+    if (inUse.trim()) return { ready: false, logs: `Port ${port} is already in use on the target server.` };
+  }
+  if (ports.length) logs += `- Ports available: ${ports.join(", ")}.\n`;
+  return { ready: true, logs };
+}
+
+async function imageHealthCheck(ssh: Parameters<typeof executeCommand>[0], containerId: string, ports: number[]) {
+  let logs = "Health check:\n";
+  const state = await executeCommand(ssh, `docker inspect -f '{{.State.Status}} {{.RestartCount}}' ${containerId}`, 10_000);
+  logs += `- Container state: ${state}.\n`;
+  for (const port of ports) {
+    const listening = await executeCommand(ssh, `ss -ltnH '( sport = :${port} )' | head -1`, 10_000);
+    logs += listening.trim() ? `- Port ${port} is listening.\n` : `- WARNING: port ${port} is not listening yet.\n`;
+  }
+  return logs;
+}
+
+async function composeHealthCheck(ssh: Parameters<typeof executeCommand>[0], safePath: string, nameFlag: string, ports: number[]) {
+  let logs = "Health check:\n";
+  const running = await executeCommand(ssh, `cd "${safePath}" && docker compose ${nameFlag} ps --services --filter status=running 2>/dev/null | wc -l`, 10_000);
+  logs += `- Running services: ${running.trim()}.\n`;
+  for (const port of ports) {
+    const listening = await executeCommand(ssh, `ss -ltnH '( sport = :${port} )' | head -1`, 10_000);
+    logs += listening.trim() ? `- Port ${port} is listening.\n` : `- WARNING: port ${port} is not listening yet.\n`;
+  }
+  return logs;
+}
 
 function toDeploymentInfo(log: {
   id: string;

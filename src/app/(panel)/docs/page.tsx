@@ -105,8 +105,8 @@ const sections = [
     summary: "Deploy Git repos, Docker images, or compose projects with safer defaults.",
     bullets: [
       "Use Git deploy for source repositories, Docker image deploy for published images, and Compose for multi-service apps.",
-      "Check ports and domains before deploy. Port conflicts are a common failure.",
-      "Set memory limits for unknown apps to prevent one bad app from exhausting the VPS.",
+      "Image and Compose deploy run pre-flight checks for Docker, disk, memory, and port conflicts before changing the server.",
+      "After deploy, read the health check lines for container state, running services, and listening ports.",
       "If deploy fails, read the deploy log and fix the first real error before retrying.",
     ],
   },

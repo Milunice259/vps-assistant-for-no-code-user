@@ -102,6 +102,9 @@ export function RiskOverview() {
   const [checkingNotifications, setCheckingNotifications] = useState(false);
   const [fleetSearch, setFleetSearch] = useState("");
   const [fleetFilter, setFleetFilter] = useState<"all" | "critical" | "warning" | "healthy" | "offline">("all");
+  const [fleetGroupBy, setFleetGroupBy] = useState<"location" | "status" | "severity">("location");
+  const [fleetPageSize, setFleetPageSize] = useState(6);
+  const [fleetPage, setFleetPage] = useState(1);
 
   async function fetchRisk() {
     setLoading(true);
@@ -198,8 +201,12 @@ export function RiskOverview() {
     return () => clearInterval(timer);
   }, []);
 
-  const serverGroups = useMemo(() => {
-    if (!risk) return { local: [] as ServerRisk[], remote: [] as ServerRisk[] };
+  useEffect(() => {
+    setFleetPage(1);
+  }, [fleetFilter, fleetGroupBy, fleetPageSize, fleetSearch]);
+
+  const fleetView = useMemo(() => {
+    if (!risk) return { groups: [] as Array<{ title: string; helper: string; servers: ServerRisk[] }>, total: 0, pageCount: 1 };
     const query = fleetSearch.trim().toLowerCase();
     const filtered = risk.servers.filter((server) => {
       const matchesSearch = !query || `${server.serverName} ${server.host} ${server.serverId}`.toLowerCase().includes(query);
@@ -215,11 +222,32 @@ export function RiskOverview() {
       if (b.alerts.length !== a.alerts.length) return b.alerts.length - a.alerts.length;
       return a.score - b.score;
     });
-    return {
-      local: sorted.filter((server) => server.serverId === "local"),
-      remote: sorted.filter((server) => server.serverId !== "local"),
-    };
-  }, [fleetFilter, fleetSearch, risk]);
+    const pageCount = Math.max(1, Math.ceil(sorted.length / fleetPageSize));
+    const page = Math.min(fleetPage, pageCount);
+    const pageItems = sorted.slice((page - 1) * fleetPageSize, page * fleetPageSize);
+
+    const makeGroup = (title: string, helper: string, servers: ServerRisk[]) => ({ title, helper, servers });
+    let groups: Array<{ title: string; helper: string; servers: ServerRisk[] }>;
+    if (fleetGroupBy === "status") {
+      groups = [
+        makeGroup("Online", "Reachable servers", pageItems.filter((server) => server.status === "online")),
+        makeGroup("Offline or unknown", "Needs connectivity check", pageItems.filter((server) => server.status !== "online")),
+      ];
+    } else if (fleetGroupBy === "severity") {
+      groups = [
+        makeGroup("Critical", "Highest priority", pageItems.filter((server) => server.alerts.some((alert) => alert.severity === "critical"))),
+        makeGroup("Warning", "Needs attention", pageItems.filter((server) => server.alerts.some((alert) => alert.severity === "warning") && !server.alerts.some((alert) => alert.severity === "critical"))),
+        makeGroup("Healthy", "No current alerts", pageItems.filter((server) => server.alerts.length === 0)),
+      ];
+    } else {
+      groups = [
+        makeGroup("Local server", "This machine running the panel", pageItems.filter((server) => server.serverId === "local")),
+        makeGroup("Remote servers", "Other VPS machines connected by SSH", pageItems.filter((server) => server.serverId !== "local")),
+      ];
+    }
+
+    return { groups: groups.filter((group) => group.servers.length > 0), total: sorted.length, pageCount };
+  }, [fleetFilter, fleetGroupBy, fleetPage, fleetPageSize, fleetSearch, risk]);
 
   if (loading && !risk) {
     return (
@@ -248,7 +276,7 @@ export function RiskOverview() {
   const enabledChannels = notificationChannels.filter((channel) => channel.enabled).length;
   const enabledRules = notificationChannels.flatMap((channel) => channel.alertRules).filter((rule) => rule.enabled).length;
   const notificationReady = enabledChannels > 0 && enabledRules > 0;
-  const visibleServers = serverGroups.local.length + serverGroups.remote.length;
+  const visibleServers = fleetView.total;
   const hasActiveFleetFilter = fleetFilter !== "all" || Boolean(fleetSearch.trim());
 
   return (
@@ -375,8 +403,28 @@ export function RiskOverview() {
           </div>
         </div>
 
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <label className="text-xs text-gray-500">
+            Group by
+            <select value={fleetGroupBy} onChange={(event) => setFleetGroupBy(event.target.value as typeof fleetGroupBy)} className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white">
+              <option value="location">Local / Remote</option>
+              <option value="status">Online / Offline</option>
+              <option value="severity">Severity</option>
+            </select>
+          </label>
+          <label className="text-xs text-gray-500">
+            Servers per page
+            <select value={fleetPageSize} onChange={(event) => setFleetPageSize(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white">
+              <option value={6}>6</option>
+              <option value={12}>12</option>
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+            </select>
+          </label>
+        </div>
+
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-          <span>Showing {visibleServers} of {risk.servers.length} servers</span>
+          <span>Showing {visibleServers === 0 ? 0 : (fleetPage - 1) * fleetPageSize + 1}-{Math.min(fleetPage * fleetPageSize, visibleServers)} of {visibleServers} matching servers · {risk.servers.length} total</span>
           {hasActiveFleetFilter && (
             <button
               onClick={() => { setFleetSearch(""); setFleetFilter("all"); }}
@@ -399,10 +447,7 @@ export function RiskOverview() {
               No server matches this search/filter.
             </div>
           ) : (
-            [
-              { title: "Local server", helper: "This machine running the panel", servers: serverGroups.local },
-              { title: "Remote servers", helper: "Other VPS machines connected by SSH", servers: serverGroups.remote },
-            ].map((group) => (
+            fleetView.groups.map((group) => (
               <div key={group.title} className="rounded-2xl border border-gray-700/70 bg-gray-950/30 p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
@@ -496,6 +541,28 @@ export function RiskOverview() {
               </div>
             )))}
           </div>
+
+        {fleetView.pageCount > 1 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-gray-900/70 p-3 text-xs text-gray-400">
+            <span>Page {fleetPage} of {fleetView.pageCount}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFleetPage((page) => Math.max(1, page - 1))}
+                disabled={fleetPage <= 1}
+                className="rounded-lg border border-gray-700 px-3 py-1.5 text-gray-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setFleetPage((page) => Math.min(fleetView.pageCount, page + 1))}
+                disabled={fleetPage >= fleetView.pageCount}
+                className="rounded-lg border border-gray-700 px-3 py-1.5 text-gray-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {guideMessage && (
           <div className="mt-4 rounded-xl border border-gray-700 bg-gray-950 p-4">

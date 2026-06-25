@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Rocket, Monitor, Server, HelpCircle, FolderSearch, CheckCircle } from "lucide-react";
+import { Rocket, Monitor, Server, HelpCircle, FolderSearch, CheckCircle, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
@@ -12,6 +12,12 @@ interface DeployResult {
   id: string;
   detectedStack: string;
   status: string;
+}
+
+interface PreflightResult {
+  ready: boolean;
+  checks: Array<{ id: string; label: string; status: "pass" | "warn" | "fail"; detail: string }>;
+  nextSteps: string[];
 }
 
 /* ── Tooltip wrapper ── */
@@ -39,6 +45,8 @@ export function DeployForm() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DeployResult | null>(null);
   const [showBrowser, setShowBrowser] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
 
   // Fetch servers for remote deployment selector
   useEffect(() => {
@@ -49,6 +57,33 @@ export function DeployForm() {
       })
       .catch(() => {});
   }, []);
+
+  const runPreflight = async () => {
+    setChecking(true);
+    setError(null);
+    setPreflight(null);
+
+    try {
+      const res = await fetch("/api/deploy/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl,
+          branch: branch || "main",
+          domain: domain || undefined,
+          customPath: customPath || undefined,
+          serverId: deployTarget === "remote" ? selectedServerId : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Pre-flight check failed");
+      setPreflight(json.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Pre-flight check failed");
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -94,8 +129,8 @@ export function DeployForm() {
           {[
             { label: "1. Source", done: Boolean(repoUrl), text: "Paste GitHub URL" },
             { label: "2. Destination", done: deployTarget === "local" || Boolean(selectedServerId), text: "Choose server" },
-            { label: "3. Access", done: true, text: "Domain/env optional" },
-            { label: "4. Review", done: Boolean(repoUrl) && (deployTarget === "local" || Boolean(selectedServerId)), text: "Press Deploy" },
+            { label: "3. Pre-flight", done: Boolean(preflight?.ready), text: "Check safety first" },
+            { label: "4. Deploy", done: Boolean(result), text: "Watch logs and health" },
           ].map((step) => (
             <div key={step.label} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
               <div className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-200">
@@ -106,6 +141,46 @@ export function DeployForm() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" /> Safe Deployment Assistant
+            </h3>
+            <p className="mt-1 text-xs text-gray-400">Run pre-flight before deploy: repository, target, disk, memory, Git, Docker, and rollback guidance.</p>
+          </div>
+          <Button type="button" variant="secondary" loading={checking} onClick={runPreflight}>
+            Run pre-flight
+          </Button>
+        </div>
+
+        {preflight && (
+          <div className="mt-4 space-y-3">
+            <div className={`rounded-lg border px-3 py-2 text-sm ${preflight.ready ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
+              {preflight.ready ? "Ready to deploy. Review warnings if any." : "Not safe to deploy yet. Fix failed checks first."}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {preflight.checks.map((item) => (
+                <div key={item.id} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+                    {item.status === "pass" ? <CheckCircle className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className={`h-4 w-4 ${item.status === "warn" ? "text-amber-400" : "text-red-400"}`} />}
+                    {item.label}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 text-xs text-gray-400">
+              <p className="mb-2 font-medium text-gray-300">After deploy</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {preflight.nextSteps.map((step) => <li key={step}>{step}</li>)}
+                <li>If health check fails, use Deployment History to inspect logs and rollback when available.</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">

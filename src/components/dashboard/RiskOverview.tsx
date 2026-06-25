@@ -248,6 +248,8 @@ export function RiskOverview() {
   const enabledChannels = notificationChannels.filter((channel) => channel.enabled).length;
   const enabledRules = notificationChannels.flatMap((channel) => channel.alertRules).filter((rule) => rule.enabled).length;
   const notificationReady = enabledChannels > 0 && enabledRules > 0;
+  const visibleServers = serverGroups.local.length + serverGroups.remote.length;
+  const hasActiveFleetFilter = fleetFilter !== "all" || Boolean(fleetSearch.trim());
 
   return (
     <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -373,13 +375,31 @@ export function RiskOverview() {
           </div>
         </div>
 
-        {healthy && fleetFilter === "all" && !fleetSearch ? (
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            No urgent issue detected across connected servers. Keep backups enabled and review public ports after each deployment.
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>Showing {visibleServers} of {risk.servers.length} servers</span>
+          {hasActiveFleetFilter && (
+            <button
+              onClick={() => { setFleetSearch(""); setFleetFilter("all"); }}
+              className="rounded-lg border border-gray-700 px-2 py-1 text-gray-300 hover:text-white"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {healthy && !hasActiveFleetFilter && (
+          <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+            No urgent issue detected. Fleet list still stays visible below so large-fleet layout can be reviewed.
           </div>
-        ) : (
-          <div className="max-h-[430px] space-y-4 overflow-y-auto pr-1">
-            {[
+        )}
+
+        <div className="max-h-[520px] space-y-4 overflow-y-auto pr-1">
+          {visibleServers === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-700 p-6 text-center text-sm text-gray-500">
+              No server matches this search/filter.
+            </div>
+          ) : (
+            [
               { title: "Local server", helper: "This machine running the panel", servers: serverGroups.local },
               { title: "Remote servers", helper: "Other VPS machines connected by SSH", servers: serverGroups.remote },
             ].map((group) => (
@@ -474,9 +494,8 @@ export function RiskOverview() {
                   </div>
                 )}
               </div>
-            ))}
+            )))}
           </div>
-        )}
 
         {guideMessage && (
           <div className="mt-4 rounded-xl border border-gray-700 bg-gray-950 p-4">

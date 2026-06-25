@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { FileBrowser } from "@/components/ui/FileBrowser";
+import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
 import type { ServerInfo } from "@/types";
 
 interface DeployResult {
@@ -143,45 +144,7 @@ export function DeployForm() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" /> Safe Deployment Assistant
-            </h3>
-            <p className="mt-1 text-xs text-gray-400">Run pre-flight before deploy: repository, target, disk, memory, Git, Docker, and rollback guidance.</p>
-          </div>
-          <Button type="button" variant="secondary" loading={checking} onClick={runPreflight}>
-            Run pre-flight
-          </Button>
-        </div>
-
-        {preflight && (
-          <div className="mt-4 space-y-3">
-            <div className={`rounded-lg border px-3 py-2 text-sm ${preflight.ready ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
-              {preflight.ready ? "Ready to deploy. Review warnings if any." : "Not safe to deploy yet. Fix failed checks first."}
-            </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              {preflight.checks.map((item) => (
-                <div key={item.id} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
-                    {item.status === "pass" ? <CheckCircle className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className={`h-4 w-4 ${item.status === "warn" ? "text-amber-400" : "text-red-400"}`} />}
-                    {item.label}
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</p>
-                </div>
-              ))}
-            </div>
-            <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 text-xs text-gray-400">
-              <p className="mb-2 font-medium text-gray-300">After deploy</p>
-              <ul className="list-disc space-y-1 pl-4">
-                {preflight.nextSteps.map((step) => <li key={step}>{step}</li>)}
-                <li>If health check fails, use Deployment History to inspect logs and rollback when available.</li>
-              </ul>
-            </div>
-          </div>
-        )}
-      </div>
+      <DeployRequirementBanner mode="git" serverId={deployTarget === "remote" ? selectedServerId : undefined} />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -342,6 +305,46 @@ export function DeployForm() {
           />
           <p className="text-xs text-gray-500">One per line: KEY=value. Values are stored encrypted and hidden from logs. If you are unsure, leave this empty and add it later.</p>
         </div>
+
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" /> Safe Deployment Assistant
+            </h3>
+            <p className="mt-1 text-xs text-gray-400">Final pre-flight after the form is complete: repository, target, disk, memory, Git, Docker, and rollback guidance.</p>
+          </div>
+          <Button type="button" variant="secondary" loading={checking} onClick={runPreflight}>
+            Run pre-flight
+          </Button>
+        </div>
+
+        {preflight && (
+          <div className="mt-4 space-y-3">
+            <div className={`rounded-lg border px-3 py-2 text-sm ${preflight.ready ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200"}`}>
+              {preflight.ready ? "Ready to deploy. Review warnings if any." : "Not safe to deploy yet. Fix failed checks first."}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {preflight.checks.map((item) => (
+                <div key={item.id} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+                    {item.status === "pass" ? <CheckCircle className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className={`h-4 w-4 ${item.status === "warn" ? "text-amber-400" : "text-red-400"}`} />}
+                    {item.label}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 text-xs text-gray-400">
+              <p className="mb-2 font-medium text-gray-300">After deploy</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {preflight.nextSteps.map((step) => <li key={step}>{step}</li>)}
+                <li>If health check fails, use Deployment History to inspect logs and rollback when available.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
 
         <div className="flex justify-end">
           <Button type="submit" loading={loading}>

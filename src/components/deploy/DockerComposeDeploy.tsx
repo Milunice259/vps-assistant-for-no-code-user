@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Play, HelpCircle, FolderSearch, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { FileBrowser } from "@/components/ui/FileBrowser";
+import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
 import type { ApiResponse, ServerInfo } from "@/types";
 
 /* ── Tooltip wrapper ── */
@@ -80,6 +81,8 @@ export function DockerComposeDeploy() {
 
   return (
     <div className="max-w-3xl space-y-4">
+      <DeployRequirementBanner mode="compose" serverId={deployTarget === "remote" ? serverId : undefined} />
+
       {result && (
         <div
           className={`text-sm px-3 py-2 rounded-lg border ${

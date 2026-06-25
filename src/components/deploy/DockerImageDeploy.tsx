@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Play, HelpCircle, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
 import type { ApiResponse, ServerInfo } from "@/types";
 
 /* ── Tooltip wrapper ── */
@@ -89,6 +90,8 @@ export function DockerImageDeploy() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      <DeployRequirementBanner mode="image" serverId={deployTarget === "remote" ? serverId : undefined} />
+
       {result && (
         <div
           className={`text-sm px-3 py-2 rounded-lg border ${

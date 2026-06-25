@@ -507,7 +507,7 @@ export function RiskOverview() {
                             <div className="mt-3 space-y-2">
                               {server.alerts.slice(0, 2).map((alert, index) => {
                                 const key = `${server.serverId}-${alert.id}`;
-                                const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Fix safely" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Diagnose" : "View details";
+                                const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Local safe repair" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Local diagnose" : "View server";
                                 return (
                                   <div key={`${alert.id}-fix-${index}`} className="rounded-lg border border-gray-700/70 bg-gray-950/60 p-2">
                                     <p className="truncate text-xs font-medium text-gray-200">{alert.title}</p>

@@ -2,14 +2,10 @@
 
 import { useSSE } from "@/hooks/useSSE";
 import type { SystemStats } from "@/types";
-import { CpuGauge } from "@/components/dashboard/CpuGauge";
-import { MemoryBar } from "@/components/dashboard/MemoryBar";
-import { DiskUsage } from "@/components/dashboard/DiskUsage";
 import { QuickOverview } from "@/components/dashboard/QuickOverview";
 import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
 import { RiskOverview } from "@/components/dashboard/RiskOverview";
-import { SafeRepairCenter } from "@/components/dashboard/SafeRepairCenter";
-import { Activity, Clock, Cpu, HardDrive, MemoryStick, Server, Wifi } from "lucide-react";
+import { Activity, Clock, Server, Wifi } from "lucide-react";
 
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
@@ -89,39 +85,7 @@ export default function DashboardPage() {
 
       <RiskOverview />
 
-      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-wider text-gray-500">Local Server Health</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Live resource graphics</h2>
-            </div>
-            <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-xs text-gray-400">SSE live</span>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="rounded-2xl border border-gray-700 bg-gray-900/70 p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-gray-400"><Cpu className="h-4 w-4" /> CPU</h3>
-              <div className="flex justify-center"><CpuGauge percentage={stats.cpu.usagePercent} /></div>
-              <p className="mt-3 truncate text-center text-xs text-gray-500" title={stats.cpu.model}>{stats.cpu.cores} cores · {stats.cpu.model}</p>
-            </div>
-
-            <div className="rounded-2xl border border-gray-700 bg-gray-900/70 p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-gray-400"><MemoryStick className="h-4 w-4" /> Memory</h3>
-              <MemoryBar total={stats.memory.total} used={stats.memory.used} available={stats.memory.available} />
-            </div>
-
-            <div className="rounded-2xl border border-gray-700 bg-gray-900/70 p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-sm font-medium text-gray-400"><HardDrive className="h-4 w-4" /> Disk</h3>
-              <DiskUsage total={stats.disk.total} used={stats.disk.used} available={stats.disk.available} />
-            </div>
-          </div>
-        </div>
-
-        <QuickOverview />
-      </section>
-
-      <SafeRepairCenter />
+      <QuickOverview />
     </div>
   );
 }

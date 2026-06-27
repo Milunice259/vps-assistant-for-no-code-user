@@ -77,13 +77,14 @@ const sections = [
   },
   {
     id: "safe-repair",
-    title: "Safe Repair",
+    title: "Local Safe Repair",
     icon: Wrench,
-    summary: "Maintenance actions that avoid databases, app data, and Docker volumes.",
+    summary: "Local-server maintenance actions that avoid databases, app data, and Docker volumes.",
     bullets: [
       "Explain current health is read-only and should be your first step.",
-      "Clear package cache is low-risk and frees OS package cache only.",
-      "Trim old system logs keeps recent journal logs while freeing old log space.",
+      "Clear package cache is low-risk and frees local OS package cache only.",
+      "Trim old system logs keeps recent local journal logs while freeing old log space.",
+      "Remote server maintenance belongs inside each server page.",
       "Safe Repair is not a replacement for app-specific database backups.",
     ],
   },

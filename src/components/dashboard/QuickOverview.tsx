@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   Network,
   Server,
+  ServerOff,
   Settings2,
 } from "lucide-react";
 import type { DashboardSummary } from "@/types";
@@ -50,6 +51,17 @@ export function QuickOverview() {
         href: "/servers",
         color: "text-cyan-400",
         glowColor: "hover:shadow-cyan-500/10",
+      },
+      {
+        id: "inactive-servers",
+        title: "Inactive Servers",
+        value: summary.servers.inactive,
+        breakdown: summary.servers.inactive > 0 ? "Open Servers to reconnect" : "All tracked servers active",
+        subtitle: "Fleet attention list",
+        icon: <ServerOff className="h-5 w-5" />,
+        href: "/servers",
+        color: summary.servers.inactive > 0 ? "text-amber-400" : "text-gray-400",
+        glowColor: "hover:shadow-amber-500/10",
       },
       {
         id: "apps",
@@ -133,7 +145,7 @@ export function QuickOverview() {
 
   if (!summary) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
@@ -199,7 +211,7 @@ export function QuickOverview() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {shownCards.map((card) => (
           <SummaryCard key={card.id} {...card} />
         ))}

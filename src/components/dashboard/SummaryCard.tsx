@@ -32,7 +32,7 @@ export function SummaryCard({
     <button
       onClick={() => router.push(href)}
       className={clsx(
-        "group relative flex min-w-0 items-start gap-3 rounded-xl bg-gray-800 border border-gray-700/60 p-4 text-left transition-all duration-200 sm:gap-4",
+        "group relative grid min-w-0 grid-cols-[auto_1fr_auto] items-start gap-3 overflow-hidden rounded-xl bg-gray-800 border border-gray-700/60 p-4 text-left transition-all duration-200",
         "hover:border-gray-600 hover:bg-gray-800/80 hover:shadow-lg",
         glowColor
       )}

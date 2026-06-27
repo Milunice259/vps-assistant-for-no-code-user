@@ -66,12 +66,12 @@ export function SafeRepairCenter() {
     <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-wider text-gray-500">Safe Repair</p>
+          <p className="text-xs uppercase tracking-wider text-gray-500">Local Safe Repair</p>
           <h2 className="mt-1 flex items-center gap-2 text-lg font-semibold text-white">
-            <ShieldCheck className="h-5 w-5 text-emerald-400" /> Guided maintenance
+            <ShieldCheck className="h-5 w-5 text-emerald-400" /> Guided local maintenance
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-gray-400">
-            Low-risk checks and cleanup actions. Read the <a href="/docs#safe-repair" className="text-brand-400 hover:text-brand-300">safe repair docs</a> first if unsure.
+            Local-server checks and cleanup actions only. Remote server maintenance belongs inside each server page. Read the <a href="/docs#safe-repair" className="text-brand-400 hover:text-brand-300">safe repair docs</a> first if unsure.
           </p>
         </div>
       </div>

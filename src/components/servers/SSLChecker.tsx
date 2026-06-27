@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Shield, RefreshCw, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { Shield, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import type { ApiResponse } from "@/types";
 
 interface SSLCheckerProps {
@@ -21,9 +22,11 @@ interface SSLInfo {
 }
 
 export function SSLChecker({ serverId, defaultDomain }: SSLCheckerProps) {
+  const { safeMode } = useSafeMode();
   const [domain, setDomain] = useState(defaultDomain || "");
   const [result, setResult] = useState<SSLInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const checkSSL = useCallback(async () => {
@@ -44,6 +47,28 @@ export function SSLChecker({ serverId, defaultDomain }: SSLCheckerProps) {
       setLoading(false);
     }
   }, [serverId, domain]);
+
+  const needsOpenSSL = error?.toLowerCase().includes("openssl") && error.toLowerCase().includes("not found");
+
+  async function installOpenSSL() {
+    if (!confirm("Install openssl on this target so SSL checks can run?")) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/dependencies/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: "openssl" }),
+      });
+      const json: ApiResponse<{ output: string }> = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Install failed");
+      await checkSSL();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Install failed");
+    } finally {
+      setInstalling(false);
+    }
+  }
 
   function getStatusIcon() {
     if (!result) return null;
@@ -87,8 +112,13 @@ export function SSLChecker({ serverId, defaultDomain }: SSLCheckerProps) {
       </div>
 
       {error && (
-        <div className="text-xs text-red-400 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-          {error}
+        <div className="space-y-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <p>{error}</p>
+          {needsOpenSSL && (
+            <Button variant="secondary" size="sm" loading={installing} disabled={safeMode} onClick={installOpenSSL} title={safeMode ? "Turn Safe Mode off to install packages" : undefined}>
+              <Download className="mr-1 h-3.5 w-3.5" /> {safeMode ? "Install locked by Safe Mode" : "Install openssl and retry"}
+            </Button>
+          )}
         </div>
       )}
 

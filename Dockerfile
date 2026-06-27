@@ -36,7 +36,7 @@ RUN mkdir -p /app/data
 
 # Network/ports feature needs `ss` (iproute2)
 # iproute2 = ss (ports), docker-cli = docker ps, util-linux = nsenter (host commands)
-RUN apk add --no-cache iproute2 docker-cli util-linux
+RUN apk add --no-cache iproute2 docker-cli util-linux openssl
 
 # 1. First, copy ALL production deps (prisma + its full transitive tree)
 #    npm handles dependency resolution — no more manual package copying

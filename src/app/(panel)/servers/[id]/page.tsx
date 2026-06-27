@@ -20,6 +20,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { ServerOverview } from "@/components/servers/ServerOverview";
 import { DockerContainerList } from "@/components/servers/DockerContainerList";
 import { ServiceList } from "@/components/servers/ServiceList";
+import { SSLChecker } from "@/components/servers/SSLChecker";
 import { QuickActions } from "@/components/servers/QuickActions";
 import { ServerAuditLog } from "@/components/servers/ServerAuditLog";
 import dynamic from "next/dynamic";
@@ -37,6 +38,7 @@ const SERVER_TABS = [
   { key: "networks", label: "Network Map", icon: <Network className="h-4 w-4" /> },
   { key: "services", label: "Services", icon: <Cog className="h-4 w-4" /> },
   { key: "packages", label: "Packages", icon: <Package className="h-4 w-4" /> },
+  { key: "ssl", label: "SSL", icon: <Shield className="h-4 w-4" /> },
   { key: "actions", label: "Quick Actions", icon: <Zap className="h-4 w-4" /> },
   { key: "logs", label: "Activity Log", icon: <Shield className="h-4 w-4" /> },
 ];
@@ -203,6 +205,7 @@ export default function ServerDetailPage() {
       {activeTab === "networks" && <ServerNetworkMap serverId={serverId} />}
       {activeTab === "services" && <ServiceList serverId={serverId} />}
       {activeTab === "packages" && <PackageManager serverId={serverId} />}
+      {activeTab === "ssl" && <SSLChecker serverId={serverId} />}
       {activeTab === "actions" && <QuickActions serverId={serverId} />}
       {activeTab === "logs" && <ServerAuditLog serverId={serverId} />}
     </div>

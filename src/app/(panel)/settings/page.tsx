@@ -28,6 +28,14 @@ interface AlertRule {
   enabled: boolean;
 }
 
+interface SecurityStatus {
+  session: string;
+  csrf: string;
+  rateLimit: string;
+  headers: string;
+  audit: string;
+}
+
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
   discord: <MessageSquare className="h-4 w-4" />,
   slack: <Hash className="h-4 w-4" />,
@@ -76,6 +84,7 @@ export default function SettingsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [checkingAlerts, setCheckingAlerts] = useState(false);
   const [checkResult, setCheckResult] = useState<string | null>(null);
+  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null);
 
   // Add channel form
   const [newName, setNewName] = useState("");
@@ -96,7 +105,18 @@ export default function SettingsPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchChannels(); }, [fetchChannels]);
+  const fetchSecurityStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/security/status");
+      const json = await res.json();
+      if (json.success) setSecurityStatus(json.data);
+    } catch { /* ok */ }
+  }, []);
+
+  useEffect(() => {
+    fetchChannels();
+    fetchSecurityStatus();
+  }, [fetchChannels, fetchSecurityStatus]);
 
   async function addChannel() {
     if (!newName || !newUrl) return;
@@ -453,8 +473,18 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold text-white">Security</h2>
         </div>
         <p className="text-sm text-gray-400 mb-4">
-          Login and session security preferences for the admin panel.
+          Login, session, request, and browser hardening for the admin panel.
         </p>
+        {securityStatus && (
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            {Object.entries(securityStatus).map(([key, value]) => (
+              <div key={key} className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+                <p className="text-xs font-medium uppercase tracking-wider text-emerald-300">{key.replace(/([A-Z])/g, " $1")}</p>
+                <p className="mt-1 text-xs leading-5 text-gray-300">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
           <SettingsField
             label="Session Timeout"

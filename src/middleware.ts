@@ -68,6 +68,14 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+function withSecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -76,7 +84,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
   ) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // ── Global API Rate Limiting ──
@@ -85,7 +93,7 @@ export async function middleware(request: NextRequest) {
     const { limited, remaining } = checkRateLimit(ip);
 
     if (limited) {
-      return NextResponse.json(
+      return withSecurityHeaders(NextResponse.json(
         { success: false, error: "Too many requests. Please slow down." },
         {
           status: 429,
@@ -95,7 +103,7 @@ export async function middleware(request: NextRequest) {
             "X-RateLimit-Remaining": "0",
           },
         }
-      );
+      ));
     }
 
     // ── CSRF Protection ──
@@ -106,26 +114,26 @@ export async function middleware(request: NextRequest) {
 
       // Reject requests without Origin header (closes null-origin bypass)
       if (!origin) {
-        return NextResponse.json(
+        return withSecurityHeaders(NextResponse.json(
           { success: false, error: "Origin header required for state-changing requests" },
           { status: 403 }
-        );
+        ));
       }
 
       if (host) {
         try {
           const originHost = new URL(origin).host;
           if (originHost !== host) {
-            return NextResponse.json(
+            return withSecurityHeaders(NextResponse.json(
               { success: false, error: "Cross-origin request blocked" },
               { status: 403 }
-            );
+            ));
           }
         } catch {
-          return NextResponse.json(
+          return withSecurityHeaders(NextResponse.json(
             { success: false, error: "Invalid origin" },
             { status: 403 }
-          );
+          ));
         }
       }
     }
@@ -137,49 +145,49 @@ export async function middleware(request: NextRequest) {
 
     // Continue to auth check only for non-public paths
     if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-      return response;
+      return withSecurityHeaders(response);
     }
 
     // ── API Auth check ──
     const apiToken = request.cookies.get(SESSION_COOKIE)?.value;
     if (!apiToken) {
-      return NextResponse.json(
+      return withSecurityHeaders(NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
-      );
+      ));
     }
 
     try {
       await jwtVerify(apiToken, getJwtSecret());
-      return response;
+      return withSecurityHeaders(response);
     } catch {
-      return NextResponse.json(
+      return withSecurityHeaders(NextResponse.json(
         { success: false, error: "Session expired" },
         { status: 401 }
-      );
+      ));
     }
   }
 
   // Allow public paths (non-API)
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // ── Page Auth check ──
   const token = request.cookies.get(SESSION_COOKIE)?.value;
 
   if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return withSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   try {
     await jwtVerify(token, getJwtSecret());
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   } catch {
     // Invalid or expired token
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.delete(SESSION_COOKIE);
-    return response;
+    return withSecurityHeaders(response);
   }
 }
 

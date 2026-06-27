@@ -57,6 +57,8 @@ export interface DashboardSummary {
   servers: {
     total: number;
     active: number;
+    remote: number;
+    inactive: number;
   };
   network: {
     listeningPorts: number;

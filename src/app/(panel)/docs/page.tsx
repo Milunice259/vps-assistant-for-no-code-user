@@ -44,7 +44,8 @@ const sections = [
     icon: Server,
     summary: "Add local or remote VPS machines and control them from one panel.",
     bullets: [
-      "Use Servers to add SSH details, view stats, Docker containers, and system services.",
+      "Use Servers to add remote VPS machines with the SSH test wizard before saving credentials.",
+      "The wizard detects OS, Docker, and systemd so you know what the panel can manage.",
       "Remote server offline usually means power, firewall, network, SSH port, or credential problems.",
       "Prefer guided actions over terminal commands. Dangerous actions are hidden while Safe Mode is on.",
       "Each server should have its own logs and audit trail so you can review what changed later.",
@@ -225,9 +226,10 @@ const walkthroughs = [
     id: "server-step-by-step",
     title: "Add and check a remote server",
     steps: [
-      "Open Servers and click Add server.",
+      "Open Servers and click Add Remote Server.",
       "Enter name, host/IP, SSH port, username, and authentication details.",
-      "Save, then open the server detail page.",
+      "Click Test SSH & Detect. Review OS, Docker, and systemd results.",
+      "Save only after the test succeeds, then open the server detail page.",
       "Check stats, Docker containers, system services, SSL, and network information.",
       "If it shows offline, verify power, firewall, SSH port, credentials, and network access.",
     ],

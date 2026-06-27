@@ -107,7 +107,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     containers,
     dockerNetworks,
     listeningPorts,
-    serverCount,
+    serverCounts,
     appCounts,
     deploymentCounts,
   ] = await Promise.all([
@@ -117,7 +117,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     Promise.resolve(getListeningPortCount()),
 
     // DB queries
-    prisma.server.count(),
+    prisma.server.groupBy({ by: ["isActive"], _count: true }),
     prisma.app.groupBy({
       by: ["status"],
       _count: true,
@@ -127,6 +127,10 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       _count: true,
     }),
   ]);
+
+  const remoteTotal = serverCounts.reduce((sum, g) => sum + g._count, 0);
+  const remoteActive = serverCounts.find((g) => g.isActive)?._count ?? 0;
+  const remoteInactive = Math.max(remoteTotal - remoteActive, 0);
 
   // Aggregate app counts
   const appTotal = appCounts.reduce((sum, g) => sum + g._count, 0);
@@ -156,8 +160,10 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       stopped: appStopped,
     },
     servers: {
-      total: serverCount + 1, // +1 for local server
-      active: serverCount + 1, // local is always active
+      total: remoteTotal + 1, // +1 for local server
+      active: remoteActive + 1, // local is always active
+      remote: remoteTotal,
+      inactive: remoteInactive,
     },
     network: {
       listeningPorts,

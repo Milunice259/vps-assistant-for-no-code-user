@@ -43,8 +43,8 @@ export function QuickOverview() {
       {
         id: "remote-servers",
         title: "Remote Servers",
-        value: Math.max(summary.servers.total - 1, 0),
-        breakdown: "Connected VPS entries outside this host",
+        value: summary.servers.remote,
+        breakdown: `${Math.max(summary.servers.remote - summary.servers.inactive, 0)} active · ${summary.servers.inactive} inactive`,
         subtitle: "Local server excluded",
         icon: <Globe className="h-5 w-5" />,
         href: "/servers",

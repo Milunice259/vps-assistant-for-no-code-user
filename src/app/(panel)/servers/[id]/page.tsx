@@ -50,6 +50,8 @@ export default function ServerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
 
   const isLocal = serverId === "local";
@@ -79,6 +81,22 @@ export default function ServerDetailPage() {
       router.push("/servers");
     } catch {
       setDeleting(false);
+    }
+  }
+
+  async function handleTestServer() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/test`, { method: "POST" });
+      const json = await res.json();
+      const result = json.data;
+      setTestResult(result?.ok ? `OK · ${result.os || "Linux"} · Docker ${result.docker ? "yes" : "no"} · systemd ${result.systemd ? "yes" : "no"}` : result?.message || json.error || "Test failed");
+      if (result?.ok) fetchServer();
+    } catch {
+      setTestResult("Network error — could not run server test.");
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -142,22 +160,33 @@ export default function ServerDetailPage() {
             </Badge>
           </div>
         </div>
-        {!isLocal && (
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-              <Pencil className="w-4 h-4 mr-1" /> Edit
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={deleting}
-              onClick={handleDelete}
-            >
-              <Trash2 className="w-4 h-4 mr-1" /> Delete
-            </Button>
-          </div>
-        )}
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button variant="secondary" size="sm" loading={testing} onClick={handleTestServer}>
+            <Zap className="w-4 h-4 mr-1" /> Test server
+          </Button>
+          {!isLocal && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={deleting}
+                onClick={handleDelete}
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> Delete
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+
+      {testResult && (
+        <div className="rounded-xl border border-gray-700 bg-gray-900/70 px-4 py-3 text-sm text-gray-300">
+          {testResult}
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs tabs={SERVER_TABS} activeTab={activeTab} onChange={setActiveTab} />

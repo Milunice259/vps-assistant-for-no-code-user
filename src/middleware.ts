@@ -17,6 +17,8 @@ const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 
 // HTTP methods that mutate state
 const MUTABLE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
+const ROLE_LEVEL = { VIEWER: 0, OPERATOR: 1, ADMIN: 2 } as const;
+type Role = keyof typeof ROLE_LEVEL;
 
 // ── Global API Rate Limiter (in-memory) ──
 const API_RATE_LIMIT = 100;       // max requests per window
@@ -74,6 +76,13 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   return response;
+}
+
+function requiredRole(pathname: string, method: string): Role {
+  if (!MUTABLE_METHODS.has(method)) return "VIEWER";
+  if (pathname.startsWith("/api/auth/")) return "VIEWER";
+  if (pathname.startsWith("/api/users") || pathname === "/api/backup") return "ADMIN";
+  return "OPERATOR";
 }
 
 export async function middleware(request: NextRequest) {
@@ -158,7 +167,14 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      await jwtVerify(apiToken, getJwtSecret());
+      const { payload } = await jwtVerify(apiToken, getJwtSecret());
+      const role = (payload.role as Role) || "VIEWER";
+      if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL[requiredRole(pathname, request.method)]) {
+        return withSecurityHeaders(NextResponse.json(
+          { success: false, error: "Insufficient permissions" },
+          { status: 403 }
+        ));
+      }
       return withSecurityHeaders(response);
     } catch {
       return withSecurityHeaders(NextResponse.json(

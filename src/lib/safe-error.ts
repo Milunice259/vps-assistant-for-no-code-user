@@ -3,6 +3,8 @@
  * messages and strips internal paths to prevent leaking server internals.
  */
 
+import { sanitizeLogs } from "./sanitize";
+
 /** Map of technical error patterns → friendly messages for non-tech users */
 const FRIENDLY_ERRORS: [RegExp, string][] = [
   [/SQLITE_BUSY/i, "The system is busy. Please try again in a moment."],
@@ -32,8 +34,8 @@ export function safeErrorMessage(error: unknown, fallback: string): string {
       if (pattern.test(error.message)) return friendly;
     }
 
-    // Strip paths but keep the message readable
-    return error.message
+    // Strip secrets and paths but keep the message readable
+    return sanitizeLogs(error.message)
       .replace(/\/[\w/.:-]+/g, "[path]")           // unix paths
       .replace(/[A-Z]:\\[\w\\.:-]+/gi, "[path]")   // windows paths
       .slice(0, 200);

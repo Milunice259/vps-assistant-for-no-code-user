@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, getSession } from "@/lib/auth";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { passwordPolicyError } from "@/lib/password-policy";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +48,10 @@ export async function PUT(
     }
 
     if (password) {
-      if (password.length < 8) {
+      const passwordError = passwordPolicyError(password);
+      if (passwordError) {
         return NextResponse.json(
-          { success: false, error: "Password must be at least 8 characters" },
+          { success: false, error: passwordError },
           { status: 400 }
         );
       }

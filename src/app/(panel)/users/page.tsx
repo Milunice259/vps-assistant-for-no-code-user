@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Users, Plus, Edit2, Trash2, Shield, Eye, Wrench, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PASSWORD_POLICY_TEXT } from "@/lib/password-policy";
 
 interface User {
   id: string;
@@ -168,7 +169,7 @@ export default function UsersPage() {
               className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none"
             />
             <input
-              type="password" placeholder="Password (min 8 chars)" value={newPassword}
+              type="password" placeholder="Strong password" value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none"
             />
@@ -181,6 +182,7 @@ export default function UsersPage() {
               <option value="ADMIN">Admin — Full access</option>
             </select>
           </div>
+          <p className="text-xs text-gray-500">{PASSWORD_POLICY_TEXT}</p>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleCreate}>Create</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -227,7 +229,8 @@ export default function UsersPage() {
                         <option value="ADMIN">Admin</option>
                       </select>
                       <input
-                        type="password" placeholder="New password"
+                        type="password" placeholder="New strong password"
+                        title={PASSWORD_POLICY_TEXT}
                         value={editPassword} onChange={e => setEditPassword(e.target.value)}
                         className="w-32 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:outline-none"
                       />

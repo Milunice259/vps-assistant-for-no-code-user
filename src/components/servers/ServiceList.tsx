@@ -20,6 +20,7 @@ import {
 import type { ServiceInfo, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 /* ══════════════════════════════════════════════════════════
    Well-known service descriptions (non-tech friendly)
@@ -135,6 +136,7 @@ function activeStateBadge(activeState: string) {
 }
 
 export function ServiceList({ serverId }: ServiceListProps) {
+  const { safeMode } = useSafeMode();
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -272,7 +274,8 @@ export function ServiceList({ serverId }: ServiceListProps) {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h3 className="text-base font-semibold text-white">System Services</h3>
+          <h3 className="text-lg font-semibold text-white">System Services</h3>
+          {safeMode && <p className="mt-1 text-xs text-emerald-400">Safe Mode: service start/stop/restart/enable/disable actions are locked.</p>}
           <p className="text-xs text-gray-500 mt-0.5">
             Background programs running on your server. You can start, stop, restart, or enable/disable auto-start.
           </p>
@@ -394,18 +397,18 @@ export function ServiceList({ serverId }: ServiceListProps) {
                           <>
                             <button
                               onClick={() => handleServiceAction(s.name, "restart")}
-                              disabled={!!isAnyLoading}
+                              disabled={safeMode || !!isAnyLoading}
                               className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
-                              title="Restart this service"
+                              title={safeMode ? "Safe Mode locks service actions" : "Restart this service"}
                             >
                               {isLoadingThis("restart") ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
                               Restart
                             </button>
                             <button
                               onClick={() => handleServiceAction(s.name, "stop")}
-                              disabled={!!isAnyLoading}
+                              disabled={safeMode || !!isAnyLoading}
                               className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
-                              title="Stop this service"
+                              title={safeMode ? "Safe Mode locks service actions" : "Stop this service"}
                             >
                               {isLoadingThis("stop") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
                               Stop
@@ -414,9 +417,9 @@ export function ServiceList({ serverId }: ServiceListProps) {
                         ) : (
                           <button
                             onClick={() => handleServiceAction(s.name, "start")}
-                            disabled={!!isAnyLoading}
+                            disabled={safeMode || !!isAnyLoading}
                             className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-                            title={isFailed ? "Restart this failed service" : "Start this service"}
+                            title={safeMode ? "Safe Mode locks service actions" : isFailed ? "Restart this failed service" : "Start this service"}
                           >
                             {isLoadingThis("start") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                             Start
@@ -433,9 +436,9 @@ export function ServiceList({ serverId }: ServiceListProps) {
                               }
                               handleServiceAction(s.name, "disable");
                             }}
-                            disabled={!!isAnyLoading}
+                            disabled={safeMode || !!isAnyLoading}
                             className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-gray-500/10 text-gray-400 hover:bg-gray-500/20 transition-colors disabled:opacity-50"
-                            title="Disable auto-start on boot"
+                            title={safeMode ? "Safe Mode locks service actions" : "Disable auto-start on boot"}
                           >
                             {isLoadingThis("disable") ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
                             Disable
@@ -443,9 +446,9 @@ export function ServiceList({ serverId }: ServiceListProps) {
                         ) : (
                           <button
                             onClick={() => handleServiceAction(s.name, "enable")}
-                            disabled={!!isAnyLoading}
+                            disabled={safeMode || !!isAnyLoading}
                             className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                            title="Enable auto-start on boot"
+                            title={safeMode ? "Safe Mode locks service actions" : "Enable auto-start on boot"}
                           >
                             {isLoadingThis("enable") ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
                             Enable

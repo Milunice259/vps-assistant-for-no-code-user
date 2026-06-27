@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { containerAction, closeSSH } from "@/lib/ssh";
+import { execLocal, isLocalServer } from "@/lib/local-server";
 import { validateContainerId } from "@/lib/validation";
 import type { ApiResponse } from "@/types";
 
@@ -49,6 +50,14 @@ export async function POST(
         { success: false, error: `Invalid action. Must be one of: ${VALID_ACTIONS.join(", ")}` },
         { status: 400 }
       );
+    }
+
+    if (isLocalServer(id)) {
+      const output = execLocal(`docker ${action} ${containerId} 2>&1`, 30_000);
+      return NextResponse.json({
+        success: true,
+        data: { message: output || `Container ${action} successful` },
+      });
     }
 
     const result = await connectToServer(id);

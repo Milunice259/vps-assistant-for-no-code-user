@@ -121,6 +121,7 @@ const ACTIONS: ActionDef[] = [
     icon: <Download className="h-4 w-4" />,
     category: "update",
     confirmMessage: "This will update all system packages. It may take a few minutes and use bandwidth. Continue?",
+    risk: "danger",
   },
 
   // ── Diagnostics ──
@@ -147,6 +148,7 @@ const ACTIONS: ActionDef[] = [
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
     confirmMessage: "This will remove all unused Docker resources. Running containers are not affected. Continue?",
+    risk: "danger",
   },
   {
     key: "clear-apt-cache",
@@ -154,6 +156,7 @@ const ACTIONS: ActionDef[] = [
     description: "Remove cached package files to free disk space",
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
+    risk: "danger",
   },
   {
     key: "clear-logs",
@@ -161,6 +164,7 @@ const ACTIONS: ActionDef[] = [
     description: "Remove system logs older than 3 days",
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
+    risk: "danger",
   },
   {
     key: "clear-temp",
@@ -168,6 +172,7 @@ const ACTIONS: ActionDef[] = [
     description: "Remove all temporary files from /tmp and /var/tmp",
     icon: <FileX className="h-4 w-4" />,
     category: "cleanup",
+    risk: "danger",
   },
   {
     key: "remove-old-kernels",
@@ -176,6 +181,7 @@ const ACTIONS: ActionDef[] = [
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
     confirmMessage: "This will remove old kernel versions and orphan packages. Continue?",
+    risk: "danger",
   },
 
   // ── Security ──
@@ -185,6 +191,7 @@ const ACTIONS: ActionDef[] = [
     description: "Reload firewall rules (ufw or iptables)",
     icon: <ShieldCheck className="h-4 w-4" />,
     category: "security",
+    risk: "danger",
   },
   {
     key: "ban-ip",
@@ -193,6 +200,7 @@ const ACTIONS: ActionDef[] = [
     icon: <ShieldBan className="h-4 w-4" />,
     category: "security",
     confirmMessage: "This will block the specified IP from accessing your server. Continue?",
+    risk: "danger",
     promptInput: {
       label: "IP address to ban",
       placeholder: "e.g. 192.168.1.100",
@@ -204,6 +212,7 @@ const ACTIONS: ActionDef[] = [
     description: "Remove a specific IP from the ban list",
     icon: <ShieldOff className="h-4 w-4" />,
     category: "security",
+    risk: "danger",
     promptInput: {
       label: "IP address to unban",
       placeholder: "e.g. 192.168.1.100",
@@ -216,6 +225,7 @@ const ACTIONS: ActionDef[] = [
     icon: <ShieldOff className="h-4 w-4" />,
     category: "security",
     confirmMessage: "This will unban ALL blocked IP addresses. Are you sure?",
+    risk: "danger",
   },
 
   // ── System ──
@@ -226,6 +236,7 @@ const ACTIONS: ActionDef[] = [
     icon: <RefreshCw className="h-4 w-4" />,
     category: "system",
     confirmMessage: "Restarting Docker will briefly interrupt all running containers. Continue?",
+    risk: "danger",
   },
   {
     key: "restart-server",
@@ -234,6 +245,7 @@ const ACTIONS: ActionDef[] = [
     icon: <Server className="h-4 w-4" />,
     category: "system",
     confirmMessage: "This will reboot the server. All services will be temporarily unavailable. Are you sure?",
+    risk: "danger",
   },
 ];
 

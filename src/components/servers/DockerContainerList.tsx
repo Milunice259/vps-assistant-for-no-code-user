@@ -5,6 +5,7 @@ import { AlertCircle, Box, Play, Square, RotateCw, RefreshCw, WifiOff } from "lu
 import type { ContainerInfo, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 interface DockerContainerListProps {
   serverId: string;
@@ -20,6 +21,7 @@ function stateBadgeVariant(state: string) {
 }
 
 export function DockerContainerList({ serverId }: DockerContainerListProps) {
+  const { safeMode } = useSafeMode();
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,8 +122,11 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-400">{containers.length} application(s)</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-gray-400">{containers.length} application(s)</p>
+          {safeMode && <p className="text-xs text-emerald-400">Safe Mode: start/stop/restart actions are locked.</p>}
+        </div>
         <Button variant="ghost" size="sm" onClick={fetchContainers}>
           <RefreshCw className="h-4 w-4" />
         </Button>
@@ -163,8 +168,9 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
                         variant="ghost"
                         size="sm"
                         loading={actionLoading === `${c.id}-start`}
+                        disabled={safeMode}
                         onClick={() => handleAction(c.id, "start")}
-                        title="Start"
+                        title={safeMode ? "Safe Mode locks container actions" : "Start"}
                       >
                         <Play className="h-3.5 w-3.5 text-green-400" />
                       </Button>
@@ -174,8 +180,9 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
                         variant="ghost"
                         size="sm"
                         loading={actionLoading === `${c.id}-stop`}
+                        disabled={safeMode}
                         onClick={() => handleAction(c.id, "stop")}
-                        title="Stop"
+                        title={safeMode ? "Safe Mode locks container actions" : "Stop"}
                       >
                         <Square className="h-3.5 w-3.5 text-red-400" />
                       </Button>
@@ -184,8 +191,9 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
                       variant="ghost"
                       size="sm"
                       loading={actionLoading === `${c.id}-restart`}
+                      disabled={safeMode}
                       onClick={() => handleAction(c.id, "restart")}
-                      title="Restart"
+                      title={safeMode ? "Safe Mode locks container actions" : "Restart"}
                     >
                       <RotateCw className="h-3.5 w-3.5 text-yellow-400" />
                     </Button>

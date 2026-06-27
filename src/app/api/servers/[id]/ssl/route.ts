@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
-import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import { closeSSH, executeCommand } from "@/lib/ssh";
+import { connectToServer } from "@/lib/server-ssh";
+import { execLocal, isLocalServer } from "@/lib/local-server";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -38,34 +38,18 @@ export async function GET(
       );
     }
 
-    const server = await prisma.server.findUnique({ where: { id } });
-    if (!server) {
-      return NextResponse.json(
-        { success: false, error: "Server not found" },
-        { status: 404 }
-      );
-    }
-
-    const password = server.encryptedPass ? decrypt(server.encryptedPass) : undefined;
-    const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
-
-    const ssh = await createSSHConnection({
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      password,
-      privateKey,
-    });
+    const safeDomain = domain.replace(/[^a-zA-Z0-9._-]/g, "");
+    const command = `echo | openssl s_client -servername ${safeDomain} -connect ${safeDomain}:443 2>/dev/null | openssl x509 -noout -dates -issuer -subject 2>&1`;
+    let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
 
     try {
-      const safeDomain = domain.replace(/[^a-zA-Z0-9._-]/g, "");
-
-      // Use openssl to check the certificate
-      const certOutput = await executeCommand(
-        ssh,
-        `echo | openssl s_client -servername ${safeDomain} -connect ${safeDomain}:443 2>/dev/null | openssl x509 -noout -dates -issuer -subject 2>&1`,
-        15_000
-      );
+      const certOutput = isLocalServer(id)
+        ? execLocal(command, 15_000)
+        : await (async () => {
+            const result = await connectToServer(id);
+            ssh = result.ssh;
+            return executeCommand(ssh, command, 15_000);
+          })();
 
       // Parse output
       const lines = certOutput.split("\n");

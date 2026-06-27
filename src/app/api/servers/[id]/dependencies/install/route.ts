@@ -2,12 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { closeSSH, executeCommand } from "@/lib/ssh";
 import { connectToServer } from "@/lib/server-ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
+import { auditLog, getClientIp } from "@/lib/audit";
+import { getSession } from "@/lib/auth";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
-const ALLOWED_PACKAGES = ["openssl"] as const;
+const ALLOWED_PACKAGES = [
+  "openssl",
+  "ca-certificates",
+  "curl",
+  "wget",
+  "git",
+  "unzip",
+  "zip",
+  "tar",
+  "bash",
+  "nano",
+  "vim",
+  "htop",
+  "jq",
+  "rsync",
+  "cron",
+  "ufw",
+  "fail2ban",
+  "certbot",
+  "python3",
+  "python3-pip",
+  "nodejs",
+  "npm",
+  "make",
+  "gcc",
+  "g++",
+  "build-essential",
+  "docker",
+  "docker.io",
+  "docker-cli",
+  "docker-compose",
+  "docker-compose-plugin",
+] as const;
 
 type InstallResult = { package: string; output: string };
 type Runner = (cmd: string, timeoutMs?: number) => Promise<string>;
@@ -41,6 +75,15 @@ export async function POST(
         };
 
     const output = await installPackage(run, pkg);
+    const session = await getSession();
+    await auditLog({
+      action: "package_install",
+      userId: session?.sub as string | undefined,
+      username: session?.username as string | undefined,
+      target: id,
+      details: `Installed package: ${pkg}`,
+      ip: getClientIp(request),
+    });
     return NextResponse.json({ success: true, data: { package: pkg, output } });
   } catch (error) {
     return NextResponse.json(

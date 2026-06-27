@@ -48,6 +48,8 @@ export function DockerImageDeploy() {
     fetchServers();
   }, [fetchServers]);
 
+  const selectedServer = servers.find((s) => s.id === serverId);
+
   async function handleDeploy() {
     if (!serverId || !image) return;
     setDeploying(true);
@@ -91,6 +93,13 @@ export function DockerImageDeploy() {
   return (
     <div className="max-w-2xl space-y-4">
       <DeployRequirementBanner mode="image" serverId={deployTarget === "remote" ? serverId : undefined} />
+
+      <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3 text-sm text-gray-300">
+        <span className="text-gray-500">Target server:</span>{" "}
+        <span className="font-medium text-white">
+          {deployTarget === "local" ? "Local Server" : selectedServer ? `${selectedServer.name} (${selectedServer.host})` : "Select a remote server"}
+        </span>
+      </div>
 
       {result && (
         <div

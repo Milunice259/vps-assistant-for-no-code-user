@@ -17,6 +17,7 @@ import type { PackageInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 /* ── Well-known package descriptions ── */
 const PACKAGE_DESCRIPTIONS: Record<string, string> = {
@@ -112,9 +113,13 @@ interface PackageManagerProps {
   serverId?: string;
 }
 
-export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
+const INSTALLABLE_PACKAGES = ["openssl", "ca-certificates", "curl", "wget", "git", "unzip", "zip", "tar", "bash", "nano", "vim", "htop", "jq", "rsync", "cron", "ufw", "fail2ban", "certbot", "python3", "python3-pip", "nodejs", "npm", "make", "gcc", "g++", "build-essential", "docker", "docker.io", "docker-cli", "docker-compose", "docker-compose-plugin"];
+
+export function PackageManager({ serverId = "local" }: PackageManagerProps) {
+  const { safeMode } = useSafeMode();
   const [packages, setPackages] = useState<PackageInfo[]>([]);
   const [filter, setFilter] = useState("");
+  const [installPackage, setInstallPackage] = useState("openssl");
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -131,6 +136,11 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
     }
     setError(null);
     try {
+      if (serverId !== "local") {
+        setPackages([]);
+        setHasChecked(false);
+        return;
+      }
       const url = check ? "/api/network/packages?check=1" : "/api/network/packages";
       const res = await fetch(url);
       const json = await res.json();
@@ -143,7 +153,7 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
       setLoading(false);
       setChecking(false);
     }
-  }, []);
+  }, [serverId]);
 
   useEffect(() => {
     fetchPackages();
@@ -189,6 +199,28 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
         type: "error",
         message: "Connection error — could not reach the server.",
       });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const installSelectedPackage = async () => {
+    if (safeMode) return;
+    if (!confirm(`Install ${installPackage} on ${serverId}? You are responsible for package compatibility and security impact.`)) return;
+    setActionLoading(true);
+    setActionResult(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/dependencies/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package: installPackage }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Install failed");
+      setActionResult({ type: "success", message: `${installPackage} installed successfully.` });
+      fetchPackages();
+    } catch (err) {
+      setActionResult({ type: "error", message: err instanceof Error ? err.message : "Install failed." });
     } finally {
       setActionLoading(false);
     }
@@ -272,6 +304,7 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
               variant="primary"
               size="sm"
               loading={actionLoading}
+              disabled={safeMode}
               onClick={() => runAction("upgrade")}
             >
               <ArrowUpCircle className="h-4 w-4" />
@@ -323,6 +356,29 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
       {error && (
         <StatusMessage type="error" message={error} />
       )}
+
+      <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-yellow-100">Install dependency</h3>
+            <p className="mt-1 text-xs text-yellow-100/70">
+              Only install packages you understand. You are responsible for compatibility, security, and service impact.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={installPackage}
+              onChange={(e) => setInstallPackage(e.target.value)}
+              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+            >
+              {INSTALLABLE_PACKAGES.map((pkg) => <option key={pkg} value={pkg}>{pkg}</option>)}
+            </select>
+            <Button variant="secondary" size="sm" loading={actionLoading} disabled={safeMode} onClick={installSelectedPackage}>
+              <Download className="h-4 w-4" /> {safeMode ? "Locked by Safe Mode" : "Install package"}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Search bar */}
       <div className="relative">
@@ -407,7 +463,7 @@ export function PackageManager({ serverId: _serverId }: PackageManagerProps) {
                       {pkg.upgradable ? (
                         <button
                           onClick={() => upgradePackage(pkg.name)}
-                          disabled={isUpgrading || actionLoading}
+                          disabled={safeMode || isUpgrading || actionLoading}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
                             bg-yellow-500/10 text-yellow-300 border border-yellow-500/30
                             hover:bg-yellow-500/20 hover:border-yellow-500/50

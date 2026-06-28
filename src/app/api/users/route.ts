@@ -24,8 +24,11 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
       select: {
         id: true,
         username: true,
+        displayName: true,
         role: true,
+        isActive: true,
         createdAt: true,
+        updatedAt: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -51,7 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     }
 
     const body = await request.json();
-    const { username, password, role } = body;
+    const { username, password, role, displayName } = body;
 
     if (!username || !password) {
       return NextResponse.json(
@@ -63,6 +66,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     if (username.length < 3 || username.length > 50) {
       return NextResponse.json(
         { success: false, error: "Username must be between 3 and 50 characters" },
+        { status: 400 }
+      );
+    }
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+      return NextResponse.json(
+        { success: false, error: "Username can only contain letters, numbers, dots, dashes, and underscores" },
         { status: 400 }
       );
     }
@@ -90,8 +100,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { username, passwordHash, role: userRole },
-      select: { id: true, username: true, role: true, createdAt: true },
+      data: { username, displayName: displayName?.trim() || null, passwordHash, role: userRole },
+      select: { id: true, username: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
     });
 
     const ip = getClientIp(request);

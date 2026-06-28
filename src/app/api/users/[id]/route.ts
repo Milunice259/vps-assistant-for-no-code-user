@@ -28,14 +28,14 @@ export async function PUT(
     const { id } = await context.params;
 
     const body = await request.json();
-    const { role, password } = body;
+    const { role, password, displayName, isActive } = body;
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    const updateData: Record<string, string> = {};
+    const updateData: { role?: "ADMIN" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; isActive?: boolean } = {};
 
     if (role) {
       const validRoles = ["ADMIN", "OPERATOR", "VIEWER"];
@@ -45,7 +45,43 @@ export async function PUT(
           { status: 400 }
         );
       }
+      if (id === (session.sub as string) && role !== "ADMIN") {
+        return NextResponse.json(
+          { success: false, error: "You cannot remove your own admin role" },
+          { status: 400 }
+        );
+      }
+      if (user.role === "ADMIN" && role !== "ADMIN") {
+        const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
+        if (activeAdmins === 0) {
+          return NextResponse.json(
+            { success: false, error: "At least one active admin is required" },
+            { status: 400 }
+          );
+        }
+      }
       updateData.role = role;
+    }
+
+    if (typeof displayName === "string") updateData.displayName = displayName.trim() || null;
+
+    if (typeof isActive === "boolean") {
+      if (id === (session.sub as string) && !isActive) {
+        return NextResponse.json(
+          { success: false, error: "You cannot disable your own account" },
+          { status: 400 }
+        );
+      }
+      if (user.role === "ADMIN" && !isActive) {
+        const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
+        if (activeAdmins === 0) {
+          return NextResponse.json(
+            { success: false, error: "At least one active admin is required" },
+            { status: 400 }
+          );
+        }
+      }
+      updateData.isActive = isActive;
     }
 
     if (password) {
@@ -66,7 +102,7 @@ export async function PUT(
     const updated = await prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, role: true, createdAt: true },
+      select: { id: true, username: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
     });
 
     const ip = getClientIp(request);
@@ -75,7 +111,7 @@ export async function PUT(
       userId: session.sub as string,
       username: session.username as string,
       ip,
-      details: `Updated user: ${user.username} (${Object.keys(updateData).join(", ")})`,
+      details: `Updated user: ${user.username} (${Object.keys(updateData).filter((key) => key !== "passwordHash").join(", ")}${updateData.passwordHash ? ", password" : ""})`,
     });
 
     return NextResponse.json({ success: true, data: updated });
@@ -114,6 +150,16 @@ export async function DELETE(
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    }
+
+    if (user.role === "ADMIN") {
+      const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
+      if (activeAdmins === 0) {
+        return NextResponse.json(
+          { success: false, error: "At least one active admin is required" },
+          { status: 400 }
+        );
+      }
     }
 
     await prisma.user.delete({ where: { id } });

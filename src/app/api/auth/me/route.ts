@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { safeErrorMessage } from "@/lib/safe-error";
 import type { ApiResponse, UserInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +19,10 @@ export async function GET(): Promise<NextResponse<ApiResponse<UserInfo>>> {
 
     const user = await prisma.user.findUnique({
       where: { id: session.sub },
-      select: { id: true, username: true },
+      select: { id: true, username: true, displayName: true, role: true, isActive: true },
     });
 
-    if (!user) {
+    if (!user || !user.isActive) {
       return NextResponse.json(
         { success: false, error: "User not found" },
         { status: 404 }
@@ -30,13 +31,11 @@ export async function GET(): Promise<NextResponse<ApiResponse<UserInfo>>> {
 
     return NextResponse.json({
       success: true,
-      data: { id: user.id, username: user.username },
+      data: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to get user";
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, error: safeErrorMessage(error, "Failed to get user") },
       { status: 500 }
     );
   }

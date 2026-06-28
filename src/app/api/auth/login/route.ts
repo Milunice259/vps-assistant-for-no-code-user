@@ -102,6 +102,14 @@ export async function POST(
       );
     }
 
+    if (!user.isActive) {
+      await auditLog({ action: "login_failed", userId: user.id, username, ip, details: "User disabled" });
+      return NextResponse.json(
+        { success: false, error: "Account is disabled" },
+        { status: 403 }
+      );
+    }
+
     // Verify password against stored hash
     const isValid = await verifyPassword(password, user.passwordHash);
 
@@ -124,7 +132,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: { id: user.id, username: user.username },
+      data: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
     });
   } catch (error) {
     const message =

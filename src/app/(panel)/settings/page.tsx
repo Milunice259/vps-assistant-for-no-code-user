@@ -31,9 +31,17 @@ interface AlertRule {
 
 interface SecuritySettings {
   sessionMaxAgeHours: number;
+  idleTimeoutMinutes: number;
+  rememberMeEnabled: boolean;
+  rememberMeDays: number;
   passwordMinLength: number;
   passwordRequireComplexity: boolean;
   defaultSafeMode: boolean;
+  loginMaxAttempts: number;
+  loginWindowSeconds: number;
+  loginLockoutMinutes: number;
+  auditRetentionDays: number;
+  forceLogoutVersion: number;
 }
 
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
@@ -134,6 +142,12 @@ export default function SettingsPage() {
     } finally {
       setSavingSecurity(false);
     }
+  }
+
+  async function runSecurityAction(action: "force_logout_all" | "cleanup_audit") {
+    if (!securitySettings) return;
+    if (!confirm(action === "force_logout_all" ? "Force logout all users?" : "Delete old audit logs past the retention window?")) return;
+    await saveSecuritySettings({ ...securitySettings, action } as SecuritySettings & { action: string });
   }
 
   async function addChannel() {
@@ -521,6 +535,58 @@ export default function SettingsPage() {
                 <option value={24}>24 hours</option>
                 <option value={168} disabled={safeMode}>7 days {safeMode ? "(Safe Mode off)" : ""}</option>
               </select>
+            </SettingsField>
+            <SettingsField label="Idle Timeout" hint="Auto logout after no browser activity. Disabled means token lifetime is the only timeout.">
+              <select
+                value={securitySettings.idleTimeoutMinutes}
+                onChange={(e) => setSecuritySettings({ ...securitySettings, idleTimeoutMinutes: Number(e.target.value) })}
+                className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              >
+                <option value={15}>15 minutes</option>
+                <option value={30}>30 minutes</option>
+                <option value={60}>1 hour</option>
+                <option value={0} disabled={safeMode}>Disabled {safeMode ? "(Safe Mode off)" : ""}</option>
+              </select>
+            </SettingsField>
+            <SettingsField label="Remember Me" hint="Allows longer login sessions from the login screen.">
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={securitySettings.rememberMeEnabled}
+                    disabled={safeMode}
+                    onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeEnabled: e.target.checked })}
+                  />
+                  Allow remember me {safeMode ? "(Safe Mode off)" : ""}
+                </label>
+                <select
+                  value={securitySettings.rememberMeDays}
+                  disabled={!securitySettings.rememberMeEnabled || safeMode}
+                  onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeDays: Number(e.target.value) })}
+                  className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                </select>
+              </div>
+            </SettingsField>
+            <SettingsField label="Login Protection" hint="Controls failed-login rate limit and temporary lockout per IP.">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <input type="number" min={3} max={20} value={securitySettings.loginMaxAttempts} onChange={(e) => setSecuritySettings({ ...securitySettings, loginMaxAttempts: Number(e.target.value) })} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />
+                <input type="number" min={30} max={300} value={securitySettings.loginWindowSeconds} onChange={(e) => setSecuritySettings({ ...securitySettings, loginWindowSeconds: Number(e.target.value) })} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />
+                <input type="number" min={1} max={1440} value={securitySettings.loginLockoutMinutes} onChange={(e) => setSecuritySettings({ ...securitySettings, loginLockoutMinutes: Number(e.target.value) })} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">attempts / window seconds / lockout minutes</p>
+            </SettingsField>
+            <SettingsField label="Audit Retention" hint="How many days to keep audit logs before manual cleanup.">
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="number" min={7} max={3650} value={securitySettings.auditRetentionDays} onChange={(e) => setSecuritySettings({ ...securitySettings, auditRetentionDays: Number(e.target.value) })} className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />
+                <Button variant="secondary" size="sm" loading={savingSecurity} onClick={() => runSecurityAction("cleanup_audit")}>Clean old audit logs</Button>
+              </div>
+            </SettingsField>
+            <SettingsField label="Force Logout All Sessions" hint="Invalidates existing API sessions; users must log in again.">
+              <Button variant="danger" size="sm" loading={savingSecurity} disabled={safeMode} onClick={() => runSecurityAction("force_logout_all")}>Force logout all</Button>
             </SettingsField>
             <SettingsField label="Minimum Password Length" hint="Applies when creating users or changing passwords.">
               <input

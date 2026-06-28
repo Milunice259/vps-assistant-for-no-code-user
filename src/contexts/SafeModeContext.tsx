@@ -18,11 +18,23 @@ export function SafeModeProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (window.localStorage.getItem(STORAGE_KEY) !== null) return;
     fetch("/api/settings/security")
       .then((res) => res.json())
       .then((json) => {
-        if (typeof json.data?.defaultSafeMode === "boolean") setSafeModeState(json.data.defaultSafeMode);
+        if (window.localStorage.getItem(STORAGE_KEY) === null && typeof json.data?.defaultSafeMode === "boolean") {
+          setSafeModeState(json.data.defaultSafeMode);
+        }
+        const idleMinutes = Number(json.data?.idleTimeoutMinutes || 0);
+        if (!idleMinutes) return;
+        let timer: ReturnType<typeof setTimeout>;
+        const reset = () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            fetch("/api/auth/logout", { method: "POST" }).finally(() => { window.location.href = "/login"; });
+          }, idleMinutes * 60_000);
+        };
+        ["click", "keydown", "mousemove", "scroll"].forEach((event) => window.addEventListener(event, reset));
+        reset();
       })
       .catch(() => undefined);
   }, []);

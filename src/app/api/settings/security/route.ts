@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { getSecuritySettings, saveSecuritySettings } from "@/lib/security-settings";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -21,7 +22,15 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     if (session.role !== "ADMIN") return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
 
-    const settings = await saveSecuritySettings(await request.json());
+    const body = await request.json();
+    const settings = await saveSecuritySettings(body.action === "force_logout_all"
+      ? { forceLogoutVersion: Date.now() }
+      : body);
+    if (body.action === "cleanup_audit") {
+      await prisma.auditLog.deleteMany({
+        where: { createdAt: { lt: new Date(Date.now() - settings.auditRetentionDays * 24 * 60 * 60_000) } },
+      });
+    }
     await auditLog({
       action: "security_settings_updated",
       userId: session.sub as string,

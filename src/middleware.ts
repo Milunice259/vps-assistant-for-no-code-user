@@ -21,7 +21,7 @@ const ROLE_LEVEL = { VIEWER: 0, OPERATOR: 1, ADMIN: 2 } as const;
 type Role = keyof typeof ROLE_LEVEL;
 
 // ── Global API Rate Limiter (in-memory) ──
-const API_RATE_LIMIT = 100;       // max requests per window
+const API_RATE_LIMIT = 100;       // ponytail: Edge middleware cannot read DB settings; move rate limiting to Node/API proxy for runtime tuning.
 const API_RATE_WINDOW = 60_000;   // 1 minute window
 
 interface RateEntry {
@@ -31,18 +31,18 @@ interface RateEntry {
 
 const apiRateMap = new Map<string, RateEntry>();
 
-function checkRateLimit(ip: string): { limited: boolean; remaining: number } {
+function checkRateLimit(ip: string, limit: number): { limited: boolean; remaining: number } {
   const now = Date.now();
   const entry = apiRateMap.get(ip);
 
   if (!entry || now >= entry.resetAt) {
     apiRateMap.set(ip, { count: 1, resetAt: now + API_RATE_WINDOW });
-    return { limited: false, remaining: API_RATE_LIMIT - 1 };
+    return { limited: false, remaining: limit - 1 };
   }
 
   entry.count++;
-  const remaining = Math.max(0, API_RATE_LIMIT - entry.count);
-  return { limited: entry.count > API_RATE_LIMIT, remaining };
+  const remaining = Math.max(0, limit - entry.count);
+  return { limited: entry.count > limit, remaining };
 }
 
 // Cleanup stale entries every 5 minutes
@@ -99,7 +99,7 @@ export async function middleware(request: NextRequest) {
   // ── Global API Rate Limiting ──
   if (pathname.startsWith("/api/")) {
     const ip = getClientIp(request);
-    const { limited, remaining } = checkRateLimit(ip);
+    const { limited, remaining } = checkRateLimit(ip, API_RATE_LIMIT);
 
     if (limited) {
       return withSecurityHeaders(NextResponse.json(

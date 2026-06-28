@@ -16,23 +16,25 @@ export const dynamic = "force-dynamic";
 interface RateEntry {
   count: number;
   firstAttempt: number;
+  lockedUntil?: number;
 }
 
 const rateLimitMap = new Map<string, RateEntry>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 60_000; // 60 seconds
 
-function isRateLimited(ip: string): boolean {
+function isRateLimited(ip: string, maxAttempts: number, windowMs: number, lockoutMs: number): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
 
-  if (!entry || now - entry.firstAttempt > WINDOW_MS) {
+  if (entry?.lockedUntil && now < entry.lockedUntil) return true;
+
+  if (!entry || now - entry.firstAttempt > windowMs) {
     rateLimitMap.set(ip, { count: 1, firstAttempt: now });
     return false;
   }
 
   entry.count++;
-  if (entry.count > MAX_ATTEMPTS) {
+  if (entry.count > maxAttempts) {
+    entry.lockedUntil = now + lockoutMs;
     return true;
   }
 
@@ -43,7 +45,7 @@ function isRateLimited(ip: string): boolean {
 const _loginCleanup = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimitMap) {
-    if (now - entry.firstAttempt > WINDOW_MS) {
+    if ((!entry.lockedUntil || now > entry.lockedUntil) && now - entry.firstAttempt > 300_000) {
       rateLimitMap.delete(ip);
     }
   }
@@ -64,7 +66,13 @@ export async function POST(
       request.headers.get("x-real-ip") ||
       "unknown";
 
-    if (isRateLimited(ip)) {
+    const securitySettings = await getSecuritySettings();
+    if (isRateLimited(
+      ip,
+      securitySettings.loginMaxAttempts,
+      securitySettings.loginWindowSeconds * 1000,
+      securitySettings.loginLockoutMinutes * 60_000
+    )) {
       await auditLog({ action: "login_failed", username: "unknown", ip, details: "Rate limited" });
       return NextResponse.json(
         { success: false, error: "Too many login attempts. Try again later." },
@@ -72,8 +80,8 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as LoginInput;
-    const { username, password } = body;
+    const body = (await request.json()) as LoginInput & { rememberMe?: boolean };
+    const { username, password, rememberMe } = body;
 
     if (!username || !password) {
       return NextResponse.json(
@@ -106,8 +114,9 @@ export async function POST(
     }
 
     // Create JWT and set HttpOnly cookie
-    const { sessionMaxAgeHours } = await getSecuritySettings();
-    const maxAgeSeconds = sessionMaxAgeHours * 60 * 60;
+    const maxAgeSeconds = rememberMe && securitySettings.rememberMeEnabled
+      ? securitySettings.rememberMeDays * 24 * 60 * 60
+      : securitySettings.sessionMaxAgeHours * 60 * 60;
     const token = await createSessionToken(user.id, user.username, user.role, maxAgeSeconds);
     await setSessionCookie(token, maxAgeSeconds);
 

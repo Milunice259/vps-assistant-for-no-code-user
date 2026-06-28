@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMeEnabled, setRememberMeEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/security")
+      .then((res) => res.json())
+      .then((json) => setRememberMeEnabled(json.data?.rememberMeEnabled === true))
+      .catch(() => undefined);
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,7 +31,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, rememberMe }),
       });
 
       const data = await res.json();
@@ -79,6 +88,12 @@ export default function LoginPage() {
           autoComplete="current-password"
           required
         />
+        {rememberMeEnabled && (
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+            Remember me
+          </label>
+        )}
         <Button
           type="submit"
           variant="primary"

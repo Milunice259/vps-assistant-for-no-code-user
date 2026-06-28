@@ -7,6 +7,7 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
+import { getSecuritySettings } from "./security-settings";
 
 const SESSION_COOKIE = "vps-session";
 const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
@@ -45,7 +46,8 @@ export async function createSessionToken(
   role: string = "ADMIN",
   maxAgeSeconds: number = SESSION_MAX_AGE
 ): Promise<string> {
-  return new SignJWT({ sub: userId, username, role })
+  const { forceLogoutVersion } = await getSecuritySettings();
+  return new SignJWT({ sub: userId, username, role, forceLogoutVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${maxAgeSeconds}s`)
@@ -57,6 +59,8 @@ export async function verifySessionToken(
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
+    const { forceLogoutVersion } = await getSecuritySettings();
+    if (Number(payload.forceLogoutVersion ?? 0) < forceLogoutVersion) return null;
     return payload as SessionPayload;
   } catch {
     return null;

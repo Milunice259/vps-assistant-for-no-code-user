@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
-  MessageSquare, Hash, Bot, Shield,
+  MessageSquare, Hash, Bot,
   Settings, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -26,14 +26,6 @@ interface AlertRule {
   cooldownMin: number;
   serverId: string | null;
   enabled: boolean;
-}
-
-interface SecurityStatus {
-  session: string;
-  csrf: string;
-  rateLimit: string;
-  headers: string;
-  audit: string;
 }
 
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
@@ -84,7 +76,6 @@ export default function SettingsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [checkingAlerts, setCheckingAlerts] = useState(false);
   const [checkResult, setCheckResult] = useState<string | null>(null);
-  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null);
 
   // Add channel form
   const [newName, setNewName] = useState("");
@@ -105,18 +96,9 @@ export default function SettingsPage() {
     finally { setLoading(false); }
   }, []);
 
-  const fetchSecurityStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/security/status");
-      const json = await res.json();
-      if (json.success) setSecurityStatus(json.data);
-    } catch { /* ok */ }
-  }, []);
-
   useEffect(() => {
     fetchChannels();
-    fetchSecurityStatus();
-  }, [fetchChannels, fetchSecurityStatus]);
+  }, [fetchChannels]);
 
   async function addChannel() {
     if (!newName || !newUrl) return;
@@ -461,55 +443,6 @@ export default function SettingsPage() {
                 className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600"
               />
               <span className="text-xs text-gray-500">MB (0 = unlimited)</span>
-            </div>
-          </SettingsField>
-        </div>
-      </section>
-
-      {/* ── Security ── */}
-      <section>
-        <div className="flex items-center gap-2 mb-1">
-          <Shield className="h-5 w-5 text-amber-400" />
-          <h2 className="text-lg font-semibold text-white">Security</h2>
-        </div>
-        <p className="text-sm text-gray-400 mb-4">
-          Login, session, request, and browser hardening for the admin panel.
-        </p>
-        {securityStatus && (
-          <div className="mb-4 grid gap-3 sm:grid-cols-2">
-            {Object.entries(securityStatus).map(([key, value]) => (
-              <div key={key} className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
-                <p className="text-xs font-medium uppercase tracking-wider text-emerald-300">{key.replace(/([A-Z])/g, " $1")}</p>
-                <p className="mt-1 text-xs leading-5 text-gray-300">{value}</p>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
-          <SettingsField
-            label="Session Timeout"
-            hint="How long you stay logged in without activity before being automatically signed out."
-          >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
-              <option value="1h">1 hour</option>
-              <option value="8h">8 hours</option>
-              <option value="24h">24 hours (default)</option>
-              <option value="7d">7 days</option>
-            </select>
-          </SettingsField>
-          <SettingsField
-            label="Failed Login Lockout"
-            hint="After this many failed login attempts, the account is temporarily locked to prevent brute-force attacks."
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                defaultValue={5}
-                min={3}
-                max={20}
-                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-              />
-              <span className="text-xs text-gray-500">attempts before lockout</span>
             </div>
           </SettingsField>
         </div>

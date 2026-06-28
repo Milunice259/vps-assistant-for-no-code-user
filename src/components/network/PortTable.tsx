@@ -94,8 +94,8 @@ export function PortTable() {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-gray-700">
-        <table className="w-full text-left text-sm">
+      <div className="overflow-x-auto rounded-xl border border-gray-700 touch-pan-x overscroll-x-contain">
+        <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="border-b border-gray-700 bg-gray-800/50 text-xs uppercase text-gray-400">
             <tr>
               <th className="px-4 py-3 relative group cursor-help">

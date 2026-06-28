@@ -138,7 +138,7 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4">
       {/* Header and description */}
       <div>
         <div className="flex items-center gap-2 mb-1">

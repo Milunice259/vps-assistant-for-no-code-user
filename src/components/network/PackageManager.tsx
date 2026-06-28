@@ -411,8 +411,8 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
           )}
         </div>
       ) : (
-        <div className="max-h-[400px] overflow-y-auto rounded-xl border border-gray-700">
-          <table className="w-full text-left text-sm">
+        <div className="max-h-[400px] overflow-auto rounded-xl border border-gray-700 touch-pan-x overscroll-x-contain">
+          <table className="min-w-[820px] w-full text-left text-sm">
             <thead className="sticky top-0 border-b border-gray-700 bg-gray-800 text-xs uppercase text-gray-400">
               <tr>
                 <th className="px-4 py-3">Package</th>

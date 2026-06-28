@@ -128,7 +128,7 @@ export function SSLChecker({ serverId, defaultDomain }: SSLCheckerProps) {
             {getStatusIcon()}
             <span className="text-sm font-semibold text-white">{result.domain}</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid gap-3 text-xs sm:grid-cols-2">
             <div>
               <span className="text-gray-500">Issuer</span>
               <p className="text-gray-300 mt-0.5 break-all">{result.issuer || "—"}</p>

@@ -339,7 +339,7 @@ export default function AppDetailPage() {
 
       {/* Live Stats Summary */}
       {liveStats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label="CPU"
             value={`${liveStats.cpuPercent.toFixed(1)}%`}

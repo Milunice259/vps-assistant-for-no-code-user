@@ -467,7 +467,7 @@ function RenderMemory({ raw }: { raw: string }) {
           {usagePercent}% used · {ram?.available || "0"} available
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {[
           { label: "Free", value: ram?.free },
           { label: "Shared", value: ram?.shared },
@@ -526,7 +526,7 @@ function RenderNetworkSummary({ raw }: { raw: string }) {
     { label: "UDP", value: net.udp.total, color: "text-purple-400" },
   ];
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid gap-2 sm:grid-cols-3">
       {stats
         .filter((s) => s.value > 0 || s.label === "TCP Total")
         .map((s) => (

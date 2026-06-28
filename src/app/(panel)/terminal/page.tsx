@@ -141,7 +141,7 @@ export default function TerminalPage() {
   const serverName = servers.find((s) => s.id === serverId)?.name || "Server";
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] max-w-5xl">
+    <div className="flex h-[calc(100dvh-8rem)] min-h-[28rem] flex-col">
       {/* Server Selector */}
       <div className="flex items-center gap-3 mb-3">
         <TerminalIcon className="h-5 w-5 text-emerald-400" />

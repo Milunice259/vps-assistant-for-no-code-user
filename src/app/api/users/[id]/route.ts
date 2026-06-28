@@ -28,14 +28,14 @@ export async function PUT(
     const { id } = await context.params;
 
     const body = await request.json();
-    const { role, password, displayName, isActive } = body;
+    const { role, password, displayName, email, isActive } = body;
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    const updateData: { role?: "ADMIN" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; isActive?: boolean } = {};
+    const updateData: { role?: "ADMIN" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; email?: string | null; isActive?: boolean } = {};
 
     if (role) {
       const validRoles = ["ADMIN", "OPERATOR", "VIEWER"];
@@ -64,6 +64,26 @@ export async function PUT(
     }
 
     if (typeof displayName === "string") updateData.displayName = displayName.trim() || null;
+
+    if (typeof email === "string") {
+      const cleanEmail = email.trim().toLowerCase() || null;
+      if (cleanEmail && !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid email address" },
+          { status: 400 }
+        );
+      }
+      if (cleanEmail) {
+        const existingEmail = await prisma.user.findFirst({ where: { email: cleanEmail, NOT: { id } } });
+        if (existingEmail) {
+          return NextResponse.json(
+            { success: false, error: "Email already exists" },
+            { status: 409 }
+          );
+        }
+      }
+      updateData.email = cleanEmail;
+    }
 
     if (typeof isActive === "boolean") {
       if (id === (session.sub as string) && !isActive) {
@@ -102,7 +122,7 @@ export async function PUT(
     const updated = await prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+      select: { id: true, username: true, email: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
     });
 
     const ip = getClientIp(request);

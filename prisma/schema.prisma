@@ -17,6 +17,7 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
+  email        String?
   displayName  String?  @map("display_name")
   passwordHash String   @map("password_hash")
   role         UserRole @default(ADMIN)

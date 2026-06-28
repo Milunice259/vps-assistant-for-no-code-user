@@ -19,7 +19,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<UserInfo>>> {
 
     const user = await prisma.user.findUnique({
       where: { id: session.sub },
-      select: { id: true, username: true, displayName: true, role: true, isActive: true },
+      select: { id: true, username: true, email: true, displayName: true, role: true, isActive: true },
     });
 
     if (!user || !user.isActive) {
@@ -31,7 +31,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<UserInfo>>> {
 
     return NextResponse.json({
       success: true,
-      data: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+      data: { id: user.id, username: user.username, email: user.email, displayName: user.displayName, role: user.role },
     });
   } catch (error) {
     return NextResponse.json(

@@ -335,6 +335,7 @@ export interface LoginInput {
 export interface UserInfo {
   id: string;
   username: string;
+  email?: string | null;
   displayName?: string | null;
   role?: string;
 }

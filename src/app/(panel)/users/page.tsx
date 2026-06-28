@@ -12,6 +12,7 @@ type Role = "ADMIN" | "OPERATOR" | "VIEWER";
 type User = {
   id: string;
   username: string;
+  email: string | null;
   displayName: string | null;
   role: Role;
   isActive: boolean;
@@ -25,7 +26,7 @@ const ROLES: Record<Role, { label: string; desc: string; icon: React.ReactNode; 
   VIEWER: { label: "Viewer", desc: "Read only", icon: <Eye className="h-3.5 w-3.5" />, tone: "info" },
 };
 
-const blank = { username: "", displayName: "", password: "", role: "VIEWER" as Role };
+const blank = { username: "", email: "", displayName: "", password: "", role: "VIEWER" as Role };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -33,7 +34,7 @@ export default function UsersPage() {
   const [create, setCreate] = useState(false);
   const [form, setForm] = useState(blank);
   const [editing, setEditing] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ displayName: "", role: "VIEWER" as Role, password: "", isActive: true });
+  const [editForm, setEditForm] = useState({ displayName: "", email: "", role: "VIEWER" as Role, password: "", isActive: true });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -105,7 +106,7 @@ export default function UsersPage() {
 
   function startEdit(user: User) {
     setEditing(user);
-    setEditForm({ displayName: user.displayName || "", role: user.role, password: "", isActive: user.isActive });
+    setEditForm({ displayName: user.displayName || "", email: user.email || "", role: user.role, password: "", isActive: user.isActive });
   }
 
   if (loading) return <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-800/50" />)}</div>;
@@ -144,8 +145,9 @@ export default function UsersPage() {
 
       {create && (
         <section className="rounded-xl border border-brand-500/20 bg-gray-900 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <Input label="Username" value={form.username} onChange={(v) => setForm({ ...form, username: v })} placeholder="john" />
+            <Input label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} placeholder="john@example.com" />
             <Input label="Display name" value={form.displayName} onChange={(v) => setForm({ ...form, displayName: v })} placeholder="John Doe" />
             <Input label="Password" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} placeholder="Strong password" />
             <Select label="Role" value={form.role} onChange={(v) => setForm({ ...form, role: v as Role })} />
@@ -169,13 +171,14 @@ export default function UsersPage() {
                       <Badge variant={user.isActive ? "success" : "default"}>{user.isActive ? "Active" : "Disabled"}</Badge>
                       <Badge variant={ROLES[user.role].tone}>{ROLES[user.role].label}</Badge>
                     </div>
-                    <p className="text-xs text-gray-500">@{user.username} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
                   </div>
                 </div>
 
                 {isEditing ? (
                   <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-end">
                     <Input label="Display" value={editForm.displayName} onChange={(v) => setEditForm({ ...editForm, displayName: v })} />
+                    <Input label="Email" type="email" value={editForm.email} onChange={(v) => setEditForm({ ...editForm, email: v })} />
                     <Select label="Role" value={editForm.role} onChange={(v) => setEditForm({ ...editForm, role: v as Role })} />
                     <Input label="New password" type="password" value={editForm.password} onChange={(v) => setEditForm({ ...editForm, password: v })} placeholder="Optional" />
                     <label className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300">

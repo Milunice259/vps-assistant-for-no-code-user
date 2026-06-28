@@ -24,6 +24,7 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
       select: {
         id: true,
         username: true,
+        email: true,
         displayName: true,
         role: true,
         isActive: true,
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     }
 
     const body = await request.json();
-    const { username, password, role, displayName } = body;
+    const { username, password, role, displayName, email } = body;
 
     if (!username || !password) {
       return NextResponse.json(
@@ -77,6 +78,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       );
     }
 
+    const cleanEmail = typeof email === "string" && email.trim() ? email.trim().toLowerCase() : null;
+    if (cleanEmail && !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid email address" },
+        { status: 400 }
+      );
+    }
+
     const passwordError = passwordPolicyError(password, await getSecuritySettings());
     if (passwordError) {
       return NextResponse.json(
@@ -89,10 +98,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const userRole = validRoles.includes(role) ? role : "VIEWER";
 
     // Check if username already exists
-    const existing = await prisma.user.findUnique({ where: { username } });
+    const existing = await prisma.user.findFirst({ where: { OR: [{ username }, ...(cleanEmail ? [{ email: cleanEmail }] : [])] } });
     if (existing) {
       return NextResponse.json(
-        { success: false, error: "Username already exists" },
+        { success: false, error: "Username or email already exists" },
         { status: 409 }
       );
     }
@@ -100,8 +109,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { username, displayName: displayName?.trim() || null, passwordHash, role: userRole },
-      select: { id: true, username: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+      data: { username, email: cleanEmail, displayName: displayName?.trim() || null, passwordHash, role: userRole },
+      select: { id: true, username: true, email: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
     });
 
     const ip = getClientIp(request);

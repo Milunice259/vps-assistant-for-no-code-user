@@ -132,7 +132,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      data: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+      data: { id: user.id, username: user.username, email: user.email, displayName: user.displayName, role: user.role },
     });
   } catch (error) {
     const message =

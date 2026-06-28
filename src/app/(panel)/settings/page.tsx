@@ -130,12 +130,20 @@ export default function SettingsPage() {
 
   async function saveSecuritySettings(next = securitySettings) {
     if (!next) return;
+    const payload = safeMode ? {
+      ...next,
+      sessionMaxAgeHours: Math.min(next.sessionMaxAgeHours, 24),
+      idleTimeoutMinutes: next.idleTimeoutMinutes || 60,
+      rememberMeEnabled: false,
+      passwordMinLength: Math.max(next.passwordMinLength, 12),
+      passwordRequireComplexity: true,
+    } : next;
     setSavingSecurity(true);
     try {
       const res = await fetch("/api/settings/security", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (json.success) setSecuritySettings(json.data);
@@ -509,11 +517,6 @@ export default function SettingsPage() {
         </p>
         {securitySettings && (
           <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
-            {safeMode && (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">
-                Safe Mode is on: only conservative security changes should be made. Turn Safe Mode off for looser defaults.
-              </div>
-            )}
             <SettingsField label="Default Safe Mode" hint="New browsers use this default until a user explicitly toggles Safe Mode in the sidebar.">
               <label className="flex items-center gap-2 text-sm text-gray-300">
                 <input
@@ -533,7 +536,7 @@ export default function SettingsPage() {
                 <option value={1}>1 hour</option>
                 <option value={8}>8 hours</option>
                 <option value={24}>24 hours</option>
-                <option value={168} disabled={safeMode}>7 days {safeMode ? "(Safe Mode off)" : ""}</option>
+                {!safeMode && <option value={168}>7 days</option>}
               </select>
             </SettingsField>
             <SettingsField label="Idle Timeout" hint="Auto logout after no browser activity. Disabled means token lifetime is the only timeout.">
@@ -545,32 +548,33 @@ export default function SettingsPage() {
                 <option value={15}>15 minutes</option>
                 <option value={30}>30 minutes</option>
                 <option value={60}>1 hour</option>
-                <option value={0} disabled={safeMode}>Disabled {safeMode ? "(Safe Mode off)" : ""}</option>
+                {!safeMode && <option value={0}>Disabled</option>}
               </select>
             </SettingsField>
-            <SettingsField label="Remember Me" hint="Allows longer login sessions from the login screen.">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={securitySettings.rememberMeEnabled}
-                    disabled={safeMode}
-                    onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeEnabled: e.target.checked })}
-                  />
-                  Allow remember me {safeMode ? "(Safe Mode off)" : ""}
-                </label>
-                <select
-                  value={securitySettings.rememberMeDays}
-                  disabled={!securitySettings.rememberMeEnabled || safeMode}
-                  onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeDays: Number(e.target.value) })}
-                  className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50"
-                >
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
-                </select>
-              </div>
-            </SettingsField>
+            {!safeMode && (
+              <SettingsField label="Remember Me" hint="Allows longer login sessions from the login screen.">
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={securitySettings.rememberMeEnabled}
+                      onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeEnabled: e.target.checked })}
+                    />
+                    Allow remember me
+                  </label>
+                  <select
+                    value={securitySettings.rememberMeDays}
+                    disabled={!securitySettings.rememberMeEnabled}
+                    onChange={(e) => setSecuritySettings({ ...securitySettings, rememberMeDays: Number(e.target.value) })}
+                    className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50"
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
+                    <option value={30}>30 days</option>
+                  </select>
+                </div>
+              </SettingsField>
+            )}
             <SettingsField label="Login Protection" hint="Controls failed-login rate limit and temporary lockout per IP.">
               <div className="grid gap-2 sm:grid-cols-3">
                 <input type="number" min={3} max={20} value={securitySettings.loginMaxAttempts} onChange={(e) => setSecuritySettings({ ...securitySettings, loginMaxAttempts: Number(e.target.value) })} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white" />
@@ -585,9 +589,11 @@ export default function SettingsPage() {
                 <Button variant="secondary" size="sm" loading={savingSecurity} onClick={() => runSecurityAction("cleanup_audit")}>Clean old audit logs</Button>
               </div>
             </SettingsField>
-            <SettingsField label="Force Logout All Sessions" hint="Invalidates existing API sessions; users must log in again.">
-              <Button variant="danger" size="sm" loading={savingSecurity} disabled={safeMode} onClick={() => runSecurityAction("force_logout_all")}>Force logout all</Button>
-            </SettingsField>
+            {!safeMode && (
+              <SettingsField label="Force Logout All Sessions" hint="Invalidates existing API sessions; users must log in again.">
+                <Button variant="danger" size="sm" loading={savingSecurity} onClick={() => runSecurityAction("force_logout_all")}>Force logout all</Button>
+              </SettingsField>
+            )}
             <SettingsField label="Minimum Password Length" hint="Applies when creating users or changing passwords.">
               <input
                 type="number"
@@ -598,17 +604,18 @@ export default function SettingsPage() {
                 className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
               />
             </SettingsField>
-            <SettingsField label="Password Complexity" hint="Requires uppercase, lowercase, number, and symbol. Locked on while Safe Mode is on.">
-              <label className="flex items-center gap-2 text-sm text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={securitySettings.passwordRequireComplexity}
-                  disabled={safeMode}
-                  onChange={(e) => setSecuritySettings({ ...securitySettings, passwordRequireComplexity: e.target.checked })}
-                />
-                Require complex passwords {safeMode ? "(locked by Safe Mode)" : ""}
-              </label>
-            </SettingsField>
+            {!safeMode && (
+              <SettingsField label="Password Complexity" hint="Requires uppercase, lowercase, number, and symbol.">
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={securitySettings.passwordRequireComplexity}
+                    onChange={(e) => setSecuritySettings({ ...securitySettings, passwordRequireComplexity: e.target.checked })}
+                  />
+                  Require complex passwords
+                </label>
+              </SettingsField>
+            )}
             <Button loading={savingSecurity} onClick={() => saveSecuritySettings()}>
               Save security settings
             </Button>

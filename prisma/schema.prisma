@@ -41,6 +41,15 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// ─── Application settings ───
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
 // ─── Notification channels ───
 model NotificationChannel {
   id        String   @id @default(cuid())

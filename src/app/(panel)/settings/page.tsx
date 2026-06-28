@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
-  MessageSquare, Hash, Bot,
+  MessageSquare, Hash, Bot, Shield,
   Settings, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 interface Channel {
   id: string;
@@ -26,6 +27,13 @@ interface AlertRule {
   cooldownMin: number;
   serverId: string | null;
   enabled: boolean;
+}
+
+interface SecuritySettings {
+  sessionMaxAgeHours: number;
+  passwordMinLength: number;
+  passwordRequireComplexity: boolean;
+  defaultSafeMode: boolean;
 }
 
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
@@ -69,6 +77,7 @@ function ruleLabel(rule: AlertRule) {
 }
 
 export default function SettingsPage() {
+  const { safeMode } = useSafeMode();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddChannel, setShowAddChannel] = useState(false);
@@ -76,6 +85,8 @@ export default function SettingsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [checkingAlerts, setCheckingAlerts] = useState(false);
   const [checkResult, setCheckResult] = useState<string | null>(null);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
+  const [savingSecurity, setSavingSecurity] = useState(false);
 
   // Add channel form
   const [newName, setNewName] = useState("");
@@ -96,9 +107,34 @@ export default function SettingsPage() {
     finally { setLoading(false); }
   }, []);
 
+  const fetchSecuritySettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/security");
+      const json = await res.json();
+      if (json.success) setSecuritySettings(json.data);
+    } catch { /* ok */ }
+  }, []);
+
   useEffect(() => {
     fetchChannels();
-  }, [fetchChannels]);
+    fetchSecuritySettings();
+  }, [fetchChannels, fetchSecuritySettings]);
+
+  async function saveSecuritySettings(next = securitySettings) {
+    if (!next) return;
+    setSavingSecurity(true);
+    try {
+      const res = await fetch("/api/settings/security", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      const json = await res.json();
+      if (json.success) setSecuritySettings(json.data);
+    } finally {
+      setSavingSecurity(false);
+    }
+  }
 
   async function addChannel() {
     if (!newName || !newUrl) return;
@@ -446,6 +482,72 @@ export default function SettingsPage() {
             </div>
           </SettingsField>
         </div>
+      </section>
+
+      {/* ── Security ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <Shield className="h-5 w-5 text-amber-400" />
+          <h2 className="text-lg font-semibold text-white">Security</h2>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          Settings users can actually control. Built-in protections like CSRF, headers, auth guards, and secret redaction stay mandatory.
+        </p>
+        {securitySettings && (
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+            {safeMode && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                Safe Mode is on: only conservative security changes should be made. Turn Safe Mode off for looser defaults.
+              </div>
+            )}
+            <SettingsField label="Default Safe Mode" hint="New browsers use this default until a user explicitly toggles Safe Mode in the sidebar.">
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={securitySettings.defaultSafeMode}
+                  onChange={(e) => setSecuritySettings({ ...securitySettings, defaultSafeMode: e.target.checked })}
+                />
+                Start in Safe Mode
+              </label>
+            </SettingsField>
+            <SettingsField label="Session Timeout" hint="How long login sessions remain valid. Shorter is safer for shared/admin machines.">
+              <select
+                value={securitySettings.sessionMaxAgeHours}
+                onChange={(e) => setSecuritySettings({ ...securitySettings, sessionMaxAgeHours: Number(e.target.value) })}
+                className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              >
+                <option value={1}>1 hour</option>
+                <option value={8}>8 hours</option>
+                <option value={24}>24 hours</option>
+                <option value={168} disabled={safeMode}>7 days {safeMode ? "(Safe Mode off)" : ""}</option>
+              </select>
+            </SettingsField>
+            <SettingsField label="Minimum Password Length" hint="Applies when creating users or changing passwords.">
+              <input
+                type="number"
+                min={safeMode ? 12 : 8}
+                max={64}
+                value={securitySettings.passwordMinLength}
+                onChange={(e) => setSecuritySettings({ ...securitySettings, passwordMinLength: Number(e.target.value) })}
+                className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </SettingsField>
+            <SettingsField label="Password Complexity" hint="Requires uppercase, lowercase, number, and symbol. Locked on while Safe Mode is on.">
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={securitySettings.passwordRequireComplexity}
+                  disabled={safeMode}
+                  onChange={(e) => setSecuritySettings({ ...securitySettings, passwordRequireComplexity: e.target.checked })}
+                />
+                Require complex passwords {safeMode ? "(locked by Safe Mode)" : ""}
+              </label>
+            </SettingsField>
+            <Button loading={savingSecurity} onClick={() => saveSecuritySettings()}>
+              Save security settings
+            </Button>
+          </div>
+        )}
       </section>
 
       {/* ── General ── */}

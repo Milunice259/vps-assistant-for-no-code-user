@@ -6,6 +6,7 @@ import {
   setSessionCookie,
 } from "@/lib/auth";
 import { auditLog } from "@/lib/audit";
+import { getSecuritySettings } from "@/lib/security-settings";
 import type { ApiResponse, UserInfo, LoginInput } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -105,8 +106,10 @@ export async function POST(
     }
 
     // Create JWT and set HttpOnly cookie
-    const token = await createSessionToken(user.id, user.username, user.role);
-    await setSessionCookie(token);
+    const { sessionMaxAgeHours } = await getSecuritySettings();
+    const maxAgeSeconds = sessionMaxAgeHours * 60 * 60;
+    const token = await createSessionToken(user.id, user.username, user.role, maxAgeSeconds);
+    await setSessionCookie(token, maxAgeSeconds);
 
     await auditLog({ action: "login", userId: user.id, username: user.username, ip });
 

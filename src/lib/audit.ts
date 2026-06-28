@@ -37,6 +37,7 @@ export type AuditAction =
   | "user_created"
   | "user_updated"
   | "user_deleted"
+  | "security_settings_updated"
   | "deployment_rollback";
 
 interface AuditEntry {

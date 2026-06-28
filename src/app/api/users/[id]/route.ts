@@ -4,6 +4,7 @@ import { hashPassword, getSession } from "@/lib/auth";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { passwordPolicyError } from "@/lib/password-policy";
+import { getSecuritySettings } from "@/lib/security-settings";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function PUT(
     }
 
     if (password) {
-      const passwordError = passwordPolicyError(password);
+      const passwordError = passwordPolicyError(password, await getSecuritySettings());
       if (passwordError) {
         return NextResponse.json(
           { success: false, error: passwordError },

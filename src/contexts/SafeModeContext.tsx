@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useMemo, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 interface SafeModeContextValue {
   safeMode: boolean;
@@ -16,6 +16,16 @@ export function SafeModeProvider({ children }: { children: ReactNode }) {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     return stored === null ? true : stored !== "false";
   });
+
+  useEffect(() => {
+    if (window.localStorage.getItem(STORAGE_KEY) !== null) return;
+    fetch("/api/settings/security")
+      .then((res) => res.json())
+      .then((json) => {
+        if (typeof json.data?.defaultSafeMode === "boolean") setSafeModeState(json.data.defaultSafeMode);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const value = useMemo(() => ({
     safeMode,

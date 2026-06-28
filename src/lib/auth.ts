@@ -42,12 +42,13 @@ export interface SessionPayload extends JWTPayload {
 export async function createSessionToken(
   userId: string,
   username: string,
-  role: string = "ADMIN"
+  role: string = "ADMIN",
+  maxAgeSeconds: number = SESSION_MAX_AGE
 ): Promise<string> {
   return new SignJWT({ sub: userId, username, role })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_MAX_AGE}s`)
+    .setExpirationTime(`${maxAgeSeconds}s`)
     .sign(getJwtSecret());
 }
 
@@ -91,13 +92,13 @@ export async function refreshSessionIfNeeded(): Promise<string | null> {
   return null;
 }
 
-export async function setSessionCookie(token: string): Promise<void> {
+export async function setSessionCookie(token: string, maxAgeSeconds: number = SESSION_MAX_AGE): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: SESSION_MAX_AGE,
+    maxAge: maxAgeSeconds,
     path: "/",
   });
 }

@@ -541,7 +541,10 @@ export default function SettingsPage() {
                 {!safeMode && <option value={168}>7 days</option>}
               </select>
             </SettingsField>
-            <SettingsField label="Idle Timeout" hint="Auto logout after no browser activity. Disabled means token lifetime is the only timeout.">
+            <SettingsField
+              label="Idle Timeout"
+              hint={safeMode ? "Auto logout after no browser activity. Safe Mode requires this to stay enabled." : "Auto logout after no browser activity. You can disable this and use token lifetime only."}
+            >
               <select
                 value={securitySettings.idleTimeoutMinutes}
                 onChange={(e) => setSecuritySettings({ ...securitySettings, idleTimeoutMinutes: Number(e.target.value) })}

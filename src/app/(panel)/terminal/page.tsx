@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, KeyboardEvent } from "react";
 import { Terminal as TerminalIcon, ChevronDown, AlertTriangle } from "lucide-react";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 interface ServerOption {
   id: string;
@@ -141,6 +142,7 @@ export default function TerminalPage() {
   const serverName = servers.find((s) => s.id === serverId)?.name || "Server";
 
   return (
+    <PermissionGate minimum="OPERATOR">
     <div className="flex h-[calc(100dvh-8rem)] min-h-[28rem] flex-col">
       {/* Server Selector */}
       <div className="flex items-center gap-3 mb-3">
@@ -241,5 +243,6 @@ export default function TerminalPage() {
         </div>
       </div>
     </div>
+    </PermissionGate>
   );
 }

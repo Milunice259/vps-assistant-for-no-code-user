@@ -8,6 +8,7 @@ import { DeployLog } from "@/components/deploy/DeployLog";
 import { DockerImageDeploy } from "@/components/deploy/DockerImageDeploy";
 import { DockerComposeDeploy } from "@/components/deploy/DockerComposeDeploy";
 import { Tabs } from "@/components/ui/Tabs";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 const DEPLOY_TABS = [
   { key: "git", label: "Git Repo", icon: <GitBranch className="h-4 w-4" /> },
@@ -25,6 +26,7 @@ export default function DeployPage() {
   const [activeTab, setActiveTab] = useState("git");
 
   return (
+    <PermissionGate minimum="OPERATOR">
     <div className="space-y-8">
       {/* Deploy Type Selector */}
       <section className="rounded-xl border border-gray-700 bg-gray-800/40 p-5">
@@ -57,5 +59,6 @@ export default function DeployPage() {
         <DeployLog />
       </section>
     </div>
+    </PermissionGate>
   );
 }

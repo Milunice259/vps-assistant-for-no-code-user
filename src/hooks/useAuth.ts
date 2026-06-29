@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 interface AuthUser {
   id: string;
   username: string;
+  email?: string | null;
+  displayName?: string | null;
+  role?: string;
 }
 
 interface UseAuthResult {

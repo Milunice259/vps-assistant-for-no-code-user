@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PASSWORD_POLICY_TEXT } from "@/lib/password-policy";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 type Role = "ADMIN" | "OPERATOR" | "VIEWER";
 
@@ -112,6 +113,7 @@ export default function UsersPage() {
   if (loading) return <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-800/50" />)}</div>;
 
   return (
+    <PermissionGate minimum="ADMIN">
     <div className="space-y-6">
       {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
       {success && <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">{success}</div>}
@@ -203,6 +205,7 @@ export default function UsersPage() {
 
       {deleteId && <ConfirmDialog open title="Delete user" message="Delete this user? This cannot be undone." confirmLabel="Delete" variant="danger" onConfirm={deleteUser} onCancel={() => setDeleteId(null)} />}
     </div>
+    </PermissionGate>
   );
 }
 

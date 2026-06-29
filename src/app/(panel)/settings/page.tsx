@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useSafeMode } from "@/contexts/SafeModeContext";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 interface Channel {
   id: string;
@@ -256,6 +257,7 @@ export default function SettingsPage() {
   }
 
   return (
+    <PermissionGate minimum="ADMIN">
     <div className="space-y-8 max-w-4xl">
       {/* ── Notifications Section ── */}
       <section>
@@ -709,6 +711,7 @@ export default function SettingsPage() {
         </p>
       </section>
     </div>
+    </PermissionGate>
   );
 }
 

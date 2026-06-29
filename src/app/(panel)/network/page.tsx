@@ -8,6 +8,7 @@ const ServerNetworkMap = dynamic(
   { ssr: false, loading: () => <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div> }
 );
 import type { ServerInfo } from "@/types";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 /* ── Server selector dropdown ── */
 function ServerSelector({
@@ -69,6 +70,7 @@ export default function NetworkPage() {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
 
   return (
+    <PermissionGate minimum="OPERATOR">
     <div className="space-y-8">
       {/* Network Map */}
       <section>
@@ -100,5 +102,6 @@ export default function NetworkPage() {
         <PortTable />
       </section>
     </div>
+    </PermissionGate>
   );
 }

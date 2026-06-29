@@ -22,12 +22,15 @@ import {
 import clsx from "clsx";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { useSafeMode } from "@/contexts/SafeModeContext";
+import { useAuth } from "@/hooks/useAuth";
+import { can, type Role } from "@/lib/permissions";
 import { useState, useEffect } from "react";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
+  minRole?: Role;
 }
 
 interface NavGroup {
@@ -47,19 +50,19 @@ const navGroups: NavGroup[] = [
     label: "Management",
     items: [
       { label: "Apps", href: "/apps", icon: <AppWindow className="h-5 w-5" /> },
-      { label: "Deploy", href: "/deploy", icon: <GitBranch className="h-5 w-5" /> },
-      { label: "Network", href: "/network", icon: <Network className="h-5 w-5" /> },
-      { label: "Terminal", href: "/terminal", icon: <SquareTerminal className="h-5 w-5" /> },
+      { label: "Deploy", href: "/deploy", icon: <GitBranch className="h-5 w-5" />, minRole: "OPERATOR" },
+      { label: "Network", href: "/network", icon: <Network className="h-5 w-5" />, minRole: "OPERATOR" },
+      { label: "Terminal", href: "/terminal", icon: <SquareTerminal className="h-5 w-5" />, minRole: "OPERATOR" },
     ],
   },
   {
     label: "System",
     items: [
-      { label: "Users", href: "/users", icon: <Users className="h-5 w-5" /> },
-      { label: "Backups", href: "/backup", icon: <Database className="h-5 w-5" /> },
+      { label: "Users", href: "/users", icon: <Users className="h-5 w-5" />, minRole: "ADMIN" },
+      { label: "Backups", href: "/backup", icon: <Database className="h-5 w-5" />, minRole: "ADMIN" },
       { label: "Audit Log", href: "/audit", icon: <Shield className="h-5 w-5" /> },
       { label: "Docs", href: "/docs", icon: <BookOpen className="h-5 w-5" /> },
-      { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
+      { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" />, minRole: "ADMIN" },
     ],
   },
 ];
@@ -78,6 +81,7 @@ function SidebarInner({
 }) {
   const pathname = usePathname();
   const { safeMode, setSafeMode } = useSafeMode();
+  const { user } = useAuth();
 
   return (
     <>
@@ -109,7 +113,7 @@ function SidebarInner({
               </span>
             )}
             <div className="space-y-1">
-              {group.items.filter((item) => !safeMode || item.href !== "/terminal").map((item) => {
+              {group.items.filter((item) => (!item.minRole || can(user?.role, item.minRole)) && (!safeMode || item.href !== "/terminal")).map((item) => {
                 const isActive =
                   pathname === item.href || pathname.startsWith(item.href + "/");
 

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PermissionGate } from "@/components/ui/PermissionGate";
 
 interface BackupEntry {
   name: string;
@@ -92,6 +93,7 @@ export default function BackupPage() {
   }
 
   return (
+    <PermissionGate minimum="ADMIN">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -201,5 +203,6 @@ export default function BackupPage() {
         onCancel={() => setConfirmDelete(null)}
       />
     </div>
+    </PermissionGate>
   );
 }

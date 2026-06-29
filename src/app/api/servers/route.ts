@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { getSession } from "@/lib/auth";
-import { normalizeRole, scopedServerWhere } from "@/lib/server-access";
+import { canAccessServer, normalizeRole, scopedServerWhere } from "@/lib/server-access";
 import { getLocalServerInfo } from "@/lib/local-server";
 import type { ApiResponse, ServerInfo, CreateServerInput } from "@/types";
 
@@ -45,7 +45,8 @@ export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
       createdAt: s.createdAt.toISOString(),
     }));
 
-    const data = role === "OWNER" || role === "ADMIN" ? [getLocalServerInfo(), ...dbServers] : dbServers;
+    const includeLocal = await canAccessServer(session.sub as string, role, "local");
+    const data = includeLocal ? [getLocalServerInfo(), ...dbServers] : dbServers;
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

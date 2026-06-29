@@ -27,7 +27,6 @@ export async function canAccessServer(userId: string, role: string, serverId: st
   if (r === "OWNER" || r === "ADMIN") return true;
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { serverAccessMode: true } });
   if (user?.serverAccessMode === "ALL") return true;
-  if (serverId === "local") return false;
   return !!(await prisma.userServerAccess.findUnique({ where: { userId_serverId: { userId, serverId } } }));
 }
 
@@ -36,6 +35,6 @@ export async function scopedServerWhere(userId: string, role: string) {
   if (r === "OWNER" || r === "ADMIN") return {};
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { serverAccessMode: true } });
   if (user?.serverAccessMode === "ALL") return {};
-  const rows = await prisma.userServerAccess.findMany({ where: { userId }, select: { serverId: true } });
+  const rows = await prisma.userServerAccess.findMany({ where: { userId, NOT: { serverId: "local" } }, select: { serverId: true } });
   return { id: { in: rows.map((r) => r.serverId) } };
 }

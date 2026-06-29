@@ -102,7 +102,7 @@ export async function PUT(
       updateData.passwordHash = await hashPassword(password);
     }
 
-    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((sid: unknown): sid is string => typeof sid === "string" && sid !== "local") : undefined;
+    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((sid: unknown): sid is string => typeof sid === "string" ) : undefined;
 
     if (Object.keys(updateData).length === 0 && cleanServerIds === undefined) {
       return NextResponse.json({ success: false, error: "No updates provided" }, { status: 400 });

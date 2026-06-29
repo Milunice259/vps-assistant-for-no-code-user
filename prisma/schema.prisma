@@ -32,10 +32,9 @@ model User {
 }
 
 model UserServerAccess {
-  userId   String   @map("user_id")
-  serverId String   @map("server_id")
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  server   Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  serverId  String   @map("server_id") // may be virtual "local"
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@id([userId, serverId])
@@ -117,7 +116,6 @@ model Server {
 
   apps        App[]
   deployments DeploymentLog[]
-  userAccess  UserServerAccess[]
 
   @@map("servers")
 }

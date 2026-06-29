@@ -69,7 +69,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-    fetch("/api/servers").then((r) => r.json()).then((j) => { if (j.success) setServers(j.data.filter((s: { id: string }) => s.id !== "local")); }).catch(() => {});
+    fetch("/api/servers").then((r) => r.json()).then((j) => { if (j.success) setServers(j.data); }).catch(() => {});
   }, [fetchUsers]);
   useEffect(() => {
     if (!error && !success) return;

@@ -100,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const validRoles = session.role === "OWNER" ? ["ADMIN", "MANAGER", "VIEWER"] : ["MANAGER", "VIEWER"];
     const userRole = validRoles.includes(role) ? role : "VIEWER";
     const accessMode = userRole === "ADMIN" ? "ALL" : serverAccessMode === "SELECTED" ? "SELECTED" : "ALL";
-    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((id: unknown): id is string => typeof id === "string" && id !== "local") : [];
+    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((id: unknown): id is string => typeof id === "string" ) : [];
 
     // Check if username already exists
     const existing = await prisma.user.findFirst({ where: { OR: [{ username }, ...(cleanEmail ? [{ email: cleanEmail }] : [])] } });

@@ -37,6 +37,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ displayName: "", email: "", role: "VIEWER" as Role, password: "", isActive: true });
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<Role | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -45,6 +46,7 @@ export default function UsersPage() {
     active: users.filter((u) => u.isActive).length,
     admins: users.filter((u) => u.role === "ADMIN" && u.isActive).length,
   }), [users]);
+  const visibleUsers = roleFilter ? users.filter((u) => u.role === roleFilter) : users;
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -136,13 +138,30 @@ export default function UsersPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-3">
+      <section className="space-y-3">
+        {roleFilter && (
+          <button
+            onClick={() => setRoleFilter(null)}
+            className="text-xs text-brand-300 hover:text-brand-200"
+          >
+            Clear filter: {ROLES[roleFilter].label}
+          </button>
+        )}
+        <div className="grid gap-3 lg:grid-cols-3">
         {(Object.keys(ROLES) as Role[]).map((role) => (
-          <div key={role} className="rounded-xl border border-gray-700 bg-gray-900 p-4">
+          <button
+            key={role}
+            onClick={() => setRoleFilter(roleFilter === role ? null : role)}
+            className={`rounded-xl border p-4 text-left transition-colors ${roleFilter === role ? "border-brand-500 bg-brand-500/10" : "border-gray-700 bg-gray-900 hover:border-gray-600"}`}
+          >
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">{ROLES[role].icon}{ROLES[role].label}</div>
             <p className="text-sm text-gray-400">{ROLES[role].desc}</p>
-          </div>
+            <p className="mt-3 text-xs text-gray-500">
+              {users.filter((u) => u.role === role).length} users · {users.filter((u) => u.role === role && u.isActive).length} active
+            </p>
+          </button>
         ))}
+        </div>
       </section>
 
       {create && (
@@ -160,7 +179,7 @@ export default function UsersPage() {
       )}
 
       <section className="space-y-2">
-        {users.map((user) => {
+        {visibleUsers.map((user) => {
           const isEditing = editing?.id === user.id;
           return (
             <div key={user.id} className="rounded-xl border border-gray-700 bg-gray-900 p-4">

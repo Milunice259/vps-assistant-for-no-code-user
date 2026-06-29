@@ -5,6 +5,7 @@ import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { passwordPolicyError } from "@/lib/password-policy";
 import { getSecuritySettings } from "@/lib/security-settings";
+import { adminRoles, canManageRole, hasActiveOwner, normalizeRole } from "@/lib/server-access";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -21,44 +22,32 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    if (session.role !== "ADMIN") {
+    if (!adminRoles.has(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     }
 
     const { id } = await context.params;
 
     const body = await request.json();
-    const { role, password, displayName, email, isActive } = body;
+    const { role, password, displayName, email, isActive, serverAccessMode, serverIds } = body;
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    const updateData: { role?: "ADMIN" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; email?: string | null; isActive?: boolean } = {};
+    const updateData: { role?: "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; email?: string | null; isActive?: boolean; serverAccessMode?: "ALL" | "SELECTED" } = {};
+    if (!canManageRole(session.role as string, user.role) && id !== (session.sub as string)) {
+      return NextResponse.json({ success: false, error: "You cannot manage this user" }, { status: 403 });
+    }
 
     if (role) {
-      const validRoles = ["ADMIN", "OPERATOR", "VIEWER"];
+      const validRoles = session.role === "OWNER" ? ["ADMIN", "MANAGER", "VIEWER"] : ["MANAGER", "VIEWER"];
       if (!validRoles.includes(role)) {
-        return NextResponse.json(
-          { success: false, error: "Invalid role. Must be ADMIN, OPERATOR, or VIEWER" },
-          { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: "Invalid role for your account" }, { status: 400 });
       }
-      if (id === (session.sub as string) && role !== "ADMIN") {
-        return NextResponse.json(
-          { success: false, error: "You cannot remove your own admin role" },
-          { status: 400 }
-        );
-      }
-      if (user.role === "ADMIN" && role !== "ADMIN") {
-        const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
-        if (activeAdmins === 0) {
-          return NextResponse.json(
-            { success: false, error: "At least one active admin is required" },
-            { status: 400 }
-          );
-        }
+      if (user.role === "OWNER" && role !== "OWNER" && !(await hasActiveOwner(id))) {
+        return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
       }
       updateData.role = role;
     }
@@ -92,16 +81,14 @@ export async function PUT(
           { status: 400 }
         );
       }
-      if (user.role === "ADMIN" && !isActive) {
-        const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
-        if (activeAdmins === 0) {
-          return NextResponse.json(
-            { success: false, error: "At least one active admin is required" },
-            { status: 400 }
-          );
-        }
+      if (user.role === "OWNER" && !isActive && !(await hasActiveOwner(id))) {
+        return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
       }
       updateData.isActive = isActive;
+    }
+
+    if (serverAccessMode === "ALL" || serverAccessMode === "SELECTED") {
+      updateData.serverAccessMode = role === "ADMIN" || user.role === "ADMIN" ? "ALL" : serverAccessMode;
     }
 
     if (password) {
@@ -115,14 +102,24 @@ export async function PUT(
       updateData.passwordHash = await hashPassword(password);
     }
 
-    if (Object.keys(updateData).length === 0) {
+    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((sid: unknown): sid is string => typeof sid === "string" && sid !== "local") : undefined;
+
+    if (Object.keys(updateData).length === 0 && cleanServerIds === undefined) {
       return NextResponse.json({ success: false, error: "No updates provided" }, { status: 400 });
     }
 
-    const updated = await prisma.user.update({
-      where: { id },
-      data: updateData,
-      select: { id: true, username: true, email: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+    const updated = await prisma.$transaction(async (tx) => {
+      if (cleanServerIds !== undefined) {
+        await tx.userServerAccess.deleteMany({ where: { userId: id } });
+        if ((updateData.serverAccessMode ?? user.serverAccessMode) === "SELECTED") {
+          await tx.userServerAccess.createMany({ data: [...new Set(cleanServerIds)].map((serverId) => ({ userId: id, serverId })) });
+        }
+      }
+      return tx.user.update({
+        where: { id },
+        data: updateData,
+        select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, serverAccess: { select: { serverId: true } } },
+      });
     });
 
     const ip = getClientIp(request);
@@ -134,7 +131,7 @@ export async function PUT(
       details: `Updated user: ${user.username} (${Object.keys(updateData).filter((key) => key !== "passwordHash").join(", ")}${updateData.passwordHash ? ", password" : ""})`,
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: { ...updated, serverIds: updated.serverAccess.map((a) => a.serverId), serverAccess: undefined } });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: safeErrorMessage(error, "Failed to update user") },
@@ -153,7 +150,7 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    if (session.role !== "ADMIN") {
+    if (!adminRoles.has(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     }
 
@@ -172,14 +169,11 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    if (user.role === "ADMIN") {
-      const activeAdmins = await prisma.user.count({ where: { role: "ADMIN", isActive: true, NOT: { id } } });
-      if (activeAdmins === 0) {
-        return NextResponse.json(
-          { success: false, error: "At least one active admin is required" },
-          { status: 400 }
-        );
-      }
+    if (!canManageRole(session.role as string, user.role)) {
+      return NextResponse.json({ success: false, error: "You cannot delete this user" }, { status: 403 });
+    }
+    if (user.role === "OWNER" && !(await hasActiveOwner(id))) {
+      return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
     }
 
     await prisma.user.delete({ where: { id } });

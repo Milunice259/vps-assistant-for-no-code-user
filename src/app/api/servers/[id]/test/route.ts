@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { closeSSH } from "@/lib/ssh";
 import { connectToServer } from "@/lib/server-ssh";
@@ -17,6 +19,12 @@ export async function POST(
 
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     if (isLocalServer(id)) return NextResponse.json({ success: true, data: detectLocalServer() });
 
     const result = await connectToServer(id);

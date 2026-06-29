@@ -5,6 +5,7 @@ import { decrypt } from "@/lib/crypto";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import SSH2Promise from "ssh2-promise";
 
 const ALLOWED_ACTIONS = ["start", "stop", "restart", "enable", "disable"] as const;
@@ -22,6 +23,11 @@ export async function POST(
 ) {
   try {
     const { id: serverId } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, serverId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const body = await request.json();
     const { service, action } = body as { service: string; action: string };
 
@@ -79,7 +85,6 @@ export async function POST(
       }
     }
 
-    const session = await getSession();
     const ip = getClientIp(request);
     await auditLog({
       action: `service_${action}` as `service_${ServiceAction}`,

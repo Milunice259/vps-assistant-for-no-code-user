@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { isLocalServer, getLocalServerInfo } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -46,6 +48,11 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<ServerInfo>>> {
   try {
     const { id } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
 
     // Virtual local server
     if (isLocalServer(id)) {
@@ -93,6 +100,11 @@ export async function PATCH(
 ): Promise<NextResponse<ApiResponse<ServerInfo>>> {
   try {
     const { id } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
 
     if (isLocalServer(id)) {
       return NextResponse.json(
@@ -166,6 +178,11 @@ export async function DELETE(
 ): Promise<NextResponse<ApiResponse>> {
   try {
     const { id } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
 
     if (isLocalServer(id)) {
       return NextResponse.json(

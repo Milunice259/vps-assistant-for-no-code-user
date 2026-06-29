@@ -17,7 +17,7 @@ const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 
 // HTTP methods that mutate state
 const MUTABLE_METHODS = new Set(["POST", "PUT", "DELETE", "PATCH"]);
-const ROLE_LEVEL = { VIEWER: 0, OPERATOR: 1, ADMIN: 2 } as const;
+const ROLE_LEVEL = { VIEWER: 0, MANAGER: 1, OPERATOR: 1, ADMIN: 2, OWNER: 3 } as const;
 type Role = keyof typeof ROLE_LEVEL;
 
 // ── Global API Rate Limiter (in-memory) ──

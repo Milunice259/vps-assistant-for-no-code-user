@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { closeSSH, executeCommand } from "@/lib/ssh";
 import { connectToServer } from "@/lib/server-ssh";
@@ -28,6 +30,12 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<SSLInfo>>> {
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const url = new URL(request.url);
     const domain = url.searchParams.get("domain");
 

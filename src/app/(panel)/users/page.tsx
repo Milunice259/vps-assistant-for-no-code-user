@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Edit2, Eye, Plus, Shield, Trash2, UserRound, Users, Wrench, X } from "lucide-react";
+import { Crown, Check, Edit2, Eye, Plus, Shield, Trash2, UserRound, Users, Wrench, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PASSWORD_POLICY_TEXT } from "@/lib/password-policy";
 import { PermissionGate } from "@/components/ui/PermissionGate";
 
-type Role = "ADMIN" | "OPERATOR" | "VIEWER";
+type Role = "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
+type ServerAccessMode = "ALL" | "SELECTED";
 
 type User = {
   id: string;
@@ -16,26 +17,31 @@ type User = {
   email: string | null;
   displayName: string | null;
   role: Role;
+  serverAccessMode: ServerAccessMode;
+  serverIds: string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 };
 
 const ROLES: Record<Role, { label: string; desc: string; icon: React.ReactNode; tone: "danger" | "warning" | "info" }> = {
-  ADMIN: { label: "Admin", desc: "Full access", icon: <Shield className="h-3.5 w-3.5" />, tone: "danger" },
-  OPERATOR: { label: "Operator", desc: "Manage servers/apps", icon: <Wrench className="h-3.5 w-3.5" />, tone: "warning" },
+  OWNER: { label: "Owner", desc: "System owner", icon: <Crown className="h-3.5 w-3.5" />, tone: "danger" },
+  ADMIN: { label: "Admin", desc: "Global admin", icon: <Shield className="h-3.5 w-3.5" />, tone: "danger" },
+  MANAGER: { label: "Manager", desc: "Scoped server control", icon: <Wrench className="h-3.5 w-3.5" />, tone: "warning" },
+  OPERATOR: { label: "Operator", desc: "Legacy manager", icon: <Wrench className="h-3.5 w-3.5" />, tone: "warning" },
   VIEWER: { label: "Viewer", desc: "Read only", icon: <Eye className="h-3.5 w-3.5" />, tone: "info" },
 };
 
-const blank = { username: "", email: "", displayName: "", password: "", role: "VIEWER" as Role };
+const blank = { username: "", email: "", displayName: "", password: "", role: "VIEWER" as Role, serverAccessMode: "ALL" as ServerAccessMode, serverIds: [] as string[] };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [servers, setServers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [create, setCreate] = useState(false);
   const [form, setForm] = useState(blank);
   const [editing, setEditing] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ displayName: "", email: "", role: "VIEWER" as Role, password: "", isActive: true });
+  const [editForm, setEditForm] = useState({ displayName: "", email: "", role: "VIEWER" as Role, password: "", isActive: true, serverAccessMode: "ALL" as ServerAccessMode, serverIds: [] as string[] });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<Role | null>(null);
   const [error, setError] = useState("");
@@ -44,7 +50,7 @@ export default function UsersPage() {
   const stats = useMemo(() => ({
     total: users.length,
     active: users.filter((u) => u.isActive).length,
-    admins: users.filter((u) => u.role === "ADMIN" && u.isActive).length,
+    admins: users.filter((u) => (u.role === "OWNER" || u.role === "ADMIN") && u.isActive).length,
   }), [users]);
   const visibleUsers = roleFilter ? users.filter((u) => u.role === roleFilter) : users;
 
@@ -61,7 +67,10 @@ export default function UsersPage() {
     }
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    fetchUsers();
+    fetch("/api/servers").then((r) => r.json()).then((j) => { if (j.success) setServers(j.data.filter((s: { id: string }) => s.id !== "local")); }).catch(() => {});
+  }, [fetchUsers]);
   useEffect(() => {
     if (!error && !success) return;
     const t = setTimeout(() => { setError(""); setSuccess(""); }, 4000);
@@ -109,7 +118,7 @@ export default function UsersPage() {
 
   function startEdit(user: User) {
     setEditing(user);
-    setEditForm({ displayName: user.displayName || "", email: user.email || "", role: user.role, password: "", isActive: user.isActive });
+    setEditForm({ displayName: user.displayName || "", email: user.email || "", role: user.role, password: "", isActive: user.isActive, serverAccessMode: user.serverAccessMode || "ALL", serverIds: user.serverIds || [] });
   }
 
   if (loading) return <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-800/50" />)}</div>;
@@ -173,6 +182,7 @@ export default function UsersPage() {
             <Input label="Password" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} placeholder="Strong password" />
             <Select label="Role" value={form.role} onChange={(v) => setForm({ ...form, role: v as Role })} />
           </div>
+          <ServerAccessForm mode={form.serverAccessMode} ids={form.serverIds} servers={servers} onMode={(v) => setForm({ ...form, serverAccessMode: v })} onIds={(v) => setForm({ ...form, serverIds: v })} />
           <p className="mt-3 text-xs text-gray-500">{PASSWORD_POLICY_TEXT}</p>
           <div className="mt-4 flex gap-2"><Button size="sm" onClick={createUser}>Create</Button><Button size="sm" variant="ghost" onClick={() => setCreate(false)}>Cancel</Button></div>
         </section>
@@ -192,7 +202,7 @@ export default function UsersPage() {
                       <Badge variant={user.isActive ? "success" : "default"}>{user.isActive ? "Active" : "Disabled"}</Badge>
                       <Badge variant={ROLES[user.role].tone}>{ROLES[user.role].label}</Badge>
                     </div>
-                    <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · {user.serverAccessMode === "SELECTED" ? `${user.serverIds.length} servers` : "all servers"} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
                   </div>
                 </div>
 
@@ -202,6 +212,7 @@ export default function UsersPage() {
                     <Input label="Email" type="email" value={editForm.email} onChange={(v) => setEditForm({ ...editForm, email: v })} />
                     <Select label="Role" value={editForm.role} onChange={(v) => setEditForm({ ...editForm, role: v as Role })} />
                     <Input label="New password" type="password" value={editForm.password} onChange={(v) => setEditForm({ ...editForm, password: v })} placeholder="Optional" />
+                    <ServerAccessForm mode={editForm.serverAccessMode} ids={editForm.serverIds} servers={servers} onMode={(v) => setEditForm({ ...editForm, serverAccessMode: v })} onIds={(v) => setEditForm({ ...editForm, serverIds: v })} compact />
                     <label className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300">
                       <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
                     </label>
@@ -238,4 +249,18 @@ function Input({ label, value, onChange, placeholder, type = "text" }: { label: 
 
 function Select({ label, value, onChange }: { label: string; value: Role; onChange: (value: string) => void }) {
   return <label className="block"><span className="mb-1 block text-xs text-gray-500">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none">{(Object.keys(ROLES) as Role[]).map((role) => <option key={role} value={role}>{ROLES[role].label} — {ROLES[role].desc}</option>)}</select></label>;
+}
+
+function ServerAccessForm({ mode, ids, servers, onMode, onIds, compact = false }: { mode: ServerAccessMode; ids: string[]; servers: { id: string; name: string }[]; onMode: (v: ServerAccessMode) => void; onIds: (v: string[]) => void; compact?: boolean }) {
+  const toggle = (id: string) => onIds(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
+  return <div className={compact ? "md:col-span-2" : "mt-3"}>
+    <div className="flex flex-wrap gap-3 text-xs text-gray-300">
+      <label><input type="radio" checked={mode === "ALL"} onChange={() => onMode("ALL")} /> All servers</label>
+      <label><input type="radio" checked={mode === "SELECTED"} onChange={() => onMode("SELECTED")} /> Selected servers</label>
+    </div>
+    {mode === "SELECTED" && <div className="mt-2 flex flex-wrap gap-2">
+      {servers.map((s) => <label key={s.id} className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-300"><input className="mr-1" type="checkbox" checked={ids.includes(s.id)} onChange={() => toggle(s.id)} />{s.name}</label>)}
+      {servers.length === 0 && <span className="text-xs text-gray-500">No remote servers yet.</span>}
+    </div>}
+  </div>;
 }

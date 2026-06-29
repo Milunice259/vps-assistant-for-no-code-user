@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { execLocal, execOnHost, isLocalServer } from "@/lib/local-server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
@@ -58,6 +60,12 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const params = request.nextUrl.searchParams;
     const source = (params.get("source") || "system") as LogSource;
     const lines = lineLimit(params.get("lines"));

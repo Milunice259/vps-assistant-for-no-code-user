@@ -6,6 +6,8 @@
  * which executables can be run. Only whitelisted commands are permitted.
  */
 
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -51,6 +53,11 @@ export async function POST(
 ) {
   try {
     const { id: serverId } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, serverId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const ip = getClientIp(request);
 
     if (isRateLimited(ip)) {

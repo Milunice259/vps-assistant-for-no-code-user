@@ -15,17 +15,31 @@ datasource db {
 
 // ─── Admin users ───
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  email        String?
-  displayName  String?  @map("display_name")
-  passwordHash String   @map("password_hash")
-  role         UserRole @default(ADMIN)
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id               String           @id @default(cuid())
+  username         String           @unique
+  email            String?
+  displayName      String?          @map("display_name")
+  passwordHash     String           @map("password_hash")
+  role             UserRole         @default(ADMIN)
+  serverAccessMode ServerAccessMode @default(ALL) @map("server_access_mode")
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  serverAccess UserServerAccess[]
 
   @@map("users")
+}
+
+model UserServerAccess {
+  userId   String   @map("user_id")
+  serverId String   @map("server_id")
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server   Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, serverId])
+  @@map("user_server_access")
 }
 
 // ─── Security audit trail ───
@@ -103,6 +117,7 @@ model Server {
 
   apps        App[]
   deployments DeploymentLog[]
+  userAccess  UserServerAccess[]
 
   @@map("servers")
 }
@@ -194,9 +209,16 @@ model EnvProfile {
 }
 
 enum UserRole {
-  ADMIN     // Full access — all actions
-  OPERATOR  // Start/stop containers, deploy, view logs
+  OWNER     // System owner — cannot be managed by Admin
+  ADMIN     // Global operations admin
+  MANAGER   // Scoped server manager
+  OPERATOR  // Legacy alias for Manager
   VIEWER    // Read-only dashboard access
+}
+
+enum ServerAccessMode {
+  ALL
+  SELECTED
 }
 
 enum AuthMethod {

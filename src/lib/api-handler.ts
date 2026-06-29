@@ -15,7 +15,7 @@ const SESSION_COOKIE = "vps-session";
 export interface Session {
   userId: string;
   username: string;
-  role: "ADMIN" | "OPERATOR" | "VIEWER";
+  role: "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER";
 }
 
 export interface ApiContext {
@@ -94,8 +94,10 @@ export function withAuth(handler: ApiRouteHandler) {
 // ── Role hierarchy ──
 const ROLE_LEVEL: Record<string, number> = {
   VIEWER: 0,
+  MANAGER: 1,
   OPERATOR: 1,
   ADMIN: 2,
+  OWNER: 3,
 };
 
 /**
@@ -109,7 +111,7 @@ const ROLE_LEVEL: Record<string, number> = {
  * ```
  */
 export function withRole(
-  minRole: "ADMIN" | "OPERATOR" | "VIEWER",
+  minRole: "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER",
   handler: ApiRouteHandler
 ) {
   return withAuth(async (request, context) => {

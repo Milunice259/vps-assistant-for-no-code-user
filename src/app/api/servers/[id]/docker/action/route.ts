@@ -4,6 +4,7 @@ import { containerAction, closeSSH } from "@/lib/ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
 import { validateContainerId } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { ApiResponse } from "@/types";
@@ -28,6 +29,10 @@ export async function POST(
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const { id } = await context.params;
+
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const body = await request.json();
     const { containerId, action } = body as {
       containerId?: string;

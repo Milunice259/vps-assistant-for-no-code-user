@@ -4,6 +4,7 @@ import { connectToServer } from "@/lib/server-ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,12 @@ export async function POST(
 
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const { package: pkg } = (await request.json()) as { package?: string };
 
     if (!pkg || !ALLOWED_PACKAGES.includes(pkg as (typeof ALLOWED_PACKAGES)[number])) {
@@ -75,7 +82,6 @@ export async function POST(
         };
 
     const output = await installPackage(run, pkg);
-    const session = await getSession();
     await auditLog({
       action: "package_install",
       userId: session?.sub as string | undefined,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
+import { getSession } from "@/lib/auth";
+import { normalizeRole, scopedServerWhere } from "@/lib/server-access";
 import { getLocalServerInfo } from "@/lib/local-server";
 import type { ApiResponse, ServerInfo, CreateServerInput } from "@/types";
 
@@ -12,7 +14,11 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
   try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const role = normalizeRole(session.role as string);
     const servers = await prisma.server.findMany({
+      where: await scopedServerWhere(session.sub as string, role),
       select: {
         id: true,
         name: true,
@@ -39,8 +45,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<ServerInfo[]>>> {
       createdAt: s.createdAt.toISOString(),
     }));
 
-    // Always show local server first
-    const data = [getLocalServerInfo(), ...dbServers];
+    const data = role === "OWNER" || role === "ADMIN" ? [getLocalServerInfo(), ...dbServers] : dbServers;
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

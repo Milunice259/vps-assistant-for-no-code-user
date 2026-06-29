@@ -5,6 +5,7 @@ import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { passwordPolicyError } from "@/lib/password-policy";
 import { getSecuritySettings } from "@/lib/security-settings";
+import { adminRoles, normalizeRole } from "@/lib/server-access";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
     if (!session) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    if (session.role !== "ADMIN") {
+    if (!adminRoles.has(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     }
 
@@ -30,11 +31,13 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        serverAccessMode: true,
+        serverAccess: { select: { serverId: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ success: true, data: users });
+    return NextResponse.json({ success: true, data: users.map((u) => ({ ...u, serverIds: u.serverAccess.map((a) => a.serverId), serverAccess: undefined })) });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: safeErrorMessage(error, "Failed to load users") },
@@ -50,12 +53,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     if (!session) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    if (session.role !== "ADMIN") {
+    if (!adminRoles.has(normalizeRole(session.role))) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     }
 
     const body = await request.json();
-    const { username, password, role, displayName, email } = body;
+    const { username, password, role, displayName, email, serverAccessMode, serverIds } = body;
 
     if (!username || !password) {
       return NextResponse.json(
@@ -94,8 +97,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       );
     }
 
-    const validRoles = ["ADMIN", "OPERATOR", "VIEWER"];
+    const validRoles = session.role === "OWNER" ? ["ADMIN", "MANAGER", "VIEWER"] : ["MANAGER", "VIEWER"];
     const userRole = validRoles.includes(role) ? role : "VIEWER";
+    const accessMode = userRole === "ADMIN" ? "ALL" : serverAccessMode === "SELECTED" ? "SELECTED" : "ALL";
+    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((id: unknown): id is string => typeof id === "string" && id !== "local") : [];
 
     // Check if username already exists
     const existing = await prisma.user.findFirst({ where: { OR: [{ username }, ...(cleanEmail ? [{ email: cleanEmail }] : [])] } });
@@ -109,8 +114,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { username, email: cleanEmail, displayName: displayName?.trim() || null, passwordHash, role: userRole },
-      select: { id: true, username: true, email: true, displayName: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+      data: {
+        username,
+        email: cleanEmail,
+        displayName: displayName?.trim() || null,
+        passwordHash,
+        role: userRole,
+        serverAccessMode: accessMode,
+        serverAccess: accessMode === "SELECTED" ? { create: cleanServerIds.map((serverId) => ({ serverId })) } : undefined,
+      },
+      select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, serverAccess: { select: { serverId: true } } },
     });
 
     const ip = getClientIp(request);
@@ -122,7 +135,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       details: `Created user: ${username} (${userRole})`,
     });
 
-    return NextResponse.json({ success: true, data: user });
+    return NextResponse.json({ success: true, data: { ...user, serverIds: user.serverAccess.map((a) => a.serverId), serverAccess: undefined } });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: safeErrorMessage(error, "Failed to create user") },

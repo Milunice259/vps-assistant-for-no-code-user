@@ -4,6 +4,7 @@ import { quickAction, closeSSH } from "@/lib/ssh";
 import { isLocalServer, localQuickAction } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,12 @@ export async function POST(
 
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
     const body = await request.json();
     const { action, param } = body as { action?: string; param?: string };
 
@@ -142,7 +149,6 @@ export async function POST(
       );
     }
 
-    const session = await getSession();
     await auditLog({
       action: "quick_action",
       userId: session?.sub as string | undefined,

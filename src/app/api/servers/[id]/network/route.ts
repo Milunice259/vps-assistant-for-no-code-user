@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { getRemoteDockerNetworks, getRemoteHostPorts, closeSSH } from "@/lib/ssh";
@@ -19,6 +21,12 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
 
     // ── Local server: use Docker socket + ss (no SSH) ──
     if (isLocalServer(id)) {

@@ -98,7 +98,7 @@ export function RiskOverview() {
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
-  const [guideMessage, setGuideMessage] = useState<string | null>(null);
+  const [guidePanel, setGuidePanel] = useState<{ key: string; message: string } | null>(null);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [notificationChannels, setNotificationChannels] = useState<NotificationChannel[]>([]);
   const [notificationCheck, setNotificationCheck] = useState<NotificationCheckSummary | null>(null);
@@ -145,7 +145,7 @@ export function RiskOverview() {
       setNotificationCheck(json.data);
       await fetchRisk();
     } catch (err) {
-      setGuideMessage(err instanceof Error ? err.message : "Notification check failed");
+      setGuidePanel({ key: "notification-check", message: err instanceof Error ? err.message : "Notification check failed" });
     } finally {
       setCheckingNotifications(false);
     }
@@ -165,7 +165,7 @@ export function RiskOverview() {
   async function fixAlert(server: ServerRisk, alert: RiskAlert) {
     const key = `${server.serverId}-${alert.id}`;
     setFixing(key);
-    setGuideMessage(null);
+    setGuidePanel(null);
     try {
       if (server.serverId !== "local") {
         router.push(`/servers/${encodeURIComponent(server.serverId)}`);
@@ -178,27 +178,27 @@ export function RiskOverview() {
         if (!backup.ok || !backupJson.success) throw new Error(backupJson.error || "Backup failed");
         const logs = await runServerAction("clear-logs");
         const cache = await runServerAction("clear-apt-cache");
-        setGuideMessage(`Safe disk cleanup completed after backup ${backupJson.data?.name || "created"}.\n\n${logs}\n\n${cache}`);
+        setGuidePanel({ key, message: `Safe disk cleanup completed after backup ${backupJson.data?.name || "created"}.\n\n${logs}\n\n${cache}` });
         await fetchRisk();
         return;
       }
 
       if (alert.id === "memory" || alert.id === "cpu") {
         const output = await runServerAction("system-health-check");
-        setGuideMessage(`Read-only diagnosis completed. Review the output before restarting anything.\n\n${output}`);
+        setGuidePanel({ key, message: `Read-only diagnosis completed. Review the output before restarting anything.\n\n${output}` });
         return;
       }
 
       router.push(`/servers/${encodeURIComponent(server.serverId)}`);
     } catch (err) {
-      setGuideMessage(err instanceof Error ? err.message : "Guided fix failed");
+      setGuidePanel({ key, message: err instanceof Error ? err.message : "Guided fix failed" });
     } finally {
       setFixing(null);
     }
   }
 
   function explainAlert(server: ServerRisk, alert: RiskAlert) {
-    setGuideMessage(`${server.serverName}: ${alert.title}\n\n${alert.detail}\n\nSafe next step: ${alert.nextStep}`);
+    setGuidePanel({ key: `${server.serverId}-${alert.id}`, message: `${server.serverName}: ${alert.title}\n\n${alert.detail}\n\nSafe next step: ${alert.nextStep}` });
   }
 
   useEffect(() => {
@@ -225,7 +225,7 @@ export function RiskOverview() {
       const hasIssue = server.status !== "online" || server.alerts.length > 0;
       const matchesSearch = !query || `${server.serverName} ${server.host} ${server.serverId}`.toLowerCase().includes(query);
       const matchesFilter =
-        (fleetFilter === "all" && (query || hasIssue)) ||
+                (fleetFilter === "all" && hasIssue) ||
         (fleetFilter === "offline" && server.status !== "online") ||
         (fleetFilter === "healthy" && server.alerts.length === 0 && server.status === "online") ||
         (fleetFilter === "critical" && server.alerts.some((alert) => alert.severity === "critical")) ||
@@ -251,7 +251,6 @@ export function RiskOverview() {
       groups = [
         makeGroup("Critical", "Highest priority", pageItems.filter((server) => server.alerts.some((alert) => alert.severity === "critical"))),
         makeGroup("Warning", "Needs attention", pageItems.filter((server) => server.alerts.some((alert) => alert.severity === "warning") && !server.alerts.some((alert) => alert.severity === "critical"))),
-        makeGroup("Healthy", "No current alerts", pageItems.filter((server) => server.alerts.length === 0)),
       ];
     } else {
       groups = [
@@ -411,7 +410,6 @@ export function RiskOverview() {
               ["critical", "Critical"],
               ["warning", "Warning"],
               ["offline", "Offline"],
-              ["healthy", "Healthy"],
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -458,7 +456,7 @@ export function RiskOverview() {
 
         {healthy && !hasActiveFleetFilter && (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            No urgent issue detected. Use Healthy/search if you want to inspect normal servers.
+No urgent issue detected. Alert Center stays empty until a server needs attention.
           </div>
         )}
 
@@ -541,6 +539,15 @@ export function RiskOverview() {
                                         {fixLabel}
                                       </button>
                                     </div>
+                                    {guidePanel?.key === key && (
+                                      <div className="mt-2 rounded-lg border border-brand-500/20 bg-brand-500/10 p-3">
+                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                          <p className="text-xs font-semibold text-brand-100">Guidance</p>
+                                          <button onClick={() => setGuidePanel(null)} className="rounded border border-gray-700 px-2 py-0.5 text-[11px] text-gray-400 hover:text-white">Close</button>
+                                        </div>
+                                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-5 text-gray-300">{guidePanel.message}</pre>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -585,17 +592,6 @@ export function RiskOverview() {
           </div>
         )}
 
-        {guideMessage && (
-          <div className="mt-4 rounded-xl border border-gray-700 bg-gray-950 p-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-white">Guided fix</p>
-              <button onClick={() => setGuideMessage(null)} className="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white">
-                Close
-              </button>
-            </div>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-5 text-gray-300">{guideMessage}</pre>
-          </div>
-        )}
       </div>
     </section>
   );

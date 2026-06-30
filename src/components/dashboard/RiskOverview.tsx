@@ -340,15 +340,32 @@ export function RiskOverview() {
         </p>
         {refreshMessage && <p className="mt-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{refreshMessage}</p>}
 
-        <div className={`mt-4 rounded-xl border p-3 ${notificationReady ? "border-emerald-500/20 bg-emerald-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>
+      </div>
+
+      <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <p className="text-xs uppercase tracking-wider text-gray-500">Alert Center</p>
+            <span title="Alerts are grouped by server. Hover an icon to see the issue and the safest next step.">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-red-300">{criticalCount} critical</span>
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-amber-300">{warningCount} warning</span>
+            <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-gray-400">{risk.alerts.length} total</span>
+          </div>
+        </div>
+
+        <div className={`mb-4 rounded-xl border p-3 ${notificationReady ? "border-emerald-500/20 bg-emerald-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2">
               <Bell className={`mt-0.5 h-4 w-4 ${notificationReady ? "text-emerald-300" : "text-amber-300"}`} />
               <div>
-                <p className="text-sm font-semibold text-white">Notification Watchdog</p>
-                <p className="mt-1 text-xs text-gray-400">Rules, thresholds, cooldowns, and external delivery.</p>
+                <p className="text-sm font-semibold text-white">Notifications</p>
+                <p className="mt-1 text-xs text-gray-400">Optional alert delivery/checks; separate from risk scoring.</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  {notificationReady ? `External alerts armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "In-app check is ready. Add a channel/rule only if you want Discord, Slack, or Telegram alerts."}
+                  {notificationReady ? `Armed: ${enabledChannels} channel · ${enabledRules} rules · auto-check every 15 min.` : "Use only when you want a manual alert sweep or external alerts."}
                 </p>
               </div>
             </div>
@@ -379,22 +396,6 @@ export function RiskOverview() {
               )}
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <p className="text-xs uppercase tracking-wider text-gray-500">Alert Center</p>
-            <span title="Alerts are grouped by server. Hover an icon to see the issue and the safest next step.">
-              <HelpCircle className="h-4 w-4 text-gray-500" />
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-red-300">{criticalCount} critical</span>
-            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-amber-300">{warningCount} warning</span>
-            <span className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1 text-gray-400">{risk.alerts.length} total</span>
-          </div>
         </div>
 
         <div className="mb-4 grid gap-2 lg:grid-cols-[1fr_auto]">

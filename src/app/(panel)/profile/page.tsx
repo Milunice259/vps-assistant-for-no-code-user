@@ -89,12 +89,12 @@ export default function ProfilePage() {
       {(message || error) && <div className={`rounded-lg border px-4 py-3 text-sm ${error ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>{error || message}</div>}
 
       <section className="rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-lg shadow-black/10">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-white">Account information</h2>
             <p className="mt-1 text-sm text-gray-400">Thông tin cơ bản hiển thị trong hệ thống.</p>
           </div>
-          <Button loading={saving} onClick={() => saveProfile(false)}>Save account</Button>
+          <Button className="w-full sm:w-auto sm:shrink-0" loading={saving} onClick={() => saveProfile(false)}>Save account</Button>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="text-sm font-medium text-gray-300">Username
@@ -117,12 +117,12 @@ export default function ProfilePage() {
         <p className="mt-1 text-sm text-gray-400">Đổi mật khẩu đăng nhập chính và cấu hình passcode mở khóa nhanh.</p>
 
         <div className="mt-5 rounded-xl border border-gray-800 bg-gray-950/70 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
               <h3 className="font-medium text-white">Change password</h3>
               <p className="mt-1 text-sm text-gray-400">Dùng khi muốn đổi mật khẩu đăng nhập chính. Cần nhập mật khẩu hiện tại để xác nhận.</p>
             </div>
-            <Button variant="secondary" loading={saving} onClick={() => saveProfile(true)}>Update password</Button>
+            <Button className="w-full sm:w-auto sm:shrink-0" variant="secondary" loading={saving} onClick={() => saveProfile(true)}>Update password</Button>
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-gray-300">Current password
@@ -135,8 +135,8 @@ export default function ProfilePage() {
         </div>
 
         <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/70 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
               <h3 className="font-medium text-white">Quick unlock passcode</h3>
               <p className="mt-1 text-sm text-gray-400">Passcode chỉ dùng để mở khóa nhanh khi session còn sống, không thay thế mật khẩu đăng nhập.</p>
             </div>
@@ -145,7 +145,7 @@ export default function ProfilePage() {
               role="switch"
               aria-checked={passcodeOpen}
               onClick={() => user.passcodeEnabled ? savePasscode(false) : setPasscodeOpen((value) => !value)}
-              className={`relative h-7 w-12 rounded-full transition-colors ${passcodeOpen ? "bg-brand-600" : "bg-gray-700"}`}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${passcodeOpen ? "bg-brand-600" : "bg-gray-700"}`}
             >
               <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${passcodeOpen ? "translate-x-6" : "translate-x-1"}`} />
             </button>

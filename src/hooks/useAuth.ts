@@ -8,17 +8,33 @@ interface AuthUser {
   email?: string | null;
   displayName?: string | null;
   role?: string;
+  passcodeEnabled?: boolean;
 }
 
 interface UseAuthResult {
   user: AuthUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 export function useAuth(): UseAuthResult {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+
+  async function refresh() {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) {
+        setUser(null);
+        return;
+      }
+      const json = await res.json();
+      setUser(json.data || null);
+    } catch {
+      setUser(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -55,5 +71,5 @@ export function useAuth(): UseAuthResult {
     }
   };
 
-  return { user, loading, logout };
+  return { user, loading, logout, refresh };
 }

@@ -157,6 +157,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## Roadmap
 
+- Phase 9.5 Profile foundation: self-service display name, email, password, quick unlock passcode, browser theme preference.
+- Phase 9.6 Full personal settings: real light/dark design tokens, language/timezone, notification preferences, recent activity, device/session management, logout all other sessions.
 - Per-server log management tab.
 - More beginner-friendly deployment explanations.
 - Better mobile tables and dense fleet views.

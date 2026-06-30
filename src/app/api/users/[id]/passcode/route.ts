@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession, hashPassword } from "@/lib/auth";
 import { auditLog, getClientIp } from "@/lib/audit";
-import { adminRoles, normalizeRole } from "@/lib/server-access";
+import { adminRoles, canManageRole, normalizeRole } from "@/lib/server-access";
 import { safeErrorMessage } from "@/lib/safe-error";
 import type { ApiResponse } from "@/types";
 
@@ -18,6 +18,12 @@ export async function PUT(request: NextRequest, context: RouteContext): Promise<
     const self = id === (session.sub as string);
     if (!self && !adminRoles.has(normalizeRole(session.role as string))) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    }
+
+    const userBefore = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!userBefore) return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    if (!self && !canManageRole(session.role as string, userBefore.role)) {
+      return NextResponse.json({ success: false, error: "You cannot manage this user" }, { status: 403 });
     }
 
     const { enabled, passcode } = (await request.json()) as { enabled?: boolean; passcode?: string };

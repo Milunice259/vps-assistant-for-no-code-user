@@ -99,6 +99,7 @@ export function RiskOverview() {
   const [error, setError] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
   const [guideMessage, setGuideMessage] = useState<string | null>(null);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [notificationChannels, setNotificationChannels] = useState<NotificationChannel[]>([]);
   const [notificationCheck, setNotificationCheck] = useState<NotificationCheckSummary | null>(null);
   const [checkingNotifications, setCheckingNotifications] = useState(false);
@@ -118,7 +119,7 @@ export function RiskOverview() {
       if (!res.ok || !json.success || !json.data) throw new Error(json.error || "Failed to load risk summary");
       setRisk(json.data);
       setLastChecked(new Date());
-      if (manual) setGuideMessage("Risk score refreshed.");
+      if (manual) setRefreshMessage("Risk score refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load risk summary");
     } finally {
@@ -211,13 +212,20 @@ export function RiskOverview() {
     setFleetPage(1);
   }, [fleetFilter, fleetGroupBy, fleetPageSize, fleetSearch]);
 
+  useEffect(() => {
+    if (!refreshMessage) return;
+    const timer = setTimeout(() => setRefreshMessage(null), 2500);
+    return () => clearTimeout(timer);
+  }, [refreshMessage]);
+
   const fleetView = useMemo(() => {
     if (!risk) return { groups: [] as Array<{ title: string; helper: string; servers: ServerRisk[] }>, total: 0, pageCount: 1 };
     const query = fleetSearch.trim().toLowerCase();
     const filtered = risk.servers.filter((server) => {
+      const hasIssue = server.status !== "online" || server.alerts.length > 0;
       const matchesSearch = !query || `${server.serverName} ${server.host} ${server.serverId}`.toLowerCase().includes(query);
       const matchesFilter =
-        fleetFilter === "all" ||
+        (fleetFilter === "all" && (query || hasIssue)) ||
         (fleetFilter === "offline" && server.status !== "online") ||
         (fleetFilter === "healthy" && server.alerts.length === 0 && server.status === "online") ||
         (fleetFilter === "critical" && server.alerts.some((alert) => alert.severity === "critical")) ||
@@ -286,7 +294,7 @@ export function RiskOverview() {
   const hasActiveFleetFilter = fleetFilter !== "all" || Boolean(fleetSearch.trim());
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
+    <section className="grid items-start gap-4 xl:grid-cols-[360px_1fr]">
       <div className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -329,8 +337,9 @@ export function RiskOverview() {
         </div>
 
         <p className="mt-4 text-sm text-gray-400">
-          {refreshing ? "Refreshing risk score..." : lastChecked ? `Last checked ${lastChecked.toLocaleTimeString()}` : "Compact fleet summary. Detailed alerts stay grouped by server so this card does not grow forever."}
+          {refreshing ? "Refreshing risk score..." : lastChecked ? `Last checked ${lastChecked.toLocaleTimeString()}` : "Compact fleet summary."}
         </p>
+        {refreshMessage && <p className="mt-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{refreshMessage}</p>}
 
         <div className={`mt-4 rounded-xl border p-3 ${notificationReady ? "border-emerald-500/20 bg-emerald-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>
           <div className="flex items-start justify-between gap-3">
@@ -448,8 +457,8 @@ export function RiskOverview() {
         </div>
 
         {healthy && !hasActiveFleetFilter && (
-          <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            No urgent issue detected. Fleet list still stays visible below so large-fleet layout can be reviewed.
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+            No urgent issue detected. Use Healthy/search if you want to inspect normal servers.
           </div>
         )}
 

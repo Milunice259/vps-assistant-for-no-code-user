@@ -147,7 +147,7 @@ export default function ProfilePage() {
               onClick={() => user.passcodeEnabled ? savePasscode(false) : setPasscodeOpen((value) => !value)}
               className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${passcodeOpen ? "bg-brand-600" : "bg-gray-700"}`}
             >
-              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${passcodeOpen ? "translate-x-6" : "translate-x-1"}`} />
+              <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition-transform ${passcodeOpen ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
           <div className="mt-3 flex items-center gap-2 text-sm">

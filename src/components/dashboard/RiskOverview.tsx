@@ -94,6 +94,8 @@ export function RiskOverview() {
   const router = useRouter();
   const [risk, setRisk] = useState<RiskSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
   const [guideMessage, setGuideMessage] = useState<string | null>(null);
@@ -106,18 +108,22 @@ export function RiskOverview() {
   const [fleetPageSize, setFleetPageSize] = useState(6);
   const [fleetPage, setFleetPage] = useState(1);
 
-  async function fetchRisk() {
-    setLoading(true);
+  async function fetchRisk(manual = false) {
+    if (manual) setRefreshing(true);
+    else setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/risk", { cache: "no-store" });
       const json: ApiResponse<RiskSummary> = await res.json();
       if (!res.ok || !json.success || !json.data) throw new Error(json.error || "Failed to load risk summary");
       setRisk(json.data);
+      setLastChecked(new Date());
+      if (manual) setGuideMessage("Risk score refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load risk summary");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -288,8 +294,14 @@ export function RiskOverview() {
             <h2 className={`mt-2 text-4xl font-bold ${color}`}>{risk.score}</h2>
             <p className="mt-1 text-sm font-medium text-white">{risk.label}</p>
           </div>
-          <button onClick={fetchRisk} className="rounded-xl border border-gray-700 bg-gray-900 p-3 text-gray-400 hover:text-white" title="Refresh risk score">
-            {healthy ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <AlertTriangle className={`h-6 w-6 ${color}`} />}
+          <button
+            onClick={() => fetchRisk(true)}
+            disabled={refreshing}
+            className="rounded-xl border border-gray-700 bg-gray-900 p-3 text-gray-400 hover:text-white disabled:cursor-wait disabled:opacity-60"
+            title="Refresh risk score"
+            aria-label="Refresh risk score"
+          >
+            {refreshing ? <Loader2 className="h-6 w-6 animate-spin text-brand-300" /> : healthy ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <AlertTriangle className={`h-6 w-6 ${color}`} />}
           </button>
         </div>
 
@@ -317,7 +329,7 @@ export function RiskOverview() {
         </div>
 
         <p className="mt-4 text-sm text-gray-400">
-          Compact fleet summary. Detailed alerts stay grouped by server so this card does not grow forever.
+          {refreshing ? "Refreshing risk score..." : lastChecked ? `Last checked ${lastChecked.toLocaleTimeString()}` : "Compact fleet summary. Detailed alerts stay grouped by server so this card does not grow forever."}
         </p>
 
         <div className={`mt-4 rounded-xl border p-3 ${notificationReady ? "border-emerald-500/20 bg-emerald-500/10" : "border-amber-500/20 bg-amber-500/10"}`}>

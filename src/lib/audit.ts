@@ -38,6 +38,10 @@ export type AuditAction =
   | "user_updated"
   | "user_deleted"
   | "security_settings_updated"
+  | "passcode_enabled"
+  | "passcode_disabled"
+  | "passcode_unlock"
+  | "passcode_unlock_failed"
   | "deployment_rollback";
 
 interface AuditEntry {

@@ -31,6 +31,7 @@ export async function GET(): Promise<NextResponse<ApiResponse>> {
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        passcodeEnabled: true,
         serverAccessMode: true,
         serverAccess: { select: { serverId: true } },
       },
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
         serverAccessMode: accessMode,
         serverAccess: accessMode === "SELECTED" ? { create: cleanServerIds.map((serverId) => ({ serverId })) } : undefined,
       },
-      select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, serverAccess: { select: { serverId: true } } },
+      select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, passcodeEnabled: true, serverAccess: { select: { serverId: true } } },
     });
 
     const ip = getClientIp(request);

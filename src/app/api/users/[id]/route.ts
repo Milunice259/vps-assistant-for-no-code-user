@@ -118,7 +118,7 @@ export async function PUT(
       return tx.user.update({
         where: { id },
         data: updateData,
-        select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, serverAccess: { select: { serverId: true } } },
+        select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, passcodeEnabled: true, serverAccess: { select: { serverId: true } } },
       });
     });
 

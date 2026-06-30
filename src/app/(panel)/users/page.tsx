@@ -19,6 +19,7 @@ type User = {
   role: Role;
   serverAccessMode: ServerAccessMode;
   serverIds: string[];
+  passcodeEnabled: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -44,6 +45,7 @@ export default function UsersPage() {
   const [editForm, setEditForm] = useState({ displayName: "", email: "", role: "VIEWER" as Role, password: "", isActive: true, serverAccessMode: "ALL" as ServerAccessMode, serverIds: [] as string[] });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<Role | null>(null);
+  const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -107,6 +109,14 @@ export default function UsersPage() {
     } catch (e) { setError(e instanceof Error ? e.message : "Failed to update user"); }
   }
 
+  async function savePasscode(user: User, enabled: boolean) {
+    try {
+      await save(`/api/users/${user.id}/passcode`, "PUT", { enabled, passcode });
+      setSuccess(enabled ? `Passcode enabled for ${user.username}` : `Passcode disabled for ${user.username}`);
+      setPasscode("");
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to update passcode"); }
+  }
+
   async function deleteUser() {
     if (!deleteId) return;
     try {
@@ -118,6 +128,7 @@ export default function UsersPage() {
 
   function startEdit(user: User) {
     setEditing(user);
+    setPasscode("");
     setEditForm({ displayName: user.displayName || "", email: user.email || "", role: user.role, password: "", isActive: user.isActive, serverAccessMode: user.serverAccessMode || "ALL", serverIds: user.serverIds || [] });
   }
 
@@ -201,6 +212,7 @@ export default function UsersPage() {
                       <p className="truncate text-sm font-medium text-white">{user.displayName || user.username}</p>
                       <Badge variant={user.isActive ? "success" : "default"}>{user.isActive ? "Active" : "Disabled"}</Badge>
                       <Badge variant={ROLES[user.role].tone}>{ROLES[user.role].label}</Badge>
+                      {user.passcodeEnabled && <Badge variant="info">Passcode</Badge>}
                     </div>
                     <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · {user.serverAccessMode === "SELECTED" ? `${user.serverIds.length} servers` : "all servers"} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
                   </div>
@@ -216,6 +228,11 @@ export default function UsersPage() {
                     <label className="flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300">
                       <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
                     </label>
+                    <div className="md:col-span-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-700 bg-gray-800 p-2">
+                      <Input label={editing?.passcodeEnabled ? "New passcode" : "Passcode"} type="password" value={passcode} onChange={setPasscode} placeholder="4-32 chars" />
+                      <Button size="sm" onClick={() => editing && savePasscode(editing, true)}>Enable/update</Button>
+                      {editing?.passcodeEnabled && <Button size="sm" variant="ghost" onClick={() => editing && savePasscode(editing, false)}>Disable</Button>}
+                    </div>
                     <div className="flex gap-1">
                       <button onClick={updateUser} className="rounded p-2 text-emerald-400 hover:bg-emerald-500/10"><Check className="h-4 w-4" /></button>
                       <button onClick={() => setEditing(null)} className="rounded p-2 text-gray-400 hover:bg-gray-800"><X className="h-4 w-4" /></button>

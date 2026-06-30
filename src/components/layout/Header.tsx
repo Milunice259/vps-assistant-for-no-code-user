@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { LogOut, User } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { roleLabel } from "@/lib/permissions";
 
 interface HeaderProps {
@@ -12,6 +14,7 @@ interface HeaderProps {
 
 export function Header({ title }: HeaderProps) {
   const { user, loading, logout } = useAuth();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-700 bg-gray-800 px-4 pl-16 md:px-6 md:pl-6">
@@ -19,11 +22,14 @@ export function Header({ title }: HeaderProps) {
         {title}
       </h1>
 
-      <div className="flex shrink-0 items-center gap-2 md:gap-4 ml-3">
+      <div className="ml-3 flex shrink-0 items-center gap-2 md:gap-4">
         {loading ? (
           <div className="h-5 w-24 animate-pulse rounded bg-gray-700" />
         ) : user ? (
           <div className="flex items-center gap-2 md:gap-3">
+            <Link href="/profile" className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white sm:hidden" aria-label="Open profile">
+              <User className="h-4 w-4" />
+            </Link>
             <Link href="/profile" className="hidden items-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-300 hover:bg-gray-700 hover:text-white sm:flex">
               <User className="h-4 w-4" />
               <span>{user.displayName || user.username}</span>
@@ -31,13 +37,23 @@ export function Header({ title }: HeaderProps) {
                 {roleLabel(user.role)}
               </span>
             </Link>
-            <Button variant="ghost" size="sm" onClick={logout}>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmLogout(true)}>
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        message="You will leave the current session and need to sign in again."
+        confirmLabel="Logout"
+        cancelLabel="Stay"
+        variant="danger"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => void logout()}
+      />
     </header>
   );
 }

@@ -409,81 +409,115 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
           )}
         </div>
       ) : (
-        <div className="max-h-[400px] overflow-auto rounded-xl border border-gray-700 touch-pan-x overscroll-x-contain">
-          <table className="min-w-[820px] w-full text-left text-sm">
-            <thead className="sticky top-0 border-b border-gray-700 bg-gray-800 text-xs uppercase text-gray-400">
-              <tr>
-                <th className="px-4 py-3">Package</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Version</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">New Version</th>
-                <th className="px-4 py-3 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {filtered.map((pkg) => {
-                const desc = getPackageDescription(pkg.name);
-                const isUpgrading = upgradingPkg === pkg.name;
-                return (
-                  <tr
-                    key={pkg.name}
-                    className={`transition-colors ${
-                      pkg.upgradable
-                        ? "bg-yellow-500/[0.03] hover:bg-yellow-500/[0.06]"
-                        : "bg-gray-800 hover:bg-gray-750"
-                    }`}
-                  >
-                    <td className="px-4 py-2">
-                      <span className="font-mono text-white">{pkg.name}</span>
-                    </td>
-                    <td className="px-4 py-2 text-xs text-gray-400 max-w-[200px]">
-                      {desc || <span className="text-gray-600">—</span>}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-gray-400">
-                      {pkg.version}
-                    </td>
-                    <td className="px-4 py-2">
-                      <Badge variant={pkg.upgradable ? "warning" : "success"}>
-                        {pkg.upgradable ? "upgradable" : "installed"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-2">
-                      {pkg.upgradable && pkg.newVersion ? (
-                        <span className="font-mono text-yellow-400">{pkg.newVersion}</span>
-                      ) : hasChecked ? (
-                        <span className="text-gray-600">—</span>
-                      ) : (
-                        <span className="text-gray-600 italic text-xs">unchecked</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      {pkg.upgradable ? (
-                        <button
-                          onClick={() => upgradePackage(pkg.name)}
-                          disabled={safeMode || isUpgrading || actionLoading}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
-                            bg-yellow-500/10 text-yellow-300 border border-yellow-500/30
-                            hover:bg-yellow-500/20 hover:border-yellow-500/50
-                            disabled:opacity-40 disabled:cursor-not-allowed
-                            transition-all duration-200"
-                        >
-                          {isUpgrading ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Download className="h-3 w-3" />
-                          )}
-                          {isUpgrading ? "Upgrading..." : "Upgrade"}
-                        </button>
-                      ) : (
-                        <span className="text-gray-600 text-xs">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="max-h-[70vh] overflow-y-auto overscroll-contain rounded-xl border border-gray-700 bg-gray-900/40 [-webkit-overflow-scrolling:touch]">
+          <div className="divide-y divide-gray-800 md:hidden">
+            {filtered.map((pkg) => {
+              const desc = getPackageDescription(pkg.name);
+              const isUpgrading = upgradingPkg === pkg.name;
+              return (
+                <div key={pkg.name} className="p-4 transition-colors active:bg-gray-800/70">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm font-medium text-white">{pkg.name}</p>
+                      <p className="mt-1 break-all font-mono text-xs text-gray-500">{pkg.version}</p>
+                    </div>
+                    <Badge variant={pkg.upgradable ? "warning" : "success"}>
+                      {pkg.upgradable ? "upgradable" : "installed"}
+                    </Badge>
+                  </div>
+                  {desc && <p className="mt-2 text-xs leading-relaxed text-gray-400">{desc}</p>}
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-gray-500">
+                    <span>
+                      {pkg.upgradable && pkg.newVersion
+                        ? `New: ${pkg.newVersion}`
+                        : hasChecked
+                          ? "No update"
+                          : "Update status unchecked"}
+                    </span>
+                    {pkg.upgradable && (
+                      <button
+                        onClick={() => upgradePackage(pkg.name)}
+                        disabled={safeMode || isUpgrading || actionLoading}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1 font-medium text-yellow-300 transition-all duration-200 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isUpgrading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        {isUpgrading ? "Upgrading..." : "Upgrade"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
+            <table className="min-w-[820px] w-full text-left text-sm">
+              <thead className="sticky top-0 border-b border-gray-700 bg-gray-800/95 text-xs uppercase text-gray-400 backdrop-blur">
+                <tr>
+                  <th className="px-4 py-3">Package</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Version</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">New Version</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {filtered.map((pkg) => {
+                  const desc = getPackageDescription(pkg.name);
+                  const isUpgrading = upgradingPkg === pkg.name;
+                  return (
+                    <tr
+                      key={pkg.name}
+                      className={`transition-colors ${
+                        pkg.upgradable
+                          ? "bg-yellow-500/[0.03] hover:bg-yellow-500/[0.06]"
+                          : "bg-gray-800 hover:bg-gray-750"
+                      }`}
+                    >
+                      <td className="px-4 py-2">
+                        <span className="font-mono text-white">{pkg.name}</span>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-gray-400 max-w-[200px]">
+                        {desc || <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-gray-400">
+                        {pkg.version}
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge variant={pkg.upgradable ? "warning" : "success"}>
+                          {pkg.upgradable ? "upgradable" : "installed"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2">
+                        {pkg.upgradable && pkg.newVersion ? (
+                          <span className="font-mono text-yellow-400">{pkg.newVersion}</span>
+                        ) : hasChecked ? (
+                          <span className="text-gray-600">—</span>
+                        ) : (
+                          <span className="text-gray-600 italic text-xs">unchecked</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        {pkg.upgradable ? (
+                          <button
+                            onClick={() => upgradePackage(pkg.name)}
+                            disabled={safeMode || isUpgrading || actionLoading}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-yellow-500/10 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/20 hover:border-yellow-500/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+                          >
+                            {isUpgrading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                            {isUpgrading ? "Upgrading..." : "Upgrade"}
+                          </button>
+                        ) : (
+                          <span className="text-gray-600 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

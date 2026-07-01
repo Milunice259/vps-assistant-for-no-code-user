@@ -132,8 +132,22 @@ const sections = [
     bullets: [
       "Use the map to understand traffic flow before changing ports or domains.",
       "Fit and Reset help when many apps make the canvas crowded.",
-      "The map is a visibility tool; it does not replace real firewall enforcement unless a page clearly says so.",
+      "The map is currently read-only / inspection-oriented: use it to understand exposure before changing ports or domains.",
+      "It does not apply firewall, routing, Docker network, or drag/drop changes yet; those belong to the later Network Control Plane phase.",
       "For public apps, check domain, Traefik route, container port, and SSL status.",
+    ],
+  },
+  {
+    id: "users",
+    title: "Users, Roles, and Profile",
+    icon: ShieldCheck,
+    summary: "Team access, self-service profile settings, and passcode ownership.",
+    bullets: [
+      "Owner and Admin can open Users and manage lower-level accounts. Manager and Viewer cannot open Users or edit other people.",
+      "Every user can open My Profile from the header to update display name, email, password, theme preference, and Quick Unlock Passcode.",
+      "Quick Unlock Passcode is optional, stored as a hash, and only unlocks the idle lock while the normal login session is still valid.",
+      "Passcode is not a login password replacement. After logout or expired session, use the normal login password.",
+      "Admin cannot view anyone's passcode. Owner/Admin may reset or disable passcode only for users they are allowed to manage.",
     ],
   },
   {
@@ -240,6 +254,17 @@ const walkthroughs = [
     ],
   },
   {
+    id: "profile-step-by-step",
+    title: "Update your profile and passcode",
+    steps: [
+      "Click your account name in the header, or the profile icon on mobile.",
+      "Update display name or email in Account, then save.",
+      "Use Change password for the main login password.",
+      "Use Quick Unlock Passcode only for idle lock convenience while your session is alive.",
+      "If you fully log out, log in again with the normal password, not the passcode.",
+    ],
+  },
+  {
     id: "server-step-by-step",
     title: "Add and check a remote server",
     steps: [
@@ -251,6 +276,13 @@ const walkthroughs = [
       "If it shows offline, verify power, firewall, SSH port, credentials, and network access.",
     ],
   },
+];
+
+const roadmap = [
+  ["Phase 9", "Done", "User/Profile/Permission: roles, server scope, Users, My Profile, password, Quick Unlock Passcode, logout confirm, and API permission audit."],
+  ["Phase 10", "Next", "Remote VPS E2E + Production Ops: real remote validation, SSH checks, remote Docker/services/logs smoke, remote deploy, backup/rollback runbooks, readiness cleanup."],
+  ["Phase 11", "Planned", "Network Canvas & Network Control Plane: complete inspect, diagnostics, exposure map, safe network actions, dry-run/diff, rollback, audit, and remote support."],
+  ["Phase 12", "Planned", "Advanced Ops / Polish: full theme tokens, language/timezone, device sessions, notification preferences, scheduled risk checks, and fleet/mobile polish."],
 ];
 
 const glossary = [
@@ -328,6 +360,9 @@ export default function DocsPage() {
               {guide.title}
             </a>
           ))}
+          <a href="#roadmap" className="rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-sm text-brand-100 hover:bg-brand-500/20">
+            Roadmap status
+          </a>
           {sections.map((section) => (
             <a key={section.id} href={`#${section.id}`} className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 hover:border-brand-500 hover:text-white">
               {section.title}
@@ -393,6 +428,22 @@ export default function DocsPage() {
         </div>
       </section>
 
+      <section id="roadmap" className="scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-800 p-5">
+        <h2 className="text-xl font-semibold text-white">Roadmap status</h2>
+        <p className="mt-1 text-sm text-gray-400">This page tracks the actual app scope. Network Control Plane is not part of Phase 10.</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {roadmap.map(([phase, status, text]) => (
+            <div key={phase} className="rounded-xl border border-gray-700 bg-gray-900 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-white">{phase}</h3>
+                <span className="rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-1 text-xs text-brand-100">{status}</span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-gray-300">{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5">
         <h2 className="mb-4 text-lg font-semibold text-white">Plain-English glossary</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -418,3 +469,4 @@ export default function DocsPage() {
     </div>
   );
 }
+

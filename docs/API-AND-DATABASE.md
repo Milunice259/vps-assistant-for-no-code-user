@@ -42,51 +42,7 @@ Clears the session cookie. No request body needed.
 
 ### GET `/api/auth/me`
 
-Returns the currently authenticated user's id, username, email, display name, role and passcode status.
-
-### POST `/api/auth/passcode/unlock`
-
-Quick-unlocks an idle lock using the current user's passcode. Requires the normal session cookie to still be valid; this is not a login endpoint.
-
-```json
-{ "passcode": "1234" }
-```
-
-### PUT `/api/profile`
-
-Self-service profile update for the logged-in user. Supports display name, email, and password change with current-password verification.
-
-```json
-{ "displayName": "Jane", "email": "jane@example.com" }
-```
-
----
-
-## User and Permission Endpoints
-
-### GET `/api/users`
-
-Owner/Admin only. Lists users with role, active status, server access mode and selected server ids. Passcode hashes are never returned.
-
-### POST `/api/users`
-
-Owner/Admin only. Creates a user; no public registration exists.
-
-### PUT `/api/users/[id]`
-
-Owner/Admin only, constrained by role hierarchy. Admin cannot manage Owner.
-
-### DELETE `/api/users/[id]`
-
-Owner/Admin only, with self-delete and last-owner protections.
-
-### PUT `/api/users/[id]/passcode`
-
-Self-service for the same user, or Owner/Admin for users they can manage. Stores only a bcrypt hash.
-
-```json
-{ "enabled": true, "passcode": "1234" }
-```
+Returns the currently authenticated user's `id` and `username`.
 
 ---
 

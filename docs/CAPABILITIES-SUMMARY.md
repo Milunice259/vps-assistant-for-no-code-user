@@ -73,11 +73,6 @@ It is designed for single-team/admin operation with a simple deployment model.
 - Trigger package upgrades (all or selected packages)
 - **Lazy-loaded network map** for improved page performance
 
-**Current boundary**
-
-- Network canvas is read-only/inspection-oriented today.
-- Full interactive network controls, safe firewall changes, Docker network mutations, dry-run/diff, rollback and remote network actions are planned for Phase 11.
-
 **Constraints**
 
 - Runs on the app host/container context, not inside added remote servers
@@ -207,18 +202,12 @@ It is designed for single-team/admin operation with a simple deployment model.
 
 ---
 
-## 14) User, Profile and Permission Management
+## 14) User Management
 
 - Create, update, delete user accounts (`/api/users`)
-- Owner/Admin/Manager/Viewer role hierarchy
-- Server-scoped permissions: all servers or selected servers, including `local`
-- `/users` is limited to Owner/Admin
-- `/profile` lets each user update display name, email, password and Quick Unlock Passcode
-- Quick Unlock Passcode unlocks idle lock only while the session is still valid
-- Admin cannot manage Owner accounts
-- Manager/Viewer cannot manage users
-- Logout confirmation dialog
-- Accessible from sidebar/header under System/Profile
+- User listing with role display
+- ADMIN role management
+- Accessible from sidebar under System group
 
 ---
 

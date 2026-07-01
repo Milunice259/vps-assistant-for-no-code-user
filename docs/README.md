@@ -104,12 +104,10 @@ src/
 │   ├── (panel)/          # Route group: main panel (auth required)
 │   │   ├── dashboard/    # Real-time host stats
 │   │   ├── servers/      # VPS management + detail view
-│   │   ├── network/      # Read-only network visibility + host package tools
+│   │   ├── network/      # Ports + package management
 │   │   ├── apps/         # Application tracking
 │   │   ├── deploy/       # GitHub deployer
 │   │   ├── audit/        # Audit log with search, filter, export
-│   │   ├── users/        # Owner/Admin user and permission management
-│   │   ├── profile/      # Self-service personal profile and security settings
 │   │   ├── settings/     # Notifications, Docker, Security, General, Backup
 │   │   └── terminal/     # Web terminal for server commands
 │   ├── api/              # API Routes (backend)
@@ -203,26 +201,13 @@ npm run dev
 | `/dashboard`    | Real-time stats dashboard       | Yes   |
 | `/servers`      | VPS server management           | Yes   |
 | `/servers/[id]` | Server detail + live stats      | Yes   |
-| `/network`      | Read-only network visibility + host packages | Yes   |
+| `/network`      | Port & package management       | Yes   |
 | `/apps`         | Application tracking            | Yes   |
 | `/apps/[id]`    | App detail + logs/env/health    | Yes   |
 | `/deploy`       | GitHub + Docker deployer        | Yes   |
 | `/audit`        | Audit log viewer                | Yes   |
-| `/users`        | User and permission management  | Owner/Admin |
-| `/profile`      | Personal profile/security settings | Yes   |
 | `/settings`     | Notifications & system settings | Yes   |
 | `/terminal`     | Web terminal                    | Yes   |
-
-## Roadmap Phases
-
-| Phase | Status | Scope |
-| --- | --- | --- |
-| Phase 9 — User, Profile & Permission Management | Done | Role hierarchy, server-scoped permissions, `/users`, `/profile`, passcode unlock, logout confirmation, permission/API audit. |
-| Phase 10 — Remote VPS E2E + Production Ops | Next | Validate a real remote VPS end-to-end, remote deploy, backup/rollback runbooks, production readiness and cleanup. |
-| Phase 11 — Network Canvas & Network Control Plane | Planned | Finish the network canvas as a safe interactive tool with inspect, diagnostics, firewall/Docker network actions, dry-run, rollback and audit. |
-| Phase 12 — Advanced Ops / Polish | Planned | Full personal settings, theme tokens, device/session management, notification preferences and fleet/mobile polish. |
-
-Network Canvas is deliberately Phase 11, not Phase 10. Phase 10 proves remote VPS operations; Phase 11 handles network-control risk separately.
 
 ### Troubleshooting
 

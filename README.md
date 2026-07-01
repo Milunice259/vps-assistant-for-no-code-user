@@ -46,7 +46,7 @@ Use it to answer simple questions quickly:
 | **Deployments** | Deploy from Git repositories, Docker images, or compose projects with logs and rollback-oriented flow. |
 | **Backups** | Create and restore panel database snapshots; restore creates a pre-restore backup automatically. |
 | **Notifications** | Discord, Slack, Telegram, and Email alert channels with recommended beginner rules. |
-| **Network Map** | Read-only visibility for domains, proxy, servers, apps, ports, and Docker networks. Full interactive network control is planned for Phase 11. |
+| **Network Map** | Visual map for domains, proxy, servers, apps, ports, and Docker networks. |
 | **Audit Log** | Track who did what, when, where, and whether it succeeded. |
 | **Safe Mode** | Keeps dangerous controls out of the way for daily operation. |
 
@@ -157,14 +157,14 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## Roadmap
 
-| Phase | Status | Scope |
-| --- | --- | --- |
-| Phase 9 — User, Profile & Permission Management | Done | Owner/Admin/Manager/Viewer roles, server-scoped access, `/users`, `/profile`, password/email/display name updates, Quick Unlock Passcode, logout confirmation, permission/API audit. |
-| Phase 10 — Remote VPS E2E + Production Ops | Next | Add and validate a real remote VPS, SSH environment checks, remote stats/docker/services/logs smoke, remote deploy E2E, backup/rollback runbooks, production readiness, cleanup artifacts. |
-| Phase 11 — Network Canvas & Network Control Plane | Planned | Complete network canvas as an interactive, safe network tool: inspect nodes/edges, exposure map, diagnostics, firewall/Docker network actions, dry-run/diff, rollback, audit, remote support. |
-| Phase 12 — Advanced Ops / Polish | Planned | Full profile settings, real theme design tokens, language/timezone, device/session management, notification preferences, scheduled risk checks, dense fleet/mobile polish. |
-
-Phase 10 intentionally does **not** include full Network Canvas control; that is a separate Phase 11 because network actions can lock users out and need their own safety layer.
+- Phase 9.5 Profile foundation: self-service display name, email, password, quick unlock passcode, browser theme preference.
+- Phase 9.6 Full personal settings: real light/dark design tokens, language/timezone, notification preferences, recent activity, device/session management, logout all other sessions.
+- Per-server log management tab.
+- More beginner-friendly deployment explanations.
+- Better mobile tables and dense fleet views.
+- Scheduled risk checks and proactive notification delivery.
+- Safer restore previews and app-data backup integrations.
+- Real firewall/network controls with rollback and audit trail.
 
 ## License
 

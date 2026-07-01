@@ -287,11 +287,15 @@ export function QuickActions({ serverId }: QuickActionsProps) {
 
       try {
         if (["os-update", "docker-prune", "restart-docker", "restart-server"].includes(actionKey)) {
-          await fetch("/api/backup", {
+          const backup = await fetch("/api/backup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ reason: `pre-${actionKey}`, serverId }),
           });
+          const backupJson = await backup.json().catch(() => ({}));
+          if (!backup.ok || backupJson.success === false) {
+            throw new Error(backupJson.error || "Pre-action backup failed; action aborted.");
+          }
         }
         const body: Record<string, string> = { action: actionKey };
         if (param) body.param = param;
@@ -316,10 +320,10 @@ export function QuickActions({ serverId }: QuickActionsProps) {
             timestamp: Date.now(),
           });
         }
-      } catch {
+      } catch (err) {
         updateResult(actionKey, {
           status: "error",
-          message: "Network error — could not reach the server.",
+          message: err instanceof Error ? friendlyErrorMessage(err.message) : "Network error — could not reach the server.",
           timestamp: Date.now(),
         });
       }

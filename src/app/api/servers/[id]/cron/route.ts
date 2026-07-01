@@ -8,7 +8,7 @@ import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { execOnHost } from "@/lib/local-server";
+import { execOnHost, isLocalServer } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import SSH2Promise from "ssh2-promise";
@@ -53,6 +53,12 @@ export async function POST(
 ) {
   try {
     const { id: serverId } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, serverId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
     const body = await request.json();
     const { schedule, command, description } = body as {
       schedule: string;
@@ -115,6 +121,12 @@ export async function DELETE(
 ) {
   try {
     const { id: serverId } = await context.params;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, serverId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const lineNum = parseInt(searchParams.get("line") || "0");
 
@@ -186,7 +198,7 @@ function parseCrontab(output: string): CronJob[] {
 }
 
 async function execCron(serverId: string, cmd: string): Promise<string> {
-  if (serverId === "local") {
+  if (isLocalServer(serverId)) {
     return execOnHost(cmd);
   }
 

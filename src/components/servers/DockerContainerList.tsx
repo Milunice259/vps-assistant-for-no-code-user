@@ -62,14 +62,11 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ containerId, action }),
       });
-      const json = await res.json();
-      if (!json.success) {
-        alert(`Action failed: ${json.error}`);
-      }
-      // Refresh container list after action
+      const json = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
+      if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
       await fetchContainers();
-    } catch {
-      alert("Failed to perform action");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to perform action");
     } finally {
       setActionLoading(null);
     }
@@ -132,7 +129,43 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
         </Button>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="space-y-3 md:hidden">
+        {containers.map((c) => (
+          <div key={c.id} className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Box className="h-4 w-4 shrink-0 text-blue-400" />
+                  <span className="truncate font-medium text-white">{c.name}</span>
+                </div>
+                <p className="mt-1 break-all text-xs text-gray-500">{c.image}</p>
+              </div>
+              <Badge variant={stateBadgeVariant(c.state)}>{c.state}</Badge>
+            </div>
+            <div className="mt-3 space-y-1 text-xs text-gray-400">
+              <p>Uptime: {c.uptime}</p>
+              <p className="break-all">Ports: {c.ports || "—"}</p>
+            </div>
+            <div className="mt-3 flex justify-end gap-1">
+              {c.state.toLowerCase() !== "running" && (
+                <Button variant="ghost" size="sm" loading={actionLoading === `${c.id}-start`} disabled={safeMode} onClick={() => handleAction(c.id, "start")} title={safeMode ? "Safe Mode locks container actions" : "Start"}>
+                  <Play className="h-3.5 w-3.5 text-green-400" />
+                </Button>
+              )}
+              {c.state.toLowerCase() === "running" && (
+                <Button variant="ghost" size="sm" loading={actionLoading === `${c.id}-stop`} disabled={safeMode} onClick={() => handleAction(c.id, "stop")} title={safeMode ? "Safe Mode locks container actions" : "Stop"}>
+                  <Square className="h-3.5 w-3.5 text-red-400" />
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" loading={actionLoading === `${c.id}-restart`} disabled={safeMode} onClick={() => handleAction(c.id, "restart")} title={safeMode ? "Safe Mode locks container actions" : "Restart"}>
+                <RotateCw className="h-3.5 w-3.5 text-yellow-400" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[600px] text-sm">
           <thead>
             <tr className="border-b border-gray-700 text-gray-400 text-left">

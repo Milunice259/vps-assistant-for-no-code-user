@@ -176,14 +176,16 @@ export function ServiceList({ serverId }: ServiceListProps) {
   const handleServiceAction = async (serviceName: string, action: "start" | "stop" | "restart" | "enable" | "disable") => {
     setActionLoading(`${serviceName}-${action}`);
     try {
-      await fetch(`/api/servers/${serverId}/services/action`, {
+      const res = await fetch(`/api/servers/${serverId}/services/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ service: serviceName, action }),
       });
+      const json: ApiResponse<unknown> = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
+      if (!res.ok || !json.success) throw new Error(json.error || "Service action failed");
       await fetchServices();
-    } catch {
-      // Will reflect on next refresh
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Service action failed");
     } finally {
       setActionLoading(null);
     }
@@ -396,7 +398,10 @@ export function ServiceList({ serverId }: ServiceListProps) {
                         {isActive ? (
                           <>
                             <button
-                              onClick={() => handleServiceAction(s.name, "restart")}
+                              onClick={() => {
+                                if (importance === "critical" && !confirm(`Restart critical service "${s.name}"?`)) return;
+                                handleServiceAction(s.name, "restart");
+                              }}
                               disabled={safeMode || !!isAnyLoading}
                               className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
                               title={safeMode ? "Safe Mode locks service actions" : "Restart this service"}
@@ -405,7 +410,10 @@ export function ServiceList({ serverId }: ServiceListProps) {
                               Restart
                             </button>
                             <button
-                              onClick={() => handleServiceAction(s.name, "stop")}
+                              onClick={() => {
+                                if (!confirm(`Stop service "${s.name}"? This may interrupt apps or access.`)) return;
+                                handleServiceAction(s.name, "stop");
+                              }}
                               disabled={safeMode || !!isAnyLoading}
                               className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
                               title={safeMode ? "Safe Mode locks service actions" : "Stop this service"}

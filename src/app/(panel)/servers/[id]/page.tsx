@@ -79,9 +79,12 @@ export default function ServerDetailPage() {
     if (!confirm("Are you sure you want to delete this server?")) return;
     setDeleting(true);
     try {
-      await fetch(`/api/servers/${serverId}`, { method: "DELETE" });
+      const res = await fetch(`/api/servers/${serverId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.success === false) throw new Error(json.error || "Delete failed");
       router.push("/servers");
-    } catch {
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
       setDeleting(false);
     }
   }

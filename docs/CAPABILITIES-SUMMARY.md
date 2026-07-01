@@ -1,7 +1,7 @@
 # VPS Control App — Capabilities Summary
 
 > Complete list of implemented capabilities in the current codebase.  
-> Last updated: February 2026 (Post-audit, all P0–P4 fixes applied)
+> Last updated: July 2026 (Phase 9 complete; Phase 10 next)
 
 ---
 
@@ -9,14 +9,14 @@
 
 VPS Control App is a web control panel for:
 
-- managing remote VPS connection profiles,
+- managing local and remote VPS connection profiles,
 - monitoring host and remote server health,
 - running Linux host network/package checks,
-- deploying applications from GitHub to remote servers,
-- managing database backups from the browser,
+- deploying applications from Git, Docker images, or Compose projects locally/remotely,
+- managing users, roles, profile settings, and panel database backups from the browser,
 - and bootstrap-deploying the panel itself with Docker + Traefik.
 
-It is designed for single-team/admin operation with a simple deployment model.
+It is designed for small-team operation with Owner/Admin/Manager/Viewer roles and server-scoped access.
 
 ---
 
@@ -25,6 +25,7 @@ It is designed for single-team/admin operation with a simple deployment model.
 - Username/password login (`/api/auth/login`)
 - Logout (`/api/auth/logout`)
 - Current user endpoint (`/api/auth/me`)
+- Quick Unlock Passcode endpoint (`/api/auth/passcode/unlock`) for idle lock only while the session is valid
 - JWT session cookie (`vps-session`, HttpOnly, Secure, SameSite=Lax, **24-hour expiry**)
 - **Auto-refresh**: sessions silently refresh when past 50% of lifespan (12h)
 - Route protection middleware for panel pages and API routes
@@ -72,6 +73,7 @@ It is designed for single-team/admin operation with a simple deployment model.
 - Trigger package metadata update (`apt update`)
 - Trigger package upgrades (all or selected packages)
 - **Lazy-loaded network map** for improved page performance
+- Network map is read-only / inspection-oriented; firewall/routing/Docker network control is planned for Phase 11
 
 **Constraints**
 
@@ -162,7 +164,9 @@ It is designed for single-team/admin operation with a simple deployment model.
 | Input validation       | ✅ Implemented | Central validation module (46 tests)    |
 | Non-root container     | ✅ Implemented | UID 1001 nextjs user                    |
 | SQLite WAL mode        | ✅ Implemented | Better concurrent read performance      |
-| Error sanitization     | ✅ Implemented | 18 friendly error mappings              |
+| Error sanitization     | ✅ Implemented | Safe redaction of sensitive errors      |
+| Role boundaries        | ✅ Implemented | Owner/Admin/Manager/Viewer + server scope |
+| Quick Unlock Passcode  | ✅ Implemented | Hashed, idle-lock only, not login replacement |
 
 ---
 
@@ -202,12 +206,26 @@ It is designed for single-team/admin operation with a simple deployment model.
 
 ---
 
-## 14) User Management
+## 14) User Management and Profile
 
-- Create, update, delete user accounts (`/api/users`)
-- User listing with role display
-- ADMIN role management
-- Accessible from sidebar under System group
+- Create, update, disable/delete user accounts (`/api/users`)
+- Owner/Admin can open `/users`; Manager/Viewer cannot manage other users
+- Role hierarchy: Owner, Admin, Manager, Viewer
+- Server scope: all servers or selected servers, including `local`
+- Self-service `/profile` for display name, email, password, theme preference, and Quick Unlock Passcode
+- Owner/Admin may reset or disable passcode only for users they are allowed to manage
+- Passcode is hashed, never shown, and only unlocks idle lock while the normal session is still valid
+
+---
+
+## Roadmap Status
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| Phase 9 — User/Profile/Permission | Done | Roles, server scopes, Users, Profile, passcode, logout confirm, API permission audit. |
+| Phase 10 — Remote VPS E2E + Production Ops | Next | Real remote VPS validation, remote smoke checks, deploy E2E, backup/rollback runbooks. |
+| Phase 11 — Network Canvas & Network Control Plane | Planned | Interactive inspect, diagnostics, safe network actions, rollback, audit. |
+| Phase 12 — Advanced Ops / Polish | Planned | Theme/session/preferences/scheduled checks/mobile polish. |
 
 ---
 

@@ -102,16 +102,23 @@ src/
 ├── app/                  # Next.js App Router
 │   ├── (auth)/           # Route group: login page
 │   ├── (panel)/          # Route group: main panel (auth required)
-│   │   ├── dashboard/    # Real-time host stats
-│   │   ├── servers/      # VPS management + detail view
-│   │   ├── network/      # Ports + package management
-│   │   ├── apps/         # Application tracking
-│   │   ├── deploy/       # GitHub deployer
-│   │   ├── audit/        # Audit log with search, filter, export
-│   │   ├── settings/     # Notifications, Docker, Security, General, Backup
+│   │   ├── dashboard/    # Fleet Risk Score, Alert Center, Safe Repair
+│   │   ├── servers/      # Local/remote VPS management + detail view
+│   │   ├── apps/         # Docker containers + systemd services
+│   │   ├── deploy/       # Git, Docker image, and Compose deploy
+│   │   ├── network/      # Read-only topology / exposure inspection
+│   │   ├── backup/       # Panel DB backup + restore
+│   │   ├── audit/        # Audit log
+│   │   ├── settings/     # Notifications + security settings
+│   │   ├── users/        # Owner/Admin user management
+│   │   ├── profile/      # Self-service profile + passcode
+│   │   ├── docs/         # In-app user manual
 │   │   └── terminal/     # Web terminal for server commands
 │   ├── api/              # API Routes (backend)
-│   │   ├── auth/         # Login, logout, session
+│   │   ├── auth/         # Login, logout, session, passcode unlock
+│   │   ├── profile/      # Self-service profile update
+│   │   ├── users/        # User CRUD + passcode reset/disable
+│   │   ├── settings/     # Security settings
 │   │   ├── stats/        # Host stats + SSE stream
 │   │   ├── servers/      # CRUD, sub-routes: stats, docker, services, actions, network, cron, files, ssl
 │   │   ├── apps/         # App CRUD + logs, env, health, stream, terminal, actions
@@ -201,13 +208,27 @@ npm run dev
 | `/dashboard`    | Real-time stats dashboard       | Yes   |
 | `/servers`      | VPS server management           | Yes   |
 | `/servers/[id]` | Server detail + live stats      | Yes   |
-| `/network`      | Port & package management       | Yes   |
+| `/network`      | Read-only network map/inspection | Yes   |
 | `/apps`         | Application tracking            | Yes   |
 | `/apps/[id]`    | App detail + logs/env/health    | Yes   |
 | `/deploy`       | GitHub + Docker deployer        | Yes   |
 | `/audit`        | Audit log viewer                | Yes   |
-| `/settings`     | Notifications & system settings | Yes   |
+| `/settings`     | Notifications & security settings | Yes   |
+| `/users`        | Owner/Admin user management     | Yes   |
+| `/profile`      | Self-service profile/passcode   | Yes   |
+| `/docs`         | In-app user manual              | Yes   |
 | `/terminal`     | Web terminal                    | Yes   |
+
+### Roadmap Status
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| Phase 9 — User/Profile/Permission | Done | Roles, server scopes, Users, Profile, password, Quick Unlock Passcode, logout confirm, API permission audit. |
+| Phase 10 — Remote VPS E2E + Production Ops | Next | Real remote VPS validation, SSH checks, remote Docker/services/logs smoke, remote deploy E2E, backup/rollback runbooks. |
+| Phase 11 — Network Canvas & Network Control Plane | Planned | Interactive inspect, diagnostics, exposure map, safe network actions, dry-run/diff, rollback, audit, remote support. |
+| Phase 12 — Advanced Ops / Polish | Planned | Full theme tokens, language/timezone, device/session management, notification preferences, scheduled risk checks. |
+
+Network Canvas is currently read-only / inspection-oriented and is not the Phase 10 control plane.
 
 ### Troubleshooting
 

@@ -42,7 +42,31 @@ Clears the session cookie. No request body needed.
 
 ### GET `/api/auth/me`
 
-Returns the currently authenticated user's `id` and `username`.
+Returns the currently authenticated user, including role/scope/profile flags needed by the UI.
+
+### POST `/api/auth/passcode/unlock`
+
+Unlocks the idle-lock overlay with the current user's Quick Unlock Passcode. Requires an already-valid normal session; it is not accepted for fresh login or expired sessions.
+
+---
+
+## Profile and User Endpoints
+
+### PUT `/api/profile`
+
+Self-service update for the current user: display name, email, password change, and theme preference. All authenticated roles may update themselves.
+
+### GET `/api/users` / POST `/api/users`
+
+Owner/Admin user management. Manager/Viewer are blocked from managing other users.
+
+### PATCH `/api/users/[id]` / DELETE `/api/users/[id]`
+
+Update or remove users within role hierarchy rules. Unsafe self-removal and last-owner/admin removal are blocked.
+
+### PUT `/api/users/[id]/passcode`
+
+Set/reset or disable Quick Unlock Passcode. Users may manage their own passcode; Owner/Admin may manage only users allowed by hierarchy. Passcodes are hashed and never returned.
 
 ---
 
@@ -652,3 +676,13 @@ const original = decrypt(encrypted); // → plaintext
 - [ ] Admin password: 12+ chars, mixed case, numbers, symbols
 - [ ] Firewall: only ports 80 & 443 open
 - [ ] Host SSH: key-based auth only
+
+
+---
+
+## Roadmap Boundaries
+
+- Phase 9 is complete: user/profile/permission management and API permission audit.
+- Phase 10 is next: Remote VPS E2E + Production Ops.
+- Phase 11 owns Network Canvas & Network Control Plane. Current network map/API is read-only / inspection-oriented and does not apply firewall/routing/Docker network changes yet.
+- Phase 12 owns advanced polish such as full theme tokens, language/timezone, device/session management, and scheduled risk checks.

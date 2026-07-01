@@ -46,8 +46,9 @@ Use it to answer simple questions quickly:
 | **Deployments** | Deploy from Git repositories, Docker images, or compose projects with logs and rollback-oriented flow. |
 | **Backups** | Create and restore panel database snapshots; restore creates a pre-restore backup automatically. |
 | **Notifications** | Discord, Slack, Telegram, and Email alert channels with recommended beginner rules. |
-| **Network Map** | Visual map for domains, proxy, servers, apps, ports, and Docker networks. |
+| **Network Map** | Read-only topology/inspection map for domains, proxy, servers, apps, ports, and Docker networks. |
 | **Audit Log** | Track who did what, when, where, and whether it succeeded. |
+| **Users + Profile** | Owner/Admin user management, role/server scope, and self-service profile/passcode settings. |
 | **Safe Mode** | Keeps dangerous controls out of the way for daily operation. |
 
 ## Screens inside the app
@@ -56,10 +57,12 @@ Use it to answer simple questions quickly:
 - **Servers** — add remote VPS machines, view stats, Docker, services, and server actions.
 - **Apps** — inspect containers and system services, logs, env tools, health checks.
 - **Deploy** — guided Git, Docker image, and compose deployment.
-- **Network** — topology and traffic-flow visibility.
+- **Network** — read-only topology and traffic-flow visibility; control-plane actions are planned later.
 - **Backup & Restore** — panel database snapshots and safe restore flow.
 - **Audit Log** — searchable activity history.
-- **Settings** — notifications, alert rules, and app preferences.
+- **Settings** — notifications, alert rules, security settings, and app preferences.
+- **Users** — Owner/Admin account management with role and server-scope boundaries.
+- **Profile** — self-service display name, email, password, theme preference, and Quick Unlock Passcode.
 - **Docs** — built-in user manual for non-technical operators.
 
 ## Quick start: production deploy
@@ -128,10 +131,12 @@ npm run db:studio
 - SSH credentials are encrypted before storage.
 - Sensitive values are redacted from logs and API responses where possible.
 - Destructive operations should be guarded by Safe Mode and confirmations.
+- Role boundaries are enforced in middleware/API, not only hidden in UI.
+- Quick Unlock Passcode is hashed, optional, and only unlocks idle lock while the login session is still valid.
 - Audit logging is part of the core product direction.
 - This app controls servers; review code and configuration before exposing it publicly.
 
-If you find a vulnerability, please open a private security report if GitHub Security Advisories are enabled, or contact the maintainer directly. Do not publish secrets or exploit details in public issues.
+No public registration is exposed; Owner/Admin creates users. If you find a vulnerability, please open a private security report if GitHub Security Advisories are enabled, or contact the maintainer directly. Do not publish secrets or exploit details in public issues.
 
 ## Contributing
 
@@ -157,14 +162,14 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## Roadmap
 
-- Phase 9.5 Profile foundation: self-service display name, email, password, quick unlock passcode, browser theme preference.
-- Phase 9.6 Full personal settings: real light/dark design tokens, language/timezone, notification preferences, recent activity, device/session management, logout all other sessions.
-- Per-server log management tab.
-- More beginner-friendly deployment explanations.
-- Better mobile tables and dense fleet views.
-- Scheduled risk checks and proactive notification delivery.
-- Safer restore previews and app-data backup integrations.
-- Real firewall/network controls with rollback and audit trail.
+| Phase | Status | Scope |
+| --- | --- | --- |
+| **Phase 9 — User/Profile/Permission** | Done | Owner/Admin/Manager/Viewer roles, server-scoped access, `/users`, `/profile`, password/email/display name, Quick Unlock Passcode, logout confirmation, and API permission audit. |
+| **Phase 10 — Remote VPS E2E + Production Ops** | Next | Validate a real remote VPS, SSH environment checks, remote Docker/services/logs smoke, remote deploy E2E, backup/rollback runbooks, production readiness, and cleanup. |
+| **Phase 11 — Network Canvas & Network Control Plane** | Planned | Complete interactive network inspection, diagnostics, exposure map, safe firewall/Docker network actions, dry-run/diff, rollback, audit, and remote support. |
+| **Phase 12 — Advanced Ops / Polish** | Planned | Full theme tokens, language/timezone, device/session management, notification preferences, scheduled risk checks, and fleet/mobile polish. |
+
+Network Canvas is currently read-only / inspection-oriented. It is not the Phase 10 control plane.
 
 ## License
 

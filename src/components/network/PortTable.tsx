@@ -6,7 +6,7 @@ import type { PortInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
-export function PortTable() {
+export function PortTable({ serverId = "local" }: { serverId?: string }) {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -17,17 +17,17 @@ export function PortTable() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/network/ports");
+      const res = await fetch(serverId === "local" ? "/api/network/ports" : `/api/servers/${serverId}/network`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || json.message || "Failed to load ports");
-      setPorts(json.data ?? []);
-      setSource(json.source ?? "none");
+      setPorts(serverId === "local" ? json.data ?? [] : json.data?.hostPorts ?? []);
+      setSource(serverId === "local" ? json.source ?? "none" : "remote");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [serverId]);
 
   useEffect(() => {
     fetchPorts();
@@ -46,6 +46,18 @@ export function PortTable() {
         return "default" as const;
     }
   };
+
+  const filteredPorts = ports.filter((p) => {
+    if (view === "listening") return p.state.toUpperCase() === "LISTEN";
+    if (view === "established") return p.state.toUpperCase() !== "LISTEN";
+    return true;
+  });
+
+  const emptyMessage = view === "listening"
+    ? "No listening ports found."
+    : view === "established"
+      ? "No established connections found."
+      : "No ports found.";
 
   return (
     <div className="space-y-4">
@@ -82,7 +94,7 @@ export function PortTable() {
         {/* Source indicator */}
         {source && source !== "none" && !loading && (
           <Badge variant={source === "ss" ? "success" : source === "docker" ? "info" : "default"}>
-            {source === "ss" ? "Host" : source === "container" ? "Container" : source === "docker" ? "Docker" : source}
+            {source === "remote" ? "Remote Host" : source === "ss" ? "Host" : source === "container" ? "Container" : source === "docker" ? "Docker" : source}
           </Badge>
         )}
       </div>
@@ -94,7 +106,32 @@ export function PortTable() {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-gray-700 touch-pan-x overscroll-x-contain">
+      <div className="space-y-3 md:hidden">
+        {loading && ports.length === 0 ? (
+          <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-8 text-center text-gray-500">
+            <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />
+            Loading ports...
+          </div>
+        ) : filteredPorts.length === 0 ? (
+          <div className="rounded-xl border border-gray-700 bg-gray-900/50 p-8 text-center text-gray-500">{emptyMessage}</div>
+        ) : filteredPorts.map((port, idx) => (
+          <div key={idx} className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-sm text-white">{port.localAddress}:{port.localPort}</p>
+                <p className="mt-1 font-mono text-xs uppercase text-gray-500">{port.protocol}</p>
+              </div>
+              <Badge variant={stateVariant(port.state)}>{port.state}</Badge>
+            </div>
+            <div className="mt-3 space-y-1 text-xs text-gray-400">
+              <p className="break-all">Foreign: {port.foreignAddress || "*"}:{port.foreignPort || "*"}</p>
+              <p className="break-all">Process: {port.process || "—"}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-gray-700 md:block">
         <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="border-b border-gray-700 bg-gray-800/50 text-xs uppercase text-gray-400">
             <tr>
@@ -144,26 +181,14 @@ export function PortTable() {
                   Loading ports...
                 </td>
               </tr>
-            ) : ports.filter((p) => {
-              if (view === "listening") return p.state.toUpperCase() === "LISTEN";
-              if (view === "established") return p.state.toUpperCase() !== "LISTEN";
-              return true;
-            }).length === 0 ? (
+            ) : filteredPorts.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  {view === "listening"
-                    ? "No listening ports found."
-                    : view === "established"
-                      ? "No established connections found."
-                      : "No ports found."}
+                  {emptyMessage}
                 </td>
               </tr>
             ) : (
-              ports.filter((p) => {
-                if (view === "listening") return p.state.toUpperCase() === "LISTEN";
-                if (view === "established") return p.state.toUpperCase() !== "LISTEN";
-                return true;
-              }).map((port, idx) => (
+              filteredPorts.map((port, idx) => (
                 <tr key={idx} className="bg-gray-800 transition-colors hover:bg-gray-750">
                   <td className="px-4 py-2 font-mono text-xs uppercase text-gray-300">
                     {port.protocol}

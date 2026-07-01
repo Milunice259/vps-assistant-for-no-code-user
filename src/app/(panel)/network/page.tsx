@@ -99,7 +99,13 @@ export default function NetworkPage() {
         <h2 className="text-lg font-semibold text-white mb-4">
           Host Open Ports
         </h2>
-        <PortTable />
+        {selectedServerId ? (
+          <PortTable serverId={selectedServerId} />
+        ) : (
+          <div className="rounded-xl border border-gray-700 bg-gray-800 p-8 text-center text-sm text-gray-400">
+            Select a server above to view its open ports
+          </div>
+        )}
       </section>
     </div>
     </PermissionGate>

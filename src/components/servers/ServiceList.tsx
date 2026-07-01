@@ -343,7 +343,57 @@ export function ServiceList({ serverId }: ServiceListProps) {
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto rounded-xl border border-gray-700">
+        <>
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 md:hidden [-webkit-overflow-scrolling:touch]">
+          {filtered.map((s) => {
+            const info = getServiceInfo(s.name);
+            const desc = info?.desc || s.description || "—";
+            const importance = info?.importance || "unknown";
+            const isActive = s.activeState === "active";
+            const isEnabled = ["enabled", "enabled-runtime", "static", "generated"].includes(s.unitFileState || "");
+            const isLoadingThis = (action: string) => actionLoading === `${s.name}-${action}`;
+            const isAnyLoading = actionLoading?.startsWith(s.name);
+            return (
+              <div key={s.name} className="rounded-xl border border-gray-700 bg-gray-900/50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Cog className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                      <span className="truncate font-mono text-sm text-white">{s.name}</span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-400">{desc}</p>
+                  </div>
+                  <Badge variant={activeStateBadge(s.activeState)}>{s.activeState}</Badge>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <ImportanceBadge level={importance} />
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {isActive ? (
+                      <>
+                        <button onClick={() => { if (importance === "critical" && !confirm(`Restart critical service "${s.name}"?`)) return; handleServiceAction(s.name, "restart"); }} disabled={safeMode || !!isAnyLoading} className="rounded-md bg-yellow-500/10 px-2 py-1 text-xs text-yellow-400 disabled:opacity-50">
+                          {isLoadingThis("restart") ? <Loader2 className="h-3 w-3 animate-spin" /> : "Restart"}
+                        </button>
+                        <button onClick={() => { if (!confirm(`Stop service "${s.name}"? This may interrupt apps or access.`)) return; handleServiceAction(s.name, "stop"); }} disabled={safeMode || !!isAnyLoading} className="rounded-md bg-red-500/10 px-2 py-1 text-xs text-red-400 disabled:opacity-50">
+                          {isLoadingThis("stop") ? <Loader2 className="h-3 w-3 animate-spin" /> : "Stop"}
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => handleServiceAction(s.name, "start")} disabled={safeMode || !!isAnyLoading} className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400 disabled:opacity-50">
+                        {isLoadingThis("start") ? <Loader2 className="h-3 w-3 animate-spin" /> : "Start"}
+                      </button>
+                    )}
+                    <button onClick={() => handleServiceAction(s.name, isEnabled ? "disable" : "enable")} disabled={safeMode || !!isAnyLoading} className="rounded-md bg-gray-500/10 px-2 py-1 text-xs text-gray-400 disabled:opacity-50">
+                      {isLoadingThis(isEnabled ? "disable" : "enable") ? <Loader2 className="h-3 w-3 animate-spin" /> : isEnabled ? "Disable" : "Enable"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden max-h-[70vh] overflow-y-auto rounded-xl border border-gray-700 md:block">
+          <div className="overflow-x-auto">
           <table className="min-w-[980px] w-full text-sm">
             <thead className="sticky top-0 bg-gray-900 z-10">
               <tr className="border-b border-gray-700 text-gray-400 text-left text-xs uppercase">
@@ -469,7 +519,9 @@ export function ServiceList({ serverId }: ServiceListProps) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
+        </>
       )}
     </div>
   );

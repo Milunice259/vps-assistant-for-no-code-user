@@ -222,8 +222,31 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
         </select>
       </div>
 
-      <div className="rounded-lg border border-gray-700 bg-gray-900 overflow-hidden">
-        <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
+      <div className="space-y-3 md:hidden">
+        {loading ? (
+          <div className="rounded-lg border border-gray-700 bg-gray-900 p-8 text-center text-gray-500">Loading...</div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="rounded-lg border border-gray-700 bg-gray-900 p-8 text-center text-gray-500">No activity matches these filters.</div>
+        ) : filteredEntries.map((entry) => (
+          <button key={entry.id} onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)} className="w-full rounded-xl border border-gray-700 bg-gray-900/70 p-4 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className={`rounded px-2 py-0.5 font-mono text-xs ${ACTION_COLORS[entry.action] || "bg-gray-500/10 text-gray-400"}`}>{entry.action}</span>
+                <p className="mt-2 text-xs text-gray-500">{new Date(entry.createdAt).toLocaleString()}</p>
+              </div>
+              <span className="shrink-0 text-xs capitalize text-gray-300">{severity(entry.action)}</span>
+            </div>
+            <div className="mt-3 space-y-1 text-xs text-gray-400">
+              <p className="break-all">User: {entry.username}</p>
+              <p className="break-all">Target: {entry.target || "-"}</p>
+              {expandedId === entry.id && <p className="break-all text-gray-300">Details: {entry.details || "No extra details"}</p>}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="hidden rounded-lg border border-gray-700 bg-gray-900 overflow-hidden md:block">
+        <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-xs text-gray-500">

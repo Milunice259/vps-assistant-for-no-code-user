@@ -80,7 +80,8 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
 
 function requiredRole(pathname: string, method: string): Role {
   if (!MUTABLE_METHODS.has(method)) return "VIEWER";
-  if (pathname.startsWith("/api/auth/")) return "VIEWER";
+  if (pathname.startsWith("/api/auth/") || pathname === "/api/profile") return "VIEWER";
+  if (pathname.startsWith("/api/users/") && pathname.endsWith("/passcode")) return "VIEWER";
   if (pathname.startsWith("/api/users") || pathname === "/api/backup") return "ADMIN";
   return "OPERATOR";
 }

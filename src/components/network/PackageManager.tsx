@@ -136,12 +136,8 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
     }
     setError(null);
     try {
-      if (serverId !== "local") {
-        setPackages([]);
-        setHasChecked(false);
-        return;
-      }
-      const url = check ? "/api/network/packages?check=1" : "/api/network/packages";
+      const baseUrl = serverId === "local" ? "/api/network/packages" : `/api/servers/${serverId}/packages`;
+      const url = check ? `${baseUrl}?check=1` : baseUrl;
       const res = await fetch(url);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load packages");
@@ -167,7 +163,8 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
     setActionLoading(true);
     setActionResult(null);
     try {
-      const res = await fetch("/api/network/packages", {
+      const endpoint = serverId === "local" ? "/api/network/packages" : `/api/servers/${serverId}/packages`;
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
@@ -231,7 +228,8 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
     setUpgradingPkg(pkgName);
     setActionResult(null);
     try {
-      const res = await fetch("/api/network/packages", {
+      const endpoint = serverId === "local" ? "/api/network/packages" : `/api/servers/${serverId}/packages`;
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "upgrade", packages: [pkgName] }),

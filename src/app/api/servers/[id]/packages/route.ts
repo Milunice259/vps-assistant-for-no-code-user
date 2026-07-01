@@ -14,7 +14,7 @@ type Runner = (cmd: string, timeoutMs?: number) => Promise<string>;
 type PackagePayload = ApiResponse<PackageInfo[]> & { packageManager?: string };
 
 async function detectPackageManager(run: Runner) {
-  const raw = await run("command -v apt >/dev/null 2>&1 && echo apt || command -v apk >/dev/null 2>&1 && echo apk || echo none", 10_000);
+  const raw = await run("if [ -x /usr/bin/apt-get ] || [ -x /usr/bin/apt ]; then echo apt; elif [ -x /sbin/apk ] || [ -x /usr/bin/apk ]; then echo apk; else echo none; fi", 10_000);
   const manager = raw.trim();
   return manager === "apt" || manager === "apk" ? manager : null;
 }

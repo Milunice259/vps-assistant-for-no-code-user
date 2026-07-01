@@ -212,7 +212,6 @@ export default function UsersPage() {
                       <p className="truncate text-sm font-medium text-white">{user.displayName || user.username}</p>
                       <Badge variant={user.isActive ? "success" : "default"}>{user.isActive ? "Active" : "Disabled"}</Badge>
                       <Badge variant={ROLES[user.role].tone}>{ROLES[user.role].label}</Badge>
-                      {user.passcodeEnabled && <Badge variant="info">Passcode</Badge>}
                     </div>
                     <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · {user.serverAccessMode === "SELECTED" ? `${user.serverIds.length} servers` : "all servers"} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
                   </div>

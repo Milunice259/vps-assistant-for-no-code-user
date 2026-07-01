@@ -173,14 +173,16 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger button */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-3.5 z-50 rounded-lg bg-gray-800 p-2 text-gray-400 shadow-lg hover:text-white md:hidden"
-        aria-label="Open menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+      {/* Mobile hamburger button — flush with the header bar */}
+      {!mobileOpen && (
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="fixed left-0 top-0 z-50 flex h-16 w-16 items-center justify-center border-b border-gray-700 bg-gray-800 text-gray-400 hover:text-white md:hidden"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Mobile overlay */}
       {mobileOpen && (

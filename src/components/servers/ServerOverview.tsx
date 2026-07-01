@@ -775,21 +775,29 @@ export function ServerOverview({ serverId, onOpenActions, onOpenLogs }: ServerOv
     [serverId],
   );
 
+  const fetchInfoPanelsSequentially = useCallback(async () => {
+    // ponytail: remote SSH channel limit; upgrade to one batched overview API when overview grows.
+    for (const panel of INFO_PANELS) {
+      await fetchInfoPanel(panel.key);
+    }
+  }, [fetchInfoPanel]);
+
   /* ─── Auto-fetch on mount ─── */
   useEffect(() => {
-    fetchStats();
-    INFO_PANELS.forEach((panel, idx) => {
-      setTimeout(() => fetchInfoPanel(panel.key), idx * 400);
-    });
-  }, [serverId, fetchStats, fetchInfoPanel]);
+    let cancelled = false;
+    async function loadOverview() {
+      await fetchStats();
+      if (!cancelled) await fetchInfoPanelsSequentially();
+    }
+    loadOverview();
+    return () => { cancelled = true; };
+  }, [serverId, fetchStats, fetchInfoPanelsSequentially]);
 
   /* ─── Refresh all ─── */
-  const refreshAll = useCallback(() => {
-    fetchStats();
-    INFO_PANELS.forEach((panel, idx) => {
-      setTimeout(() => fetchInfoPanel(panel.key), idx * 200);
-    });
-  }, [fetchStats, fetchInfoPanel]);
+  const refreshAll = useCallback(async () => {
+    await fetchStats();
+    await fetchInfoPanelsSequentially();
+  }, [fetchStats, fetchInfoPanelsSequentially]);
 
   /* ─── Format uptime ─── */
   function formatUptime(uptime: number | string): string {

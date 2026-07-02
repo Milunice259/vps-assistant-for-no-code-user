@@ -160,11 +160,18 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     setDraggedNode(null);
   }, []);
 
-  /* ─── Scroll zoom ─── */
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    setZoom(z => Math.min(2, Math.max(0.3, z + delta)));
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.08 : 0.08;
+      setZoom((z) => Math.min(2, Math.max(0.3, z + delta)));
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
   }, []);
 
   /* ─── Zoom controls ─── */
@@ -345,7 +352,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
       >
         <div
           className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-xl border border-gray-700/80 bg-gray-950/80 p-1 shadow-xl backdrop-blur"

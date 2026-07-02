@@ -221,6 +221,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const runningContainers = allContainers.filter(c => c.state?.toLowerCase() === "running").length;
   const stoppedContainers = allContainers.filter(c => ["exited", "dead"].includes(c.state?.toLowerCase() || "")).length;
   const listeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
+  const publicPorts = listeningPorts.filter((p) => !["127.", "::1", "localhost"].some((prefix) => p.localAddress.startsWith(prefix)));
+  const sensitivePorts = new Set([22, 80, 443, 3306, 5432, 6379, 27017, 9200, 5601, 8080, 8443]);
+  const sensitiveOpenPorts = publicPorts.filter((p) => sensitivePorts.has(p.localPort));
+  const auditLevel = sensitiveOpenPorts.length > 0 ? "Review" : publicPorts.length > 0 ? "Normal" : "Private";
 
   // Compute layout
   const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
@@ -267,6 +271,42 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           {warning}
         </div>
       )}
+
+      <div className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Network Audit</h3>
+            <p className="mt-1 text-xs text-gray-500">Quick read-only safety summary. No firewall rule is changed here.</p>
+          </div>
+          <Badge variant={auditLevel === "Review" ? "warning" : auditLevel === "Private" ? "success" : "info"}>{auditLevel}</Badge>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+            <p className="text-xs text-gray-500">Public listening ports</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{publicPorts.length}</p>
+            <p className="mt-1 text-xs text-gray-500">Ports reachable outside localhost.</p>
+          </div>
+          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+            <p className="text-xs text-gray-500">Needs review</p>
+            <p className="mt-1 text-2xl font-semibold text-amber-300">{sensitiveOpenPorts.length}</p>
+            <p className="mt-1 text-xs text-gray-500">Common admin/database ports open publicly.</p>
+          </div>
+          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+            <p className="text-xs text-gray-500">Docker networks</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{topology.networks.length}</p>
+            <p className="mt-1 text-xs text-gray-500">Internal app networks on this server.</p>
+          </div>
+        </div>
+        {sensitiveOpenPorts.length > 0 ? (
+          <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+            Review these ports before exposing this server broadly: {sensitiveOpenPorts.slice(0, 6).map((p) => `${p.protocol.toUpperCase()}:${p.localPort} (${p.process || "unknown"})`).join(", ")}{sensitiveOpenPorts.length > 6 ? "…" : ""}.
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+            No common database/admin port is publicly listening in this snapshot.
+          </div>
+        )}
+      </div>
 
       <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
         <h3 className="mb-2 text-sm font-semibold text-white">Network Map Guide</h3>

@@ -340,7 +340,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       <div
         ref={viewportRef}
         className="bg-gray-900/50 rounded-xl border border-gray-700 overflow-hidden relative"
-        style={{ height: Math.min(canvasH * zoom + 40, 700), cursor: isDragging ? "grabbing" : "grab" }}
+        style={{ height: Math.min(Math.max(canvasH + 40, 480), 700), cursor: isDragging ? "grabbing" : "grab" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

@@ -132,9 +132,9 @@ const sections = [
     bullets: [
       "Use the map to understand traffic flow before changing ports or domains.",
       "Fit and Reset help when many apps make the canvas crowded.",
-      "The map is currently read-only / inspection-oriented: use it to understand exposure before changing ports or domains.",
-      "It does not apply firewall, routing, Docker network, or drag/drop changes yet; those belong to the later Network Control Plane phase.",
-      "For public apps, check domain, Traefik route, container port, and SSL status.",
+      "Network Audit shows public ports, ports that need review, and Docker networks with compact visual cards.",
+      "Click an open port for a short explanation. Longer guidance stays here in Docs, not inside the working UI.",
+      "This view uses real server data but is read-only: it does not apply firewall, routing, Docker network, or drag/drop changes yet.",
     ],
   },
   {
@@ -280,8 +280,8 @@ const walkthroughs = [
 
 const roadmap = [
   ["Phase 9", "Done", "User/Profile/Permission: roles, server scope, Users, My Profile, password, Quick Unlock Passcode, logout confirm, and API permission audit."],
-  ["Phase 10", "Next", "Remote VPS E2E + Production Ops: real remote validation, SSH checks, remote Docker/services/logs smoke, remote deploy, backup/rollback runbooks, readiness cleanup."],
-  ["Phase 11", "Planned", "Network Canvas & Network Control Plane: complete inspect, diagnostics, exposure map, safe network actions, dry-run/diff, rollback, audit, and remote support."],
+  ["Phase 10", "Done", "Remote VPS E2E + Production Ops: real remote validation, SSH checks, remote Docker/services/logs/packages/network, remote deploy, and readiness cleanup."],
+  ["Phase 11", "In progress", "Network Canvas & Network Control Plane: network audit, exposure explanation, safe network actions, dry-run/diff, rollback, audit, and remote support."],
   ["Phase 12", "Planned", "Advanced Ops / Polish: full theme tokens, language/timezone, device sessions, notification preferences, scheduled risk checks, and fleet/mobile polish."],
 ];
 

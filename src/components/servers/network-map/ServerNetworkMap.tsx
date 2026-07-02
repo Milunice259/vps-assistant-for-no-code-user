@@ -24,6 +24,9 @@ import {
   Info,
   Container,
   RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  Database,
 } from "lucide-react";
 import type { NetworkTopology, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -53,6 +56,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
   const [selectedContainer, setSelectedContainer] = useState<{ name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string } | null>(null);
+  const [selectedPort, setSelectedPort] = useState<number | null>(null);
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
@@ -225,6 +229,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const sensitivePorts = new Set([22, 80, 443, 3306, 5432, 6379, 27017, 9200, 5601, 8080, 8443]);
   const sensitiveOpenPorts = publicPorts.filter((p) => sensitivePorts.has(p.localPort));
   const auditLevel = sensitiveOpenPorts.length > 0 ? "Review" : publicPorts.length > 0 ? "Normal" : "Private";
+  const selectedPortInfo = selectedPort == null ? null : listeningPorts[selectedPort] ?? null;
+  const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && publicPorts.includes(selectedPortInfo) : false;
 
   // Compute layout
   const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
@@ -273,39 +279,34 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       )}
 
       <div className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-white">Network Audit</h3>
-            <p className="mt-1 text-xs text-gray-500">Quick read-only safety summary. No firewall rule is changed here.</p>
-          </div>
-          <Badge variant={auditLevel === "Review" ? "warning" : auditLevel === "Private" ? "success" : "info"}>{auditLevel}</Badge>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-white">Network Audit</h3>
+          <a href="/docs" className="text-xs text-gray-500 hover:text-brand-300">Docs</a>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-            <p className="text-xs text-gray-500">Public listening ports</p>
-            <p className="mt-1 text-2xl font-semibold text-white">{publicPorts.length}</p>
-            <p className="mt-1 text-xs text-gray-500">Ports reachable outside localhost.</p>
+          <div title="Ports reachable outside localhost." className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+            <Globe className="h-5 w-5 text-sky-300" />
+            <p className="mt-3 text-2xl font-semibold text-white">{publicPorts.length}</p>
+            <p className="text-xs text-gray-500">Public</p>
           </div>
-          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-            <p className="text-xs text-gray-500">Needs review</p>
-            <p className="mt-1 text-2xl font-semibold text-amber-300">{sensitiveOpenPorts.length}</p>
-            <p className="mt-1 text-xs text-gray-500">Common admin/database ports open publicly.</p>
+          <div
+            title={sensitiveOpenPorts.length > 0 ? `Review: ${sensitiveOpenPorts.slice(0, 6).map((p) => `${p.protocol.toUpperCase()}:${p.localPort} (${p.process || "unknown"})`).join(", ")}${sensitiveOpenPorts.length > 6 ? "…" : ""}` : "No common database/admin port is publicly listening in this snapshot."}
+            className={`rounded-lg border p-3 ${sensitiveOpenPorts.length > 0 ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}
+          >
+            {sensitiveOpenPorts.length > 0 ? <ShieldAlert className="h-5 w-5 text-amber-300" /> : <ShieldCheck className="h-5 w-5 text-emerald-300" />}
+            <p className={`mt-3 text-2xl font-semibold ${sensitiveOpenPorts.length > 0 ? "text-amber-300" : "text-emerald-300"}`}>{sensitiveOpenPorts.length}</p>
+            <p className="text-xs text-gray-500">Review</p>
           </div>
-          <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-            <p className="text-xs text-gray-500">Docker networks</p>
-            <p className="mt-1 text-2xl font-semibold text-white">{topology.networks.length}</p>
-            <p className="mt-1 text-xs text-gray-500">Internal app networks on this server.</p>
+          <div title="Internal app networks on this server." className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+            <Network className="h-5 w-5 text-purple-300" />
+            <p className="mt-3 text-2xl font-semibold text-white">{topology.networks.length}</p>
+            <p className="text-xs text-gray-500">Networks</p>
           </div>
         </div>
-        {sensitiveOpenPorts.length > 0 ? (
-          <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
-            Review these ports before exposing this server broadly: {sensitiveOpenPorts.slice(0, 6).map((p) => `${p.protocol.toUpperCase()}:${p.localPort} (${p.process || "unknown"})`).join(", ")}{sensitiveOpenPorts.length > 6 ? "…" : ""}.
-          </div>
-        ) : (
-          <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-            No common database/admin port is publicly listening in this snapshot.
-          </div>
-        )}
+        <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+          <Badge variant={auditLevel === "Review" ? "warning" : auditLevel === "Private" ? "success" : "info"}>{auditLevel}</Badge>
+          <Info className="h-3.5 w-3.5" />
+        </div>
       </div>
 
       <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
@@ -474,18 +475,37 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           </p>
           <div className="flex flex-wrap gap-2">
             {listeningPorts.map((p, i) => (
-              <div
+              <button
                 key={`${p.protocol}-${p.localPort}-${i}`}
-                className="flex items-center gap-2 bg-gray-900/70 border border-gray-700/50 rounded-lg px-3 py-2 hover:border-amber-500/30 transition-colors"
+                onClick={() => setSelectedPort(selectedPort === i ? null : i)}
+                title="Click for a short explanation"
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${selectedPort === i ? "border-brand-500/60 bg-brand-500/10" : "border-gray-700/50 bg-gray-900/70 hover:border-amber-500/30"}`}
               >
                 <Badge variant="info">{p.protocol.toUpperCase()}</Badge>
                 <span className="text-white text-sm font-mono font-semibold">:{p.localPort}</span>
+                {sensitivePorts.has(p.localPort) && <Database className="h-3.5 w-3.5 text-amber-300" />}
                 {p.process && (
                   <span className="text-xs text-gray-500 truncate max-w-[120px]">{p.process}</span>
                 )}
-              </div>
+              </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {selectedPortInfo && (
+        <div className={`rounded-xl border p-4 ${selectedPortNeedsReview ? "border-amber-500/30 bg-amber-500/10" : "border-sky-500/20 bg-sky-500/5"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-white">{selectedPortInfo.protocol.toUpperCase()} :{selectedPortInfo.localPort}</h4>
+              <p className="mt-1 text-xs text-gray-400">{selectedPortInfo.process || "Unknown process"}</p>
+            </div>
+            {selectedPortNeedsReview ? <ShieldAlert className="h-5 w-5 text-amber-300" /> : <ShieldCheck className="h-5 w-5 text-sky-300" />}
+          </div>
+          <p className="mt-3 text-sm text-gray-300">
+            {selectedPortNeedsReview ? "Common admin/database port. Keep it open only if you really need external access." : "Listening port detected. Review only if this service should not receive traffic."}
+          </p>
+          <a href="/docs" className="mt-3 inline-flex text-xs text-brand-300 hover:text-brand-200">Learn more in docs →</a>
         </div>
       )}
 

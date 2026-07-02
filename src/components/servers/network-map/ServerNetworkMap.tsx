@@ -228,7 +228,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const publicPorts = listeningPorts.filter((p) => !["127.", "::1", "localhost"].some((prefix) => p.localAddress.startsWith(prefix)));
   const sensitivePorts = new Set([22, 80, 443, 3306, 5432, 6379, 27017, 9200, 5601, 8080, 8443]);
   const sensitiveOpenPorts = publicPorts.filter((p) => sensitivePorts.has(p.localPort));
-  const auditLevel = sensitiveOpenPorts.length > 0 ? "Review" : publicPorts.length > 0 ? "Normal" : "Private";
   const selectedPortInfo = selectedPort == null ? null : listeningPorts[selectedPort] ?? null;
   const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && publicPorts.includes(selectedPortInfo) : false;
 
@@ -284,28 +283,30 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <a href="/docs" className="text-xs text-gray-500 hover:text-brand-300">Docs</a>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div title="Ports reachable outside localhost." className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-            <Globe className="h-5 w-5 text-sky-300" />
-            <p className="mt-3 text-2xl font-semibold text-white">{publicPorts.length}</p>
-            <p className="text-xs text-gray-500">Public</p>
+          <div title="Ports reachable outside localhost." className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-gray-700 bg-gray-950/60 p-4 text-center">
+            <div className="rounded-2xl bg-sky-500/10 p-3 ring-1 ring-sky-400/20">
+              <Globe className="h-6 w-6 text-sky-300" />
+            </div>
+            <p className="mt-3 text-3xl font-bold leading-none text-white">{publicPorts.length}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-wide text-gray-500">Public</p>
           </div>
           <div
             title={sensitiveOpenPorts.length > 0 ? `Review: ${sensitiveOpenPorts.slice(0, 6).map((p) => `${p.protocol.toUpperCase()}:${p.localPort} (${p.process || "unknown"})`).join(", ")}${sensitiveOpenPorts.length > 6 ? "…" : ""}` : "No common database/admin port is publicly listening in this snapshot."}
-            className={`rounded-lg border p-3 ${sensitiveOpenPorts.length > 0 ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}
+            className={`flex min-h-32 flex-col items-center justify-center rounded-lg border p-4 text-center ${sensitiveOpenPorts.length > 0 ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}
           >
-            {sensitiveOpenPorts.length > 0 ? <ShieldAlert className="h-5 w-5 text-amber-300" /> : <ShieldCheck className="h-5 w-5 text-emerald-300" />}
-            <p className={`mt-3 text-2xl font-semibold ${sensitiveOpenPorts.length > 0 ? "text-amber-300" : "text-emerald-300"}`}>{sensitiveOpenPorts.length}</p>
-            <p className="text-xs text-gray-500">Review</p>
+            <div className={`rounded-2xl p-3 ring-1 ${sensitiveOpenPorts.length > 0 ? "bg-amber-500/10 ring-amber-400/20" : "bg-emerald-500/10 ring-emerald-400/20"}`}>
+              {sensitiveOpenPorts.length > 0 ? <ShieldAlert className="h-6 w-6 text-amber-300" /> : <ShieldCheck className="h-6 w-6 text-emerald-300" />}
+            </div>
+            <p className={`mt-3 text-3xl font-bold leading-none ${sensitiveOpenPorts.length > 0 ? "text-amber-300" : "text-emerald-300"}`}>{sensitiveOpenPorts.length}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-wide text-gray-500">Review</p>
           </div>
-          <div title="Internal app networks on this server." className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-            <Network className="h-5 w-5 text-purple-300" />
-            <p className="mt-3 text-2xl font-semibold text-white">{topology.networks.length}</p>
-            <p className="text-xs text-gray-500">Networks</p>
+          <div title="Internal app networks on this server." className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-gray-700 bg-gray-950/60 p-4 text-center">
+            <div className="rounded-2xl bg-purple-500/10 p-3 ring-1 ring-purple-400/20">
+              <Network className="h-6 w-6 text-purple-300" />
+            </div>
+            <p className="mt-3 text-3xl font-bold leading-none text-white">{topology.networks.length}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-wide text-gray-500">Networks</p>
           </div>
-        </div>
-        <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-          <Badge variant={auditLevel === "Review" ? "warning" : auditLevel === "Private" ? "success" : "info"}>{auditLevel}</Badge>
-          <Info className="h-3.5 w-3.5" />
         </div>
       </div>
 
@@ -323,12 +324,15 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Drag canvas to pan · Drag any node to rearrange · Click a line to lock/unlock it</span>
+          <span>Drag canvas · Drag nodes · Click line to lock/unlock</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Running</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Stopped</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Ports exposed</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400" /> Host</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400" /> Network group</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Running app</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Stopped app</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400" /> Unknown</span>
         </div>
       </div>
 
@@ -505,7 +509,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <p className="mt-3 text-sm text-gray-300">
             {selectedPortNeedsReview ? "Common admin/database port. Keep it open only if you really need external access." : "Listening port detected. Review only if this service should not receive traffic."}
           </p>
-          <a href="/docs" className="mt-3 inline-flex text-xs text-brand-300 hover:text-brand-200">Learn more in docs →</a>
+          <a href="/docs#network" className="mt-3 inline-flex text-xs text-brand-300 hover:text-brand-200">Learn more in docs →</a>
         </div>
       )}
 

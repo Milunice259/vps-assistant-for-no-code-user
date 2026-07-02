@@ -277,6 +277,15 @@ interface MemoryRow {
   available: string;
 }
 
+function parseMemoryValue(value: string): number {
+  const match = value.match(/^([\d.]+)\s*([KMGTPE]?i?|[KMGTPE])?B?$/i);
+  if (!match) return Number.parseFloat(value) || 0;
+  const amount = Number.parseFloat(match[1]);
+  const unit = (match[2] || "").toLowerCase().replace("i", "");
+  const powers: Record<string, number> = { "": 0, k: 1, m: 2, g: 3, t: 4, p: 5, e: 6 };
+  return amount * 1024 ** (powers[unit] ?? 0);
+}
+
 function parseMemory(raw: string): { rows: MemoryRow[]; usagePercent: number } {
   const lines = raw.split("\n").filter(Boolean);
   const rows: MemoryRow[] = [];
@@ -285,8 +294,8 @@ function parseMemory(raw: string): { rows: MemoryRow[]; usagePercent: number } {
   for (const line of lines) {
     if (line.startsWith("Mem:")) {
       const parts = line.replace("Mem:", "").trim().split(/\s+/);
-      const totalVal = parseFloat(parts[0] || "0");
-      const usedVal = parseFloat(parts[1] || "0");
+      const totalVal = parseMemoryValue(parts[0] || "0");
+      const usedVal = parseMemoryValue(parts[1] || "0");
       usagePercent = totalVal > 0 ? Math.round((usedVal / totalVal) * 100) : 0;
       rows.push({
         label: "RAM",

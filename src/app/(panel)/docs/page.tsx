@@ -278,13 +278,6 @@ const walkthroughs = [
   },
 ];
 
-const roadmap = [
-  ["Phase 9", "Done", "User/Profile/Permission: roles, server scope, Users, My Profile, password, Quick Unlock Passcode, logout confirm, and API permission audit."],
-  ["Phase 10", "Done", "Remote VPS E2E + Production Ops: real remote validation, SSH checks, remote Docker/services/logs/packages/network, remote deploy, and readiness cleanup."],
-  ["Phase 11", "In progress", "Network Canvas & Network Control Plane: network audit, exposure explanation, safe network actions, dry-run/diff, rollback, audit, and remote support."],
-  ["Phase 12", "Planned", "Advanced Ops / Polish: full theme tokens, language/timezone, device sessions, notification preferences, scheduled risk checks, and fleet/mobile polish."],
-];
-
 const glossary = [
   ["CPU", "How busy the processor is. High for a short time is normal; high for a long time means the server is overloaded."],
   ["Memory", "Working space for apps. Very high memory can make the VPS slow or trigger crashes."],
@@ -360,9 +353,6 @@ export default function DocsPage() {
               {guide.title}
             </a>
           ))}
-          <a href="#roadmap" className="rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-sm text-brand-100 hover:bg-brand-500/20">
-            Roadmap status
-          </a>
           {sections.map((section) => (
             <a key={section.id} href={`#${section.id}`} className="rounded-full border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 hover:border-brand-500 hover:text-white">
               {section.title}
@@ -425,22 +415,6 @@ export default function DocsPage() {
               </details>
             );
           })}
-        </div>
-      </section>
-
-      <section id="roadmap" className="scroll-mt-24 rounded-2xl border border-gray-700 bg-gray-800 p-5">
-        <h2 className="text-xl font-semibold text-white">Roadmap status</h2>
-        <p className="mt-1 text-sm text-gray-400">This page tracks the actual app scope. Network Control Plane is not part of Phase 10.</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {roadmap.map(([phase, status, text]) => (
-            <div key={phase} className="rounded-xl border border-gray-700 bg-gray-900 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-white">{phase}</h3>
-                <span className="rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-1 text-xs text-brand-100">{status}</span>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-gray-300">{text}</p>
-            </div>
-          ))}
         </div>
       </section>
 

@@ -172,7 +172,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
 
     viewport.addEventListener("wheel", handleWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [loading, topology]);
 
   /* ─── Zoom controls ─── */
   const zoomIn = () => setZoom(z => Math.min(2, z + 0.15));

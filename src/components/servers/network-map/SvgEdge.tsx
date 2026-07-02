@@ -23,7 +23,6 @@ export function SvgEdge({
   from,
   to,
   color,
-  label,
   locked,
   onToggle,
 }: {
@@ -40,7 +39,7 @@ export function SvgEdge({
   const midY = (y1 + y2) / 2;
   const pathD = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
 
-  const labelText = locked ? "Blocked" : label;
+  const labelText = locked ? "Blocked" : undefined;
   const labelX = midX;
   const labelY = midY - 4;
   const labelWidth = Math.max((labelText || "Flow").length * 7, 44) + 16;

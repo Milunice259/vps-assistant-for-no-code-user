@@ -231,12 +231,21 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const totalContainers = allContainers.length;
   const runningContainers = allContainers.filter(c => c.state?.toLowerCase() === "running").length;
   const stoppedContainers = allContainers.filter(c => ["exited", "dead"].includes(c.state?.toLowerCase() || "")).length;
-  const listeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
-  const publicPorts = listeningPorts.filter((p) => !["127.", "::1", "localhost"].some((prefix) => p.localAddress.startsWith(prefix)));
+  const rawListeningPorts = topology.hostPorts.filter(p => p.localPort > 0 && p.process);
+  const listeningPorts = Array.from(rawListeningPorts.reduce((map, port) => {
+    const key = `${port.protocol}-${port.localPort}-${port.process || "unknown"}`;
+    const existing = map.get(key);
+    const addresses = existing?.addresses ?? [];
+    const localAddress = existing?.localAddress || port.localAddress;
+    const isPublic = existing?.isPublic || !["127.", "::1", "localhost"].some((prefix) => port.localAddress.startsWith(prefix));
+    map.set(key, { ...port, localAddress, addresses: addresses.includes(port.localAddress) ? addresses : [...addresses, port.localAddress], isPublic });
+    return map;
+  }, new Map<string, typeof rawListeningPorts[number] & { addresses: string[]; isPublic: boolean }>()).values());
+  const publicPorts = listeningPorts.filter((p) => p.isPublic);
   const sensitivePorts = new Set([22, 80, 443, 3306, 5432, 6379, 27017, 9200, 5601, 8080, 8443]);
   const sensitiveOpenPorts = publicPorts.filter((p) => sensitivePorts.has(p.localPort));
   const selectedPortInfo = selectedPort == null ? null : listeningPorts[selectedPort] ?? null;
-  const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && publicPorts.includes(selectedPortInfo) : false;
+  const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && selectedPortInfo.isPublic : false;
 
   // Compute layout
   const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
@@ -488,7 +497,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               <button
                 key={`${p.protocol}-${p.localPort}-${i}`}
                 onClick={() => setSelectedPort(selectedPort === i ? null : i)}
-                title="Click for a short explanation"
+                title={`Click for a short explanation · Seen on ${p.addresses.join(", ")}`}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${selectedPort === i ? "border-brand-500/60 bg-brand-500/10" : "border-gray-700/50 bg-gray-900/70 hover:border-amber-500/30"}`}
               >
                 <Badge variant="info">{p.protocol.toUpperCase()}</Badge>

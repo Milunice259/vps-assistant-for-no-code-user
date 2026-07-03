@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { PortInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -47,7 +47,20 @@ export function PortTable({ serverId = "local" }: { serverId?: string }) {
     }
   };
 
-  const filteredPorts = ports.filter((p) => {
+  const visiblePorts = useMemo(() => Array.from(ports.reduce((map, port) => {
+    const key = `${port.protocol}-${port.localPort}-${port.state}-${port.process || "unknown"}-${port.foreignAddress || ""}-${port.foreignPort || 0}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...port, localAddress: port.localAddress || "*" });
+      return map;
+    }
+    if (!existing.localAddress.split(", ").includes(port.localAddress)) {
+      existing.localAddress = `${existing.localAddress}, ${port.localAddress || "*"}`;
+    }
+    return map;
+  }, new Map<string, PortInfo>()).values()), [ports]);
+
+  const filteredPorts = visiblePorts.filter((p) => {
     if (view === "listening") return p.state.toUpperCase() === "LISTEN";
     if (view === "established") return p.state.toUpperCase() !== "LISTEN";
     return true;

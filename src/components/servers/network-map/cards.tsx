@@ -13,15 +13,24 @@ import { NETWORK_PALETTE, containerStatusColor, parsePortString, formatPortsBadg
 
 /* ── Internet Card ── */
 
-export function InternetCard({ card, onMouseDown }: { card: CardRect; onMouseDown?: (e: React.MouseEvent) => void }) {
+export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; onMouseDown?: (e: React.MouseEvent) => void; onAction?: () => void }) {
   return (
     <div
-      className="absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-colors hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
+      className="group absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-colors hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
       onMouseDown={onMouseDown}
     >
       <Globe className="h-5 w-5 text-amber-400" />
       <span className="text-sm font-semibold text-amber-200">Internet</span>
+      <button
+        type="button"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onAction?.(); }}
+        className="absolute -right-2 -top-2 hidden h-7 w-7 rounded-full border border-amber-400/40 bg-gray-950 text-amber-200 shadow-lg group-hover:grid place-items-center"
+        title="Internet options"
+      >
+        ⋯
+      </button>
     </div>
   );
 }
@@ -98,11 +107,13 @@ export function ContainerCard({
   container,
   onSelect,
   onMouseDown,
+  onAction,
 }: {
   card: CardRect;
   container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
   onSelect?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
+  onAction?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }) => void;
 }) {
   const status = containerStatusColor(container.state);
   const ports = parsePortString(container.ports);
@@ -167,6 +178,15 @@ export function ContainerCard({
           )}
         </div>
       </div>
+      <button
+        type="button"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onAction?.(container); }}
+        className="absolute -right-2 -top-2 hidden h-7 w-7 rounded-full border border-gray-600 bg-gray-950 text-gray-200 shadow-lg group-hover:grid place-items-center"
+        title="App actions"
+      >
+        ⋯
+      </button>
     </div>
   );
 }

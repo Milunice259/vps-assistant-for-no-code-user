@@ -24,14 +24,14 @@ export function SvgEdge({
   to,
   color,
   locked,
-  onToggle,
+  onAction,
 }: {
   from: CardRect;
   to: CardRect;
   color: string;
   label?: string;
   locked?: boolean;
-  onToggle?: () => void;
+  onAction?: () => void;
 }) {
   const { x1, y1, x2, y2 } = getSideAnchors(from, to);
 
@@ -45,9 +45,9 @@ export function SvgEdge({
   const labelWidth = Math.max((labelText || "Flow").length * 7, 44) + 16;
 
   return (
-    <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onToggle?.(); }}>
-      <title>{locked ? "Blocked in this map. Click to unlock." : "Click to lock this flow in the map."}</title>
-      <path d={pathD} fill="none" stroke={locked ? "#ef444420" : `${color}18`} strokeWidth={8} />
+    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(); }}>
+      <title>{locked ? "Blocked in this map. Click for real options." : "Click for connection options."}</title>
+      <path d={pathD} fill="none" stroke={locked ? "#ef444420" : `${color}18`} strokeWidth={14} />
       <path
         d={pathD}
         fill="none"
@@ -61,6 +61,10 @@ export function SvgEdge({
       </path>
       <circle cx={x1} cy={y1} r={4} fill={locked ? "#ef4444" : color} opacity={0.6} />
       <circle cx={x2} cy={y2} r={4} fill={locked ? "#ef4444" : color} opacity={0.85} />
+      <g className="opacity-0 transition-opacity group-hover:opacity-100">
+        <circle cx={midX} cy={midY} r={15} fill="#020617" stroke={locked ? "#f87171" : color} strokeWidth={1.5} />
+        <text x={midX} y={midY + 4} textAnchor="middle" fill={locked ? "#f87171" : "#e5e7eb"} fontSize={13} fontWeight={800}>⋯</text>
+      </g>
       {labelText && (
         <g>
           <rect

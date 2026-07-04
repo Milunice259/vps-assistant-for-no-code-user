@@ -27,6 +27,10 @@ import {
   ShieldCheck,
   ShieldAlert,
   Database,
+  Play,
+  Square,
+  Shield,
+  Eye,
 } from "lucide-react";
 import type { NetworkTopology, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -49,14 +53,23 @@ interface ServerNetworkMapProps {
   serverId: string;
 }
 
+type ContainerInfo = { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
+type ActionTarget =
+  | { type: "container"; container: ContainerInfo }
+  | { type: "edge"; key: string; label: string; fromType?: string; toType?: string }
+  | { type: "internet" };
+
 export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [topology, setTopology] = useState<NetworkTopology | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
-  const [selectedContainer, setSelectedContainer] = useState<{ name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string } | null>(null);
+  const [selectedContainer, setSelectedContainer] = useState<ContainerInfo | null>(null);
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
+  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
@@ -181,6 +194,29 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const resetCanvasLayout = () => {
     setNodePositions({});
     requestFitToContent();
+  };
+
+  const runContainerAction = async (container: ContainerInfo, action: "start" | "stop" | "restart") => {
+    const warning = action === "stop" ? `Stop ${container.name}? This can take the app offline.` : `${action === "restart" ? "Restart" : "Start"} ${container.name}?`;
+    if (!window.confirm(warning)) return;
+    setActionBusy(action);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/docker/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ containerId: container.id || container.name, action }),
+      });
+      const json: ApiResponse<{ message: string }> = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
+      setActionMessage(json.data?.message || `${action} sent`);
+      setActionTarget(null);
+      await fetchTopology();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   // ── Loading ──
@@ -333,14 +369,14 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <div><span className="text-blue-300">Docker Host</span> is the server running your applications.</div>
           <div><span className="text-emerald-300">App nodes</span> are individual containers. Drag them to rearrange the map.</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Click a connection line to mark it Blocked or Allowed on the canvas. This is a visual planning step before applying real firewall rules.</p>
+        <p className="mt-2 text-xs text-gray-500">Hover a line or app for the ⋯ button. App actions are real Docker controls; connection controls stay safe until firewall rules are added.</p>
       </div>
 
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Drag canvas · Drag nodes · Click line to lock/unlock</span>
+          <span>Drag canvas · Drag nodes · Hover for ⋯ actions</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
@@ -427,7 +463,13 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                     color={edge.color}
                     label={edge.label}
                     locked={Boolean(lockedEdges[`${edge.fromId}->${edge.toId}`])}
-                    onToggle={() => setLockedEdges((prev) => ({ ...prev, [`${edge.fromId}->${edge.toId}`]: !prev[`${edge.fromId}->${edge.toId}`] }))}
+                    onAction={() => setActionTarget({
+                      type: "edge",
+                      key: `${edge.fromId}->${edge.toId}`,
+                      label: `${fromCard.type} → ${toCard.type}`,
+                      fromType: fromCard.type,
+                      toType: toCard.type,
+                    })}
                   />
                 );
               })}
@@ -436,7 +478,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
             {/* Render HTML cards */}
             {cards.map(card => {
               if (card.type === "internet") {
-                return <InternetCard key={card.id} card={card} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <InternetCard key={card.id} card={card} onAction={() => setActionTarget({ type: "internet" })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               if (card.type === "server") {
                 return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
@@ -450,13 +492,74 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} onAction={(container) => setActionTarget({ type: "container", container })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               return null;
             })}
           </div>
         )}
       </div>
+
+      {/* ── Action Panel ── */}
+      {actionTarget && (
+        <div className="rounded-xl border border-brand-500/30 bg-gray-900/90 p-4 shadow-xl">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-white">
+                {actionTarget.type === "container" ? actionTarget.container.name : actionTarget.type === "edge" ? "Connection options" : "Internet access"}
+              </h4>
+              <p className="mt-1 text-xs text-gray-400">
+                {actionTarget.type === "container"
+                  ? "Real Docker controls for this app."
+                  : actionTarget.type === "edge"
+                    ? "Safe connection controls. Real firewall apply will come next."
+                    : "Review public ports and exposed services."}
+              </p>
+            </div>
+            <button onClick={() => setActionTarget(null)} className="text-gray-500 hover:text-white">✕</button>
+          </div>
+
+          {actionTarget.type === "container" && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "start")}>
+                <Play className="mr-1 h-3.5 w-3.5" /> Start
+              </Button>
+              <Button size="sm" variant="secondary" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "restart")}>
+                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restart
+              </Button>
+              <Button size="sm" variant="danger" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "stop")}>
+                <Square className="mr-1 h-3.5 w-3.5" /> Stop
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedContainer(actionTarget.container)}>
+                <Eye className="mr-1 h-3.5 w-3.5" /> Details
+              </Button>
+            </div>
+          )}
+
+          {actionTarget.type === "edge" && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setLockedEdges((prev) => ({ ...prev, [actionTarget.key]: !prev[actionTarget.key] }))}>
+                <Shield className="mr-1 h-3.5 w-3.5" /> {lockedEdges[actionTarget.key] ? "Mark allowed" : "Plan block"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedPort(0)}>
+                <Globe className="mr-1 h-3.5 w-3.5" /> Review ports
+              </Button>
+              <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">How to apply safely →</a>
+            </div>
+          )}
+
+          {actionTarget.type === "internet" && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setSelectedPort(0)}>
+                <Globe className="mr-1 h-3.5 w-3.5" /> Review public ports
+              </Button>
+              <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">Network guide →</a>
+            </div>
+          )}
+
+          {actionMessage && <p className="mt-3 text-xs text-gray-400">{actionMessage}</p>}
+        </div>
+      )}
 
       {/* ── Selected Container Detail Panel ── */}
       {selectedContainer && (

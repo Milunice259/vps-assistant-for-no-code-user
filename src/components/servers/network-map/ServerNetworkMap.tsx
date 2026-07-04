@@ -219,6 +219,29 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     }
   };
 
+  const runFirewallAction = async (portIndex: number, mode: "dry-run" | "apply") => {
+    const port = listeningPorts[portIndex];
+    if (!port) return;
+    if (mode === "apply" && !window.confirm(`Block public access to ${port.protocol.toUpperCase()} :${port.localPort}?`)) return;
+    setActionBusy(`${mode}-${port.localPort}`);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, action: "block-port", port: port.localPort, protocol: port.protocol }),
+      });
+      const json: ApiResponse<{ output: string }> = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Firewall action failed");
+      setActionMessage(json.data?.output || "Done");
+      if (mode === "apply") await fetchTopology();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Firewall action failed");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   // ── Loading ──
   if (loading) {
     return (
@@ -537,14 +560,33 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           )}
 
           {actionTarget.type === "edge" && (
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setLockedEdges((prev) => ({ ...prev, [actionTarget.key]: !prev[actionTarget.key] }))}>
-                <Shield className="mr-1 h-3.5 w-3.5" /> {lockedEdges[actionTarget.key] ? "Mark allowed" : "Plan block"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelectedPort(0)}>
-                <Globe className="mr-1 h-3.5 w-3.5" /> Review ports
-              </Button>
-              <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">How to apply safely →</a>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setLockedEdges((prev) => ({ ...prev, [actionTarget.key]: !prev[actionTarget.key] }))}>
+                  <Shield className="mr-1 h-3.5 w-3.5" /> {lockedEdges[actionTarget.key] ? "Mark allowed" : "Plan block"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedPort(0)}>
+                  <Globe className="mr-1 h-3.5 w-3.5" /> Review ports
+                </Button>
+                <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">How to apply safely →</a>
+              </div>
+              {publicPorts.length > 0 && (
+                <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+                  <p className="mb-2 text-xs font-medium text-gray-300">Real firewall action</p>
+                  <div className="flex flex-wrap gap-2">
+                    {publicPorts.slice(0, 6).map((port) => {
+                      const index = listeningPorts.indexOf(port);
+                      return (
+                        <div key={`${port.protocol}-${port.localPort}-${port.process}`} className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
+                          <span className="px-2 text-xs font-mono text-white">{port.protocol.toUpperCase()} :{port.localPort}</span>
+                          <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "dry-run")} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">Preview</button>
+                          <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">Block</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

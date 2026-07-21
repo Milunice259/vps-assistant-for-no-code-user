@@ -133,8 +133,8 @@ const sections = [
       "Use the map to understand traffic flow before changing ports or domains.",
       "Fit and Reset help when many apps make the canvas crowded.",
       "Network Audit shows public ports, ports that need review, and Docker networks with compact visual cards.",
-      "Click an open port for a short explanation. Longer guidance stays here in Docs, not inside the working UI.",
-      "This view uses real server data but is read-only: it does not apply firewall, routing, Docker network, or drag/drop changes yet.",
+      "Tap or hover ⋯ on app nodes or connection lines for actions; mobile keeps the action button visible.",
+      "Preview is read-only. Block/Allow changes real UFW firewall rules, stays behind Safe Mode, writes the audit log, and refuses to block SSH port 22.",
     ],
   },
   {

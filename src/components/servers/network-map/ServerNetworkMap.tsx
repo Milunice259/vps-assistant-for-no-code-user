@@ -35,6 +35,7 @@ import {
 import type { NetworkTopology, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 import { containerStatusColor } from "./types";
 import { computeLayout } from "./layout";
@@ -60,6 +61,7 @@ type ActionTarget =
   | { type: "internet" };
 
 export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
+  const { safeMode } = useSafeMode();
   const [topology, setTopology] = useState<NetworkTopology | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +72,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [firewallRules, setFirewallRules] = useState<Array<{ number: number; target: string; action: string; from: string }>>([]);
+  const [firewallError, setFirewallError] = useState<string | null>(null);
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
@@ -129,9 +133,23 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     }
   }, [requestFitToContent, serverId]);
 
+  const fetchFirewallRules = useCallback(async () => {
+    setFirewallError(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/network/firewall`);
+      const json: ApiResponse<{ rules: Array<{ number: number; target: string; action: string; from: string }> }> = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Firewall rules unavailable");
+      setFirewallRules(json.data?.rules || []);
+    } catch (err) {
+      setFirewallRules([]);
+      setFirewallError(err instanceof Error ? err.message : "Firewall rules unavailable");
+    }
+  }, [serverId]);
+
   useEffect(() => {
     fetchTopology();
-  }, [fetchTopology]);
+    fetchFirewallRules();
+  }, [fetchFirewallRules, fetchTopology]);
 
   useEffect(() => {
     if (!topology || fitRequest === 0) return;
@@ -222,7 +240,10 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const runFirewallAction = async (portIndex: number, mode: "dry-run" | "apply") => {
     const port = listeningPorts[portIndex];
     if (!port) return;
-    if (mode === "apply" && !window.confirm(`Block public access to ${port.protocol.toUpperCase()} :${port.localPort}?`)) return;
+    if (mode === "apply") {
+      if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
+      if (!window.confirm(`Block public access to ${port.protocol.toUpperCase()} :${port.localPort}?`)) return;
+    }
     setActionBusy(`${mode}-${port.localPort}`);
     setActionMessage(null);
     try {
@@ -234,9 +255,34 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       const json: ApiResponse<{ output: string }> = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Firewall action failed");
       setActionMessage(json.data?.output || "Done");
-      if (mode === "apply") await fetchTopology();
+      if (mode === "apply") {
+        await fetchTopology();
+        await fetchFirewallRules();
+      }
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : "Firewall action failed");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const allowPort = async (port: number, protocol: string) => {
+    if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
+    if (!window.confirm(`Allow ${protocol.toUpperCase()} :${port} again?`)) return;
+    setActionBusy(`allow-${port}`);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "apply", action: "allow-port", port, protocol }),
+      });
+      const json: ApiResponse<{ output: string }> = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Allow rule failed");
+      setActionMessage(json.data?.output || "Allow rule applied");
+      await fetchFirewallRules();
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Allow rule failed");
     } finally {
       setActionBusy(null);
     }
@@ -392,14 +438,14 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <div><span className="text-blue-300">Docker Host</span> is the server running your applications.</div>
           <div><span className="text-emerald-300">App nodes</span> are individual containers. Drag them to rearrange the map.</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Hover a line or app for the ⋯ button. App actions are real Docker controls; connection controls stay safe until firewall rules are added.</p>
+        <p className="mt-2 text-xs text-gray-500">Tap or hover a line/app for the ⋯ button. App actions are real Docker controls; firewall Block/Allow changes real UFW rules and is locked by Safe Mode.</p>
       </div>
 
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Drag canvas · Drag nodes · Hover for ⋯ actions</span>
+          <span>Drag canvas · Drag nodes · Tap/hover ⋯ for actions</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
@@ -535,8 +581,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                 {actionTarget.type === "container"
                   ? "Real Docker controls for this app."
                   : actionTarget.type === "edge"
-                    ? "Safe connection controls. Real firewall apply will come next."
-                    : "Review public ports and exposed services."}
+                    ? "Preview is safe. Block applies a real UFW firewall rule."
+                    : "Review public ports, exposed services, and firewall rules."}
               </p>
             </div>
             <button onClick={() => setActionTarget(null)} className="text-gray-500 hover:text-white">✕</button>
@@ -580,7 +626,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                         <div key={`${port.protocol}-${port.localPort}-${port.process}`} className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
                           <span className="px-2 text-xs font-mono text-white">{port.protocol.toUpperCase()} :{port.localPort}</span>
                           <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "dry-run")} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">Preview</button>
-                          <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">Block</button>
+                          <button disabled={actionBusy !== null || safeMode} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={safeMode ? "Safe Mode locks firewall changes" : "Apply block rule"}>Block</button>
                         </div>
                       );
                     })}
@@ -602,6 +648,46 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           {actionMessage && <p className="mt-3 text-xs text-gray-400">{actionMessage}</p>}
         </div>
       )}
+
+      {/* ── Firewall Rule Manager ── */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-white">Firewall Rules</h4>
+            <p className="text-xs text-gray-500">Preview is safe. Block/Allow changes real UFW rules and is locked by Safe Mode.</p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={fetchFirewallRules} disabled={actionBusy !== null}>
+            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+        {firewallError ? (
+          <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">{firewallError}</p>
+        ) : firewallRules.length === 0 ? (
+          <p className="mt-3 text-xs text-gray-500">No numbered UFW rules found.</p>
+        ) : (
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {firewallRules.map((rule) => {
+              const match = rule.target.match(/(\d+)\/(tcp|udp)/i);
+              const port = match ? Number(match[1]) : 0;
+              const protocol = (match?.[2] || "tcp").toLowerCase();
+              const canAllow = port > 0 && /DENY|REJECT/i.test(rule.action);
+              return (
+                <div key={rule.number} className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-mono text-white">[{rule.number}] {rule.target}</p>
+                    <p className="mt-1 truncate text-xs text-gray-500">{rule.action} · from {rule.from}</p>
+                  </div>
+                  {canAllow && (
+                    <button disabled={safeMode || actionBusy !== null} onClick={() => allowPort(port, protocol)} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500 disabled:opacity-50" title={safeMode ? "Safe Mode locks firewall changes" : "Rollback by allowing this port"}>
+                      Allow
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ── Selected Container Detail Panel ── */}
       {selectedContainer && (

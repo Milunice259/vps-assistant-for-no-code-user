@@ -80,7 +80,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [lockedEdges, setLockedEdges] = useState<Record<string, boolean>>({});
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
@@ -123,7 +122,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       }
         setTopology(json.data || null);
       setNodePositions({});
-      setLockedEdges({});
       requestFitToContent();
       if (json.warning) setWarning(json.warning);
     } catch (err) {
@@ -215,6 +213,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   };
 
   const runContainerAction = async (container: ContainerInfo, action: "start" | "stop" | "restart") => {
+    if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing app state.");
     const warning = action === "stop" ? `Stop ${container.name}? This can take the app offline.` : `${action === "restart" ? "Restart" : "Start"} ${container.name}?`;
     if (!window.confirm(warning)) return;
     setActionBusy(action);
@@ -603,7 +602,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                     to={toCard}
                     color={edge.color}
                     label={edge.label}
-                    locked={Boolean(lockedEdges[`${edge.fromId}->${edge.toId}`])}
                     onAction={() => setActionTarget({
                       type: "edge",
                       key: `${edge.fromId}->${edge.toId}`,
@@ -662,13 +660,13 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
 
           {actionTarget.type === "container" && (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "start")}>
+              <Button size="sm" variant="secondary" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "start")}>
                 <Play className="mr-1 h-3.5 w-3.5" /> Start
               </Button>
-              <Button size="sm" variant="secondary" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "restart")}>
+              <Button size="sm" variant="secondary" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "restart")}>
                 <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restart
               </Button>
-              <Button size="sm" variant="danger" disabled={actionBusy !== null} onClick={() => runContainerAction(actionTarget.container, "stop")}>
+              <Button size="sm" variant="danger" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "stop")}>
                 <Square className="mr-1 h-3.5 w-3.5" /> Stop
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedContainer(actionTarget.container)}>
@@ -680,9 +678,6 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           {actionTarget.type === "edge" && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setLockedEdges((prev) => ({ ...prev, [actionTarget.key]: !prev[actionTarget.key] }))}>
-                  <Shield className="mr-1 h-3.5 w-3.5" /> {lockedEdges[actionTarget.key] ? "Mark allowed" : "Plan block"}
-                </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSelectedPort(0)}>
                   <Globe className="mr-1 h-3.5 w-3.5" /> Review ports
                 </Button>

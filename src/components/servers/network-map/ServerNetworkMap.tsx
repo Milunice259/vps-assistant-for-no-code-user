@@ -120,7 +120,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
         }
         throw new Error(json.error || "Failed to load network data");
       }
-        setTopology(json.data || null);
+      setTopology(json.data || null);
       setNodePositions({});
       requestFitToContent();
       if (json.warning) setWarning(json.warning);
@@ -212,10 +212,18 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     requestFitToContent();
   };
 
+  const requireTypedConfirm = (phrase: string, message: string) => {
+    const typed = window.prompt(`${message}
+
+Type ${phrase} to continue.`);
+    return typed === phrase;
+  };
+
   const runContainerAction = async (container: ContainerInfo, action: "start" | "stop" | "restart") => {
     if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing app state.");
     const warning = action === "stop" ? `Stop ${container.name}? This can take the app offline.` : `${action === "restart" ? "Restart" : "Start"} ${container.name}?`;
     if (!window.confirm(warning)) return;
+    if (["stop", "restart"].includes(action) && !requireTypedConfirm(action.toUpperCase(), `${action.toUpperCase()} ${container.name} is a high-risk app action.`)) return;
     setActionBusy(action);
     setActionMessage(null);
     try {
@@ -240,6 +248,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     if (mode === "apply") {
       if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
       if (!window.confirm(`Block public access to ${protocol.toUpperCase()} :${port}?`)) return;
+      if (!requireTypedConfirm(`BLOCK ${port}`, `Blocking ${protocol.toUpperCase()} :${port} changes the real firewall.`)) return;
     }
     setActionBusy(`${mode}-${port}`);
     setActionMessage(null);
@@ -509,7 +518,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <div><span className="text-blue-300">Docker Host</span> is the server running your applications.</div>
           <div><span className="text-emerald-300">App nodes</span> are individual containers. Drag them to rearrange the map.</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Tap or hover a line/app for the ⋯ button. App actions are real Docker controls; firewall Block/Allow changes real UFW rules and is locked by Safe Mode.</p>
+        <p className="mt-2 text-xs text-gray-500">Tap or hover a line/app for the ⋯ button. Lines are visual paths, not toggles. App actions and firewall Block/Allow are real operations locked by Safe Mode.</p>
       </div>
 
       {/* ── Legend ── */}
@@ -651,7 +660,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                 {actionTarget.type === "container"
                   ? "Real Docker controls for this app."
                   : actionTarget.type === "edge"
-                    ? "Preview is safe. Block applies a real UFW firewall rule."
+                    ? "Connection lines are visual only. Use Preview/Block below for real UFW firewall changes."
                     : "Review public ports, exposed services, and firewall rules."}
               </p>
             </div>
@@ -685,7 +694,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
               </div>
               {publicPorts.length > 0 && (
                 <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-                  <p className="mb-2 text-xs font-medium text-gray-300">Real firewall action</p>
+                  <p className="mb-2 text-xs font-medium text-gray-300">Real firewall action · high risk requires typed confirmation</p>
                   <div className="flex flex-wrap gap-2">
                     {publicPorts.slice(0, 6).map((port) => {
                       const index = listeningPorts.indexOf(port);
@@ -822,7 +831,15 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           <p className="mt-3 text-sm text-gray-300">
             {selectedPortNeedsReview ? "Common admin/database port. Keep it open only if you really need external access." : "Listening port detected. Review only if this service should not receive traffic."}
           </p>
-          <a href="/docs#network" className="mt-3 inline-flex text-xs text-brand-300 hover:text-brand-200">Learn more in docs →</a>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${selectedPortInfo.localPort}`} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "dry-run")}>
+              <Eye className="mr-1 h-3.5 w-3.5" /> Preview firewall change
+            </Button>
+            <Button size="sm" variant="danger" loading={actionBusy === `apply-${selectedPortInfo.localPort}`} disabled={safeMode || selectedPortInfo.localPort === 22} title={safeMode ? "Safe Mode locks firewall changes" : selectedPortInfo.localPort === 22 ? "SSH port 22 is protected from map blocking" : undefined} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "apply")}>
+              <Shield className="mr-1 h-3.5 w-3.5" /> {safeMode ? "Block locked" : "Block public access"}
+            </Button>
+            <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">Learn more →</a>
+          </div>
         </div>
       )}
 

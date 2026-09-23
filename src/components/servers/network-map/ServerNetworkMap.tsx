@@ -356,6 +356,12 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const selectedPortInfo = selectedPort == null ? null : listeningPorts[selectedPort] ?? null;
   const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && selectedPortInfo.isPublic : false;
   const findings = topology.findings || [];
+  const secureChecklist = [
+    { label: "Public exposure reviewed", ok: findings.length === 0, detail: findings.length ? `${findings.length} exposure finding(s) need review.` : "No risky public port finding in this snapshot." },
+    { label: "Firewall rules readable", ok: !firewallError, detail: firewallError || `${firewallRules.length} numbered rule(s) loaded.` },
+    { label: "Safe Mode protects changes", ok: safeMode, detail: safeMode ? "Dangerous fixes are locked until Safe Mode is off." : "Safe Mode is off. Review carefully before applying changes." },
+    { label: "SSH self-lockout protected", ok: !findings.some((f) => f.port === 22 && f.severity === "high"), detail: "Port 22 cannot be blocked from the map." },
+  ];
 
   // Compute layout
   const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
@@ -437,6 +443,29 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       </div>
 
 
+
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Secure this server</h3>
+            <p className="mt-1 text-xs text-gray-400">Guided checklist from live network and firewall data.</p>
+          </div>
+          <Badge variant={secureChecklist.every((item) => item.ok) ? "success" : "warning"}>{secureChecklist.filter((item) => item.ok).length}/{secureChecklist.length}</Badge>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {secureChecklist.map((item) => (
+            <div key={item.label} className={`rounded-lg border p-3 ${item.ok ? "border-emerald-500/20 bg-emerald-500/5" : "border-amber-500/25 bg-amber-500/10"}`}>
+              <div className="flex items-start gap-2">
+                {item.ok ? <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /> : <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white">{item.label}</p>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">{item.detail}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {findings.length > 0 && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">

@@ -39,8 +39,8 @@ export function SvgEdge({
 
 
   return (
-    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(e); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}>
-      <title>Left/right click for real connection options.</title>
+    <g className="group cursor-default" onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}>
+      <title>Right-click the wire, or click Actions, for real connection options.</title>
       <path d={pathD} fill="none" stroke={`${color}18`} strokeWidth={14} />
       <path
         d={pathD}
@@ -53,9 +53,9 @@ export function SvgEdge({
       </path>
       <circle cx={x1} cy={y1} r={4} fill={color} opacity={0.6} />
       <circle cx={x2} cy={y2} r={4} fill={color} opacity={0.85} />
-      <g className="opacity-0 transition-opacity group-hover:opacity-100">
-        <circle cx={midX} cy={midY} r={15} fill="#020617" stroke={color} strokeWidth={1.5} />
-        <text x={midX} y={midY + 4} textAnchor="middle" fill="#e5e7eb" fontSize={13} fontWeight={800}>⋯</text>
+      <g className="cursor-pointer opacity-100 sm:opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); onAction?.(e); }}>
+        <rect x={midX - 30} y={midY - 13} width={60} height={26} rx={13} fill="#020617" stroke={color} strokeWidth={1.5} />
+        <text x={midX} y={midY + 4} textAnchor="middle" fill="#e5e7eb" fontSize={10} fontWeight={800}>Actions</text>
       </g>
    </g>
   );

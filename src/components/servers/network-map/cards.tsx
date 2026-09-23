@@ -27,10 +27,10 @@ export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; 
         type="button"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(e); }}
-        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full border border-amber-400/40 bg-gray-950 text-amber-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+        className="absolute -right-2 -top-2 rounded-full border border-amber-400/40 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-amber-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
         title="Internet options (right-click also works)"
       >
-        ⋯
+        Actions
       </button>
     </div>
   );
@@ -181,10 +181,10 @@ export function ContainerCard({
         type="button"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(container, e); }}
-        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full border border-gray-600 bg-gray-950 text-gray-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+        className="absolute -right-2 -top-2 rounded-full border border-gray-600 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-gray-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
         title="App actions (right-click also works)"
       >
-        ⋯
+        Actions
       </button>
     </div>
   );

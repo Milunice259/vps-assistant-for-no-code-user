@@ -533,14 +533,14 @@ Type ${phrase} to continue.`);
           <div><span className="text-blue-300">Docker Host</span> is the server running your applications.</div>
           <div><span className="text-emerald-300">App nodes</span> are individual containers. Drag them to rearrange the map.</div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">Tap or hover a line/app for the ⋯ button. Lines are visual paths, not toggles. App actions and firewall Block/Allow are real operations locked by Safe Mode.</p>
+        <p className="mt-2 text-xs text-gray-500">Use the visible Actions pill or right-click app/wire for actions. Lines are visual paths, not toggles. App actions and firewall Block/Allow are real operations locked by Safe Mode.</p>
       </div>
 
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Right-click app/wire = actions · Click empty canvas = close · Drag canvas/nodes</span>
+          <span>Actions pill / right-click = actions · Click empty canvas = close · Drag canvas/nodes</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
@@ -553,7 +553,7 @@ Type ${phrase} to continue.`);
       </div>
 
       <div className="grid gap-2 rounded-xl border border-gray-700 bg-gray-900/70 p-3 text-xs text-gray-400 sm:grid-cols-3">
-        <div><span className="font-medium text-white">Right click</span> app nodes or wires for actions.</div>
+        <div><span className="font-medium text-white">Actions pill</span> or right-click opens the local panel.</div>
         <div><span className="font-medium text-white">Click empty canvas</span> to close the panel.</div>
         <div><span className="font-medium text-white">Drag</span> empty canvas to pan; drag nodes to rearrange.</div>
       </div>

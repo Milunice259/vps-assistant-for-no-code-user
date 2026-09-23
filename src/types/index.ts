@@ -220,9 +220,20 @@ export interface DockerNetworkInfo {
   containers: DockerNetworkContainer[];
 }
 
+export interface NetworkFinding {
+  id: string;
+  severity: "info" | "medium" | "high";
+  title: string;
+  detail: string;
+  suggestedFix?: string;
+  port?: number;
+  protocol?: string;
+}
+
 export interface NetworkTopology {
   networks: DockerNetworkInfo[];
   hostPorts: PortInfo[];
+  findings?: NetworkFinding[];
 }
 
 // ─── Applications ───

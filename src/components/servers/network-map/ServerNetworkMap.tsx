@@ -351,6 +351,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const sensitiveOpenPorts = publicPorts.filter((p) => sensitivePorts.has(p.localPort));
   const selectedPortInfo = selectedPort == null ? null : listeningPorts[selectedPort] ?? null;
   const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && selectedPortInfo.isPublic : false;
+  const findings = topology.findings || [];
 
   // Compute layout
   const { cards: layoutCards, edges, canvasW, canvasH } = computeLayout(topology.networks, topology.hostPorts);
@@ -430,6 +431,34 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
           </div>
         </div>
       </div>
+
+
+
+      {findings.length > 0 && (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Exposure Advisor</h3>
+              <p className="mt-1 text-xs text-gray-400">Real findings from currently listening public ports.</p>
+            </div>
+            <Badge variant={findings.some((f) => f.severity === "high") ? "warning" : "default"}>{findings.length} finding(s)</Badge>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {findings.slice(0, 4).map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${finding.severity === "high" ? "text-amber-300" : "text-gray-200"}`}>{finding.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-gray-400">{finding.detail}</p>
+                    {finding.suggestedFix && <p className="mt-1 text-xs text-sky-300">Suggested: {finding.suggestedFix}</p>}
+                  </div>
+                  {finding.port && <Badge variant="default">{finding.protocol?.toUpperCase()}:{finding.port}</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
         <h3 className="mb-2 text-sm font-semibold text-white">Network Map Guide</h3>

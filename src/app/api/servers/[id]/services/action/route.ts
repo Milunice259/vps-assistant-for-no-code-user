@@ -7,6 +7,7 @@ import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
 import { requireSafeModeOff } from "@/lib/operation-safety";
+import { operationResult } from "@/lib/operation-result";
 import SSH2Promise from "ssh2-promise";
 
 const ALLOWED_ACTIONS = ["start", "stop", "restart", "enable", "disable"] as const;
@@ -52,9 +53,12 @@ export async function POST(
     if (safetyBlock) return safetyBlock;
 
     const cmd = `systemctl ${action} ${service}`;
+    const verifyCmd = `systemctl is-active ${service} 2>/dev/null || true`;
+    let status = "";
 
     if (serverId === "local") {
       await execOnHost(cmd);
+      status = (await execOnHost(verifyCmd)).trim();
     } else {
       const server = await prisma.server.findUnique({
         where: { id: serverId },
@@ -84,6 +88,7 @@ export async function POST(
       try {
         await ssh.connect();
         await ssh.exec(cmd);
+        status = String(await ssh.exec(verifyCmd)).trim();
       } finally {
         ssh.close();
       }
@@ -95,14 +100,19 @@ export async function POST(
       userId: session?.sub as string | undefined,
       username: session?.username as string | undefined,
       target: `${serverId}:${service}`,
-      details: `Service ${service} ${action} on server ${serverId}`,
+      details: JSON.stringify({ service, action, status, verified: true }),
       ip,
     });
 
     const pastTense: Record<string, string> = { start: "started", stop: "stopped", restart: "restarted", enable: "enabled", disable: "disabled" };
     return NextResponse.json({
       success: true,
-      message: `Service "${service}" ${pastTense[action] || action + "ed"} successfully`,
+      data: operationResult({
+        message: `Service "${service}" ${pastTense[action] || action + "ed"} successfully`,
+        risk: "danger",
+        verified: true,
+        output: status ? `Current status: ${status}` : undefined,
+      }),
     });
   } catch (err) {
     const message = safeErrorMessage(err, "Failed to execute service action");

@@ -6,6 +6,7 @@ import { canAccessServer } from "@/lib/server-access";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { closeSSH, executeCommand } from "@/lib/ssh";
 import { requireSafeModeOff } from "@/lib/operation-safety";
+import { operationResult, type OperationResult } from "@/lib/operation-result";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
   }
 }
 
-export async function POST(request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<{ output: string }>>> {
+export async function POST(request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<OperationResult>>> {
   let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
   try {
     const session = await getSession();
@@ -94,10 +95,10 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       username: session.username,
       ip: getClientIp(request),
       target: id,
-      details: `${mode} ${label}: ${protocol}/${port}; rollback: ${rollback}`,
+      details: JSON.stringify({ mode, label, protocol, port, rollback, verified: mode === "apply" }),
     });
 
-    return NextResponse.json({ success: true, data: { output } });
+    return NextResponse.json({ success: true, data: operationResult({ message: mode === "apply" ? `${label} applied` : `${label} preview`, risk: mode === "apply" ? "danger" : "caution", verified: mode === "apply", rollback, output }) });
   } catch (error) {
     if (isDisconnectedError(error)) {
       return NextResponse.json({ success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" }, { status: 503 });

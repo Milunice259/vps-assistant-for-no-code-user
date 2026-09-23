@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
-import { containerAction, closeSSH } from "@/lib/ssh";
+import { containerAction, closeSSH, executeCommand } from "@/lib/ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
 import { validateContainerId } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { canAccessServer } from "@/lib/server-access";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { requireSafeModeOff } from "@/lib/operation-safety";
+import { operationResult, type OperationResult } from "@/lib/operation-result";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ const VALID_ACTIONS = ["start", "stop", "restart"] as const;
 export async function POST(
   request: NextRequest,
   context: RouteContext
-): Promise<NextResponse<ApiResponse<{ message: string }>>> {
+): Promise<NextResponse<ApiResponse<OperationResult>>> {
   let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
 
   try {
@@ -69,10 +70,12 @@ export async function POST(
 
     if (isLocalServer(id)) {
       const output = execLocal(`docker ${action} ${containerId} 2>&1`, 30_000);
-      await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: `Container: ${containerId}` });
+      const status = execLocal(`docker inspect -f '{{.State.Status}}' ${containerId} 2>/dev/null || true`, 10_000).trim();
+      const verified = action === "start" ? status === "running" : action === "stop" ? status === "exited" : status.length > 0;
+      await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: JSON.stringify({ containerId, output: output || null, verified, status }) });
       return NextResponse.json({
         success: true,
-        data: { message: output || `Container ${action} successful` },
+        data: operationResult({ message: output || `Container ${action} successful`, risk: "danger", verified, output: status ? `Current status: ${status}` : output }),
       });
     }
 
@@ -92,10 +95,12 @@ export async function POST(
       );
     }
 
-    await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: `Container: ${containerId}` });
+    const status = (await executeCommand(ssh, `docker inspect -f '{{.State.Status}}' ${containerId} 2>/dev/null || true`, 10_000)).trim();
+    const verified = action === "start" ? status === "running" : action === "stop" ? status === "exited" : status.length > 0;
+    await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: JSON.stringify({ containerId, verified, status }) });
     return NextResponse.json({
       success: true,
-      data: { message: actionResult.message },
+      data: operationResult({ message: actionResult.message, risk: "danger", verified, output: status ? `Current status: ${status}` : actionResult.message }),
     });
   } catch (error) {
     if (isDisconnectedError(error)) {

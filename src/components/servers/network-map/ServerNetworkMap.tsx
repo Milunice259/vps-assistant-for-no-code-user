@@ -56,9 +56,9 @@ interface ServerNetworkMapProps {
 
 type ContainerInfo = { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
 type ActionTarget =
-  | { type: "container"; container: ContainerInfo }
-  | { type: "edge"; key: string; label: string; fromType?: string; toType?: string }
-  | { type: "internet" };
+  | { type: "container"; container: ContainerInfo; x: number; y: number }
+  | { type: "edge"; key: string; label: string; fromType?: string; toType?: string; x: number; y: number }
+  | { type: "internet"; x: number; y: number };
 
 export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const { safeMode } = useSafeMode();
@@ -84,6 +84,16 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [fitRequest, setFitRequest] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  const pointerInViewport = (e: React.MouseEvent) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 16, y: 16 };
+    return {
+      x: Math.min(Math.max(16, e.clientX - rect.left), Math.max(16, rect.width - 340)),
+      y: Math.min(Math.max(16, e.clientY - rect.top), Math.max(16, rect.height - 280)),
+    };
+  };
+
 
   const requestFitToContent = useCallback(() => {
     setFitRequest((current) => current + 1);
@@ -617,12 +627,13 @@ Type ${phrase} to continue.`);
                     to={toCard}
                     color={edge.color}
                     label={edge.label}
-                    onAction={() => setActionTarget({
+                    onAction={(e) => setActionTarget({
                       type: "edge",
                       key: `${edge.fromId}->${edge.toId}`,
                       label: `${fromCard.type} → ${toCard.type}`,
                       fromType: fromCard.type,
                       toType: toCard.type,
+                      ...pointerInViewport(e),
                     })}
                   />
                 );
@@ -632,7 +643,7 @@ Type ${phrase} to continue.`);
             {/* Render HTML cards */}
             {cards.map(card => {
               if (card.type === "internet") {
-                return <InternetCard key={card.id} card={card} onAction={() => setActionTarget({ type: "internet" })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <InternetCard key={card.id} card={card} onAction={(e) => setActionTarget({ type: "internet", ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               if (card.type === "server") {
                 return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
@@ -646,17 +657,15 @@ Type ${phrase} to continue.`);
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} onSelect={setSelectedContainer} onAction={(container) => setActionTarget({ type: "container", container })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onSelect={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onAction={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               return null;
             })}
           </div>
         )}
-      </div>
-
-      {/* ── Action Panel ── */}
+              {/* ── Action Panel ── */}
       {actionTarget && (
-        <div className="rounded-xl border border-brand-500/30 bg-gray-900/90 p-4 shadow-xl">
+        <div className="absolute z-30 w-[min(340px,calc(100%-2rem))] rounded-xl border border-brand-500/30 bg-gray-900/95 p-4 shadow-2xl backdrop-blur" style={{ left: actionTarget.x, top: actionTarget.y }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold text-white">
@@ -685,8 +694,14 @@ Type ${phrase} to continue.`);
                 <Square className="mr-1 h-3.5 w-3.5" /> Stop
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedContainer(actionTarget.container)}>
-                <Eye className="mr-1 h-3.5 w-3.5" /> Details
+                <Eye className="mr-1 h-3.5 w-3.5" /> Pin details below
               </Button>
+              <div className="mt-3 w-full rounded-lg border border-gray-700 bg-gray-950/60 p-3 text-xs text-gray-300">
+                <p className="font-mono text-white break-all">{actionTarget.container.name}</p>
+                {actionTarget.container.image && <p className="mt-1 break-all text-gray-500">{actionTarget.container.image}</p>}
+                {actionTarget.container.ipv4?.trim() && <p className="mt-1 font-mono text-gray-400">IP {actionTarget.container.ipv4.trim()}</p>}
+                {actionTarget.container.ports && <p className="mt-1 font-mono text-amber-300">{actionTarget.container.ports}</p>}
+              </div>
             </div>
           )}
 
@@ -731,6 +746,9 @@ Type ${phrase} to continue.`);
           {actionMessage && <p className="mt-3 text-xs text-gray-400">{actionMessage}</p>}
         </div>
       )}
+
+
+      </div>
 
       {/* ── Firewall Rule Manager ── */}
       <div className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">

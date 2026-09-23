@@ -29,7 +29,7 @@ export function SvgEdge({
   to: CardRect;
   color: string;
   label?: string;
-  onAction?: () => void;
+  onAction?: (e: React.MouseEvent<SVGGElement>) => void;
 }) {
   const { x1, y1, x2, y2 } = getSideAnchors(from, to);
 
@@ -39,7 +39,7 @@ export function SvgEdge({
 
 
   return (
-    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(); }}>
+    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(e); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}>
       <title>Left/right click for real connection options.</title>
       <path d={pathD} fill="none" stroke={`${color}18`} strokeWidth={14} />
       <path

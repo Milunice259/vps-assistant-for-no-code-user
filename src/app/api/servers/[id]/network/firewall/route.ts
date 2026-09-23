@@ -5,12 +5,13 @@ import { execOnHost, isLocalServer } from "@/lib/local-server";
 import { canAccessServer } from "@/lib/server-access";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { closeSSH, executeCommand } from "@/lib/ssh";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
-type Body = { mode?: "dry-run" | "apply"; action?: "block-port" | "allow-port"; port?: number; protocol?: "tcp" | "udp" };
+type Body = { mode?: "dry-run" | "apply"; action?: "block-port" | "allow-port"; port?: number; protocol?: "tcp" | "udp"; safeModeOff?: boolean };
 type FirewallRule = { number: number; action: string; target: string; from: string };
 
 const SELF_LOCKOUT_PORTS = new Set([22]);
@@ -23,7 +24,7 @@ function parseRules(output: string): FirewallRule[] {
   }).filter((rule): rule is FirewallRule => Boolean(rule));
 }
 
-function planCommand({ mode, action, port, protocol }: Required<Body>) {
+function planCommand({ mode, action, port, protocol }: Required<Pick<Body, "mode" | "action" | "port" | "protocol">>) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be 1-65535");
   if (!["tcp", "udp"].includes(protocol)) throw new Error("Protocol must be tcp or udp");
   if (!["block-port", "allow-port"].includes(action)) throw new Error("Invalid action");
@@ -77,6 +78,10 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     const action = body.action || "block-port";
     const protocol = body.protocol || "tcp";
     const port = Number(body.port);
+    if (mode === "apply") {
+      const safetyBlock = requireSafeModeOff(`firewall_${action}`, body);
+      if (safetyBlock) return safetyBlock;
+    }
     const { label, command, rollback } = planCommand({ mode, action, port, protocol });
 
     const sshRef = { ssh };

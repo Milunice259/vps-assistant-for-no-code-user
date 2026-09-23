@@ -4,6 +4,7 @@ import { connectToServer } from "@/lib/server-ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse, PackageInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -98,8 +99,11 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     const { id } = await context.params;
     const auth = await authorize(id);
     if (auth.error) return auth.error;
-    const { action, packages } = (await request.json()) as { action?: "update" | "upgrade"; packages?: string[] };
+    const body = (await request.json()) as { action?: "update" | "upgrade"; packages?: string[]; safeModeOff?: boolean };
+    const { action, packages } = body;
     if (!action || !["update", "upgrade"].includes(action)) return NextResponse.json({ success: false, error: 'action must be "update" or "upgrade"' }, { status: 400 });
+    const safetyBlock = requireSafeModeOff(`package_${action}`, body);
+    if (safetyBlock) return safetyBlock;
 
     return await withRunner(id, async (run) => {
       const manager = await detectPackageManager(run);

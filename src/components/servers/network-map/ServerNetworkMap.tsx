@@ -223,7 +223,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       const res = await fetch(`/api/servers/${serverId}/docker/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ containerId: container.id || container.name, action }),
+        body: JSON.stringify({ containerId: container.id || container.name, action, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<{ message: string }> = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
@@ -250,7 +250,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, action: "block-port", port: port.localPort, protocol: port.protocol }),
+        body: JSON.stringify({ mode, action: "block-port", port: port.localPort, protocol: port.protocol, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<{ output: string }> = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Firewall action failed");
@@ -275,7 +275,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
       const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "apply", action: "allow-port", port, protocol }),
+        body: JSON.stringify({ mode: "apply", action: "allow-port", port, protocol, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<{ output: string }> = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Allow rule failed");

@@ -6,6 +6,7 @@ import { safeErrorMessage } from "@/lib/safe-error";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import SSH2Promise from "ssh2-promise";
 
 const ALLOWED_ACTIONS = ["start", "stop", "restart", "enable", "disable"] as const;
@@ -29,7 +30,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
     const body = await request.json();
-    const { service, action } = body as { service: string; action: string };
+    const { service, action } = body as { service: string; action: string; safeModeOff?: boolean };
 
     // Validate action
     if (!ALLOWED_ACTIONS.includes(action as ServiceAction)) {
@@ -46,6 +47,9 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const safetyBlock = requireSafeModeOff(`service_${action}`, body);
+    if (safetyBlock) return safetyBlock;
 
     const cmd = `systemctl ${action} ${service}`;
 

@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export async function POST(
     const { containerId, action } = body as {
       containerId?: string;
       action?: string;
+      safeModeOff?: boolean;
     };
 
     if (!containerId || !action) {
@@ -61,6 +63,9 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const safetyBlock = requireSafeModeOff(`container_${action}`, body);
+    if (safetyBlock) return safetyBlock;
 
     if (isLocalServer(id)) {
       const output = execLocal(`docker ${action} ${containerId} 2>&1`, 30_000);

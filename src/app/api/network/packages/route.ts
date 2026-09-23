@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
 import { canAccessHost, execOnHost } from "@/lib/local-server";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse, PackageInfo } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -227,6 +228,7 @@ export async function POST(
     const body = (await request.json()) as {
       action: "update" | "upgrade";
       packages?: string[];
+      safeModeOff?: boolean;
     };
 
     const { action, packages } = body;
@@ -237,6 +239,9 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const safetyBlock = requireSafeModeOff(`package_${action}`, body);
+    if (safetyBlock) return safetyBlock;
 
     const pkgMgr = detectPackageManager();
 

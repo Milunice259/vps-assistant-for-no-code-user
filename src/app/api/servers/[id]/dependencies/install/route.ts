@@ -5,6 +5,7 @@ import { execLocal, isLocalServer } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -68,11 +69,15 @@ export async function POST(
     if (!(await canAccessServer(session.sub as string, session.role as string, id))) {
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
-    const { package: pkg } = (await request.json()) as { package?: string };
+    const body = (await request.json()) as { package?: string; safeModeOff?: boolean };
+    const { package: pkg } = body;
 
     if (!pkg || !ALLOWED_PACKAGES.includes(pkg as (typeof ALLOWED_PACKAGES)[number])) {
       return NextResponse.json({ success: false, error: "Unsupported package" }, { status: 400 });
     }
+
+    const safetyBlock = requireSafeModeOff("package_install", body);
+    if (safetyBlock) return safetyBlock;
 
     const run: Runner = isLocalServer(id)
       ? async (cmd, timeout) => execLocal(cmd, timeout)

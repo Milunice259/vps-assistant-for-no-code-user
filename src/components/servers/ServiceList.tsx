@@ -179,7 +179,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
       const res = await fetch(`/api/servers/${serverId}/services/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: serviceName, action }),
+        body: JSON.stringify({ service: serviceName, action, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<unknown> = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
       if (!res.ok || !json.success) throw new Error(json.error || "Service action failed");

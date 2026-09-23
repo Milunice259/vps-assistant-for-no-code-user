@@ -60,7 +60,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
       const res = await fetch(`/api/servers/${serverId}/docker/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ containerId, action }),
+        body: JSON.stringify({ containerId, action, safeModeOff: !safeMode }),
       });
       const json = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
       if (!res.ok || !json.success) throw new Error(json.error || "Action failed");

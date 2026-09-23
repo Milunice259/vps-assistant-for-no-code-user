@@ -35,14 +35,14 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
   useEffect(() => { void load(); }, [load]);
 
   async function installPackage(item: Requirement) {
-    if (!item.packageId) return;
+    if (!item.packageId || safeMode) return;
     if (!window.confirm(`Install ${item.name} on ${serverId ? "the selected remote server" : "the local server"}?`)) return;
     setInstalling(item.packageId);
     try {
       const res = await fetch("/api/deploy/requirements/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packageId: item.packageId, serverId: serverId === "local" ? undefined : serverId || undefined }),
+        body: JSON.stringify({ packageId: item.packageId, serverId: serverId === "local" ? undefined : serverId || undefined, safeModeOff: !safeMode }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Install failed");
@@ -95,9 +95,9 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
                     {!item.ok && isOpen && (
                       <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-700/70 pt-2">
                         {item.packageId && (
-                          <button type="button" className={actionClass} disabled={installing === item.packageId} onClick={() => installPackage(item)}>
+                          <button type="button" className={actionClass} disabled={safeMode || installing === item.packageId} onClick={() => installPackage(item)} title={safeMode ? "Turn Safe Mode off to install packages" : undefined}>
                             {installing === item.packageId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
-                            Install
+                            {safeMode ? "Install locked" : "Install"}
                           </button>
                         )}
                         {item.installCommand && (

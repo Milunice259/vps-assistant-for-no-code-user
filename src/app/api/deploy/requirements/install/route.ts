@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { closeSSH, executeCommand } from "@/lib/ssh";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +23,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
   let ssh: Awaited<ReturnType<typeof connectToServer>>["ssh"] | null = null;
 
   try {
-    const body = await request.json() as { packageId?: PackageId; serverId?: string };
+    const body = await request.json() as { packageId?: PackageId; serverId?: string; safeModeOff?: boolean };
     const item = body.packageId ? packages[body.packageId] : null;
     if (!item) return NextResponse.json({ success: false, error: "Unsupported package" }, { status: 400 });
+    const safetyBlock = requireSafeModeOff("deploy_requirement_install", body);
+    if (safetyBlock) return safetyBlock;
 
     const command = `sudo sh -lc '${item.command.replace(/'/g, "'\\''")}'`;
     const output = body.serverId

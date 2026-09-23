@@ -167,7 +167,7 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, safeModeOff: !safeMode }),
       });
       const json = await res.json();
 
@@ -210,7 +210,7 @@ export function PackageManager({ serverId = "local" }: PackageManagerProps) {
       const res = await fetch(`/api/servers/${serverId}/dependencies/install`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package: installPackage }),
+        body: JSON.stringify({ package: installPackage, safeModeOff: !safeMode }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Install failed");

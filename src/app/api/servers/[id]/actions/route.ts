@@ -5,6 +5,7 @@ import { isLocalServer, localQuickAction } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +83,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
     const body = await request.json();
-    const { action, param } = body as { action?: string; param?: string };
+    const { action, param } = body as { action?: string; param?: string; safeModeOff?: boolean };
 
     if (!action) {
       return NextResponse.json(
@@ -100,6 +101,9 @@ export async function POST(
         { status: 400 },
       );
     }
+
+    const safetyBlock = requireSafeModeOff(action, body);
+    if (safetyBlock) return safetyBlock;
 
     // Validate param for actions that require it
     if (PARAM_ACTIONS.has(action)) {

@@ -297,7 +297,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
             throw new Error(backupJson.error || "Pre-action backup failed; action aborted.");
           }
         }
-        const body: Record<string, string> = { action: actionKey };
+        const body: Record<string, string | boolean> = { action: actionKey, safeModeOff: !safeMode };
         if (param) body.param = param;
 
         const res = await fetch(`/api/servers/${serverId}/actions`, {
@@ -328,7 +328,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
         });
       }
     },
-    [serverId, updateResult]
+    [safeMode, serverId, updateResult]
   );
 
   function handleActionClick(action: ActionDef) {

@@ -237,24 +237,22 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     }
   };
 
-  const runFirewallAction = async (portIndex: number, mode: "dry-run" | "apply") => {
-    const port = listeningPorts[portIndex];
-    if (!port) return;
+  const runFirewallPortAction = async (port: number, protocol: string, mode: "dry-run" | "apply") => {
     if (mode === "apply") {
       if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
-      if (!window.confirm(`Block public access to ${port.protocol.toUpperCase()} :${port.localPort}?`)) return;
+      if (!window.confirm(`Block public access to ${protocol.toUpperCase()} :${port}?`)) return;
     }
-    setActionBusy(`${mode}-${port.localPort}`);
+    setActionBusy(`${mode}-${port}`);
     setActionMessage(null);
     try {
       const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, action: "block-port", port: port.localPort, protocol: port.protocol, safeModeOff: !safeMode }),
+        body: JSON.stringify({ mode, action: "block-port", port, protocol, safeModeOff: !safeMode }),
       });
-      const json: ApiResponse<{ output: string }> = await res.json();
+      const json: ApiResponse<{ message?: string; output?: string }> = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || "Firewall action failed");
-      setActionMessage(json.data?.output || "Done");
+      setActionMessage(json.data?.output || json.data?.message || "Done");
       if (mode === "apply") {
         await fetchTopology();
         await fetchFirewallRules();
@@ -264,6 +262,12 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     } finally {
       setActionBusy(null);
     }
+  };
+
+  const runFirewallAction = async (portIndex: number, mode: "dry-run" | "apply") => {
+    const port = listeningPorts[portIndex];
+    if (!port) return;
+    await runFirewallPortAction(port.localPort, port.protocol, mode);
   };
 
   const allowPort = async (port: number, protocol: string) => {
@@ -454,6 +458,16 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
                   </div>
                   {finding.port && <Badge variant="default">{finding.protocol?.toUpperCase()}:{finding.port}</Badge>}
                 </div>
+                {finding.port && finding.protocol && (
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-800 pt-3">
+                    <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${finding.port}`} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "dry-run")}>
+                      <Eye className="mr-1 h-3.5 w-3.5" /> Preview fix
+                    </Button>
+                    <Button size="sm" variant="danger" loading={actionBusy === `apply-${finding.port}`} disabled={safeMode || finding.port === 22} title={safeMode ? "Safe Mode locks firewall changes" : finding.port === 22 ? "SSH port 22 is protected from map blocking" : undefined} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "apply")}>
+                      <Shield className="mr-1 h-3.5 w-3.5" /> {safeMode ? "Block locked" : "Block public access"}
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

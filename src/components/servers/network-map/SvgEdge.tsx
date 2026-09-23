@@ -39,8 +39,8 @@ export function SvgEdge({
 
 
   return (
-    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(); }}>
-      <title>Click for real connection options.</title>
+    <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction?.(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(); }}>
+      <title>Left/right click for real connection options.</title>
       <path d={pathD} fill="none" stroke={`${color}18`} strokeWidth={14} />
       <path
         d={pathD}

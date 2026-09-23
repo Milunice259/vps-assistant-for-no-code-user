@@ -19,6 +19,7 @@ export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; 
       className="group absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-colors hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
       onMouseDown={onMouseDown}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(); }}
     >
       <Globe className="h-5 w-5 text-amber-400" />
       <span className="text-sm font-semibold text-amber-200">Internet</span>
@@ -27,7 +28,7 @@ export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; 
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(); }}
         className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full border border-amber-400/40 bg-gray-950 text-amber-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
-        title="Internet options"
+        title="Internet options (right-click also works)"
       >
         ⋯
       </button>
@@ -133,6 +134,7 @@ export function ContainerCard({
       title={fullInfo}
       onMouseDown={onMouseDown}
       onClick={(e) => { e.stopPropagation(); onSelect?.(container); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(container); }}
     >
       {/* Status bar left */}
       <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full" style={{ backgroundColor: status.dot }} />
@@ -183,7 +185,7 @@ export function ContainerCard({
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(container); }}
         className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full border border-gray-600 bg-gray-950 text-gray-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
-        title="App actions"
+        title="App actions (right-click also works)"
       >
         ⋯
       </button>

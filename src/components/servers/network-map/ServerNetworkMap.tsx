@@ -525,7 +525,7 @@ Type ${phrase} to continue.`);
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Drag canvas · Drag nodes · Tap/hover ⋯ for actions</span>
+          <span>Left-click app = details · Right-click app/wire = actions · Drag canvas/nodes</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
@@ -535,6 +535,12 @@ Type ${phrase} to continue.`);
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Stopped app</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400" /> Unknown</span>
         </div>
+      </div>
+
+      <div className="grid gap-2 rounded-xl border border-gray-700 bg-gray-900/70 p-3 text-xs text-gray-400 sm:grid-cols-3">
+        <div><span className="font-medium text-white">Left click</span> app nodes for details.</div>
+        <div><span className="font-medium text-white">Right click</span> app nodes or wires for real actions.</div>
+        <div><span className="font-medium text-white">Drag</span> empty canvas to pan; drag nodes to rearrange.</div>
       </div>
 
       {/* ── Map Viewport ── */}
@@ -694,7 +700,8 @@ Type ${phrase} to continue.`);
               </div>
               {publicPorts.length > 0 && (
                 <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
-                  <p className="mb-2 text-xs font-medium text-gray-300">Real firewall action · high risk requires typed confirmation</p>
+                  <p className="mb-1 text-xs font-medium text-gray-300">Real firewall action · high risk requires typed confirmation</p>
+                  <p className="mb-2 text-[11px] text-gray-500">Choose the exact public port to preview or block. Wires do not directly toggle traffic.</p>
                   <div className="flex flex-wrap gap-2">
                     {publicPorts.slice(0, 6).map((port) => {
                       const index = listeningPorts.indexOf(port);

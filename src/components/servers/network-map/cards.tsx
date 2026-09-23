@@ -106,13 +106,11 @@ export function NetworkCard({
 export function ContainerCard({
   card,
   container,
-  onSelect,
   onMouseDown,
   onAction,
 }: {
   card: CardRect;
   container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
-  onSelect?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }, e: React.MouseEvent) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
   onAction?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }, e: React.MouseEvent) => void;
 }) {
@@ -133,7 +131,6 @@ export function ContainerCard({
       }}
       title={fullInfo}
       onMouseDown={onMouseDown}
-      onClick={(e) => { e.stopPropagation(); onSelect?.(container, e); }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(container, e); }}
     >
       {/* Status bar left */}

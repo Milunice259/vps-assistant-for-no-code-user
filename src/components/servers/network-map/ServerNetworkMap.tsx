@@ -83,6 +83,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
+  const dragMoved = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const pointerInViewport = (e: React.MouseEvent) => {
@@ -169,6 +170,8 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   /* ─── Mouse drag handlers ─── */
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    setActionTarget(null);
+    dragMoved.current = false;
     setIsDragging(true);
     dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: 0, nodeY: 0 };
   }, [pan]);
@@ -176,6 +179,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const handleNodeMouseDown = useCallback((cardId: string, x: number, y: number) => (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    dragMoved.current = false;
     setDraggedNode(cardId);
     dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: x, nodeY: y };
   }, [pan]);
@@ -183,6 +187,7 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragMoved.current = true;
     if (draggedNode) {
       setNodePositions((prev) => ({
         ...prev,
@@ -535,7 +540,7 @@ Type ${phrase} to continue.`);
       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
         <div className="flex items-center gap-1.5">
           <Info className="h-3 w-3" />
-          <span>Left-click app = details · Right-click app/wire = actions · Drag canvas/nodes</span>
+          <span>Right-click app/wire = actions · Click empty canvas = close · Drag canvas/nodes</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
@@ -548,8 +553,8 @@ Type ${phrase} to continue.`);
       </div>
 
       <div className="grid gap-2 rounded-xl border border-gray-700 bg-gray-900/70 p-3 text-xs text-gray-400 sm:grid-cols-3">
-        <div><span className="font-medium text-white">Left click</span> app nodes for details.</div>
-        <div><span className="font-medium text-white">Right click</span> app nodes or wires for real actions.</div>
+        <div><span className="font-medium text-white">Right click</span> app nodes or wires for actions.</div>
+        <div><span className="font-medium text-white">Click empty canvas</span> to close the panel.</div>
         <div><span className="font-medium text-white">Drag</span> empty canvas to pan; drag nodes to rearrange.</div>
       </div>
 
@@ -657,7 +662,7 @@ Type ${phrase} to continue.`);
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} onSelect={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onAction={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onAction={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
               }
               return null;
             })}

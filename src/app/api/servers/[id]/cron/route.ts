@@ -11,6 +11,7 @@ import { decrypt } from "@/lib/crypto";
 import { execOnHost, isLocalServer } from "@/lib/local-server";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -59,18 +60,26 @@ export async function POST(
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { schedule, command, description } = body as {
-      schedule: string;
-      command: string;
-      description?: string;
-    };
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const safetyError = requireSafeModeOff("cron_add", body);
+    if (safetyError) return safetyError;
+    const { schedule, command, description } = body;
 
-    if (!schedule || !command) {
+    if (typeof schedule !== "string" || typeof command !== "string" ||
+        !schedule.trim() || !command.trim() ||
+        (description !== undefined && typeof description !== "string")) {
       return NextResponse.json(
-        { success: false, error: "schedule and command are required" },
+        { success: false, error: "schedule and command must be nonempty strings; description must be a string" },
         { status: 400 }
       );
+    }
+
+    // One submitted job must never create additional crontab lines.
+    if ([schedule, command, description ?? ""].some(value => /[\r\n\0]/.test(value))) {
+      return NextResponse.json({ success: false, error: "Cron fields must not contain newlines or NUL characters" }, { status: 400 });
     }
 
     // Validate schedule format (5 fields, no shell metacharacters)
@@ -96,7 +105,7 @@ export async function POST(
     // Build the crontab entry as a safely-quoted string
     const comment = description ? `# ${shellEscapeSingleQuote(description)}\n` : "";
     const cronLine = `${trimmedSchedule} ${safeCommand}`;
-    const addCmd = `(crontab -l 2>/dev/null; echo '${comment}${cronLine}') | crontab -`;
+    const addCmd = `(crontab -l 2>/dev/null; printf '%s\\n' '${comment}${cronLine}') | crontab -`;
     await execCron(serverId, addCmd);
 
     // Audit log
@@ -127,10 +136,15 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
 
+    const safetyError = requireSafeModeOff("cron_delete", {
+      safeModeOff: request.headers.get("X-Safe-Mode-Off") === "true",
+    });
+    if (safetyError) return safetyError;
     const { searchParams } = new URL(request.url);
-    const lineNum = parseInt(searchParams.get("line") || "0");
+    const line = searchParams.get("line") ?? "";
+    const lineNum = Number(line);
 
-    if (lineNum < 1 || lineNum > 9999) {
+    if (!/^\d+$/.test(line) || !Number.isInteger(lineNum) || lineNum < 1 || lineNum > 9999) {
       return NextResponse.json(
         { success: false, error: "Valid line number required" },
         { status: 400 }
@@ -167,7 +181,7 @@ interface CronJob {
 }
 
 function parseCrontab(output: string): CronJob[] {
-  const lines = output.split("\n").filter(Boolean);
+  const lines = output.split("\n");
   const jobs: CronJob[] = [];
   let pendingComment: string | null = null;
 

@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -165,6 +166,8 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<AppDetailInfo & { liveStats?: ContainerStats | null; metrics?: AppMetricInfo[] }>>> {
   try {
     const { id } = await context.params;
+    const denied = await authorizeApp(id, false);
+    if (denied) return denied;
     const url = new URL(request.url);
     const includeStats = url.searchParams.get("stats") === "true";
     const includeMetrics = url.searchParams.get("metrics") === "true";
@@ -328,7 +331,10 @@ export async function PATCH(
 ): Promise<NextResponse<ApiResponse<AppDetailInfo>>> {
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as UpdateAppInput;
+    const denied = await authorizeApp(id, true);
+    if (denied) return denied;
+    const body = (await request.json()) as UpdateAppInput & { safeModeOff?: boolean };
+    if (body?.safeModeOff !== true) return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
 
     const existing = await prisma.app.findUnique({ where: { id } });
     if (!existing) {
@@ -387,11 +393,14 @@ export async function PATCH(
  * DELETE /api/apps/[id] - Remove app tracking record.
  */
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   context: RouteContext
 ): Promise<NextResponse<ApiResponse>> {
   try {
     const { id } = await context.params;
+    const denied = await authorizeApp(id, true);
+    if (denied) return denied;
+    if (request.headers.get("X-Safe-Mode-Off") !== "true") return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
 
     const existing = await prisma.app.findUnique({ where: { id } });
     if (!existing) {

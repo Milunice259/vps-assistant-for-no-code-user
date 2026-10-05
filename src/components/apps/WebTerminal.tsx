@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from "react";
 import { Terminal, X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import type { ApiResponse } from "@/types";
 
 interface WebTerminalProps {
@@ -18,8 +19,9 @@ interface TermLine {
 }
 
 export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
+  const { safeMode } = useSafeMode();
   const [lines, setLines] = useState<TermLine[]>([
-    { type: "info", text: `Connected to container: ${appName}` },
+    { type: "info", text: `Command target: ${appName}` },
     { type: "info", text: "Commands run inside this container via docker exec." },
     { type: "info", text: "Some commands may not be available depending on the container's base image." },
     { type: "info", text: "" },
@@ -45,7 +47,8 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
   }, []);
 
   const execCommand = useCallback(async (cmd: string) => {
-    if (!cmd.trim()) return;
+    if (safeMode || running || !cmd.trim()) return;
+    if (!confirm(`Run a command inside ${appName}?\n\nCommands can change or delete app data.\n\n${cmd}`)) return;
 
     setLines((prev) => [...prev, { type: "input", text: `$ ${cmd}` }]);
     setHistory((prev) => [...prev, cmd]);
@@ -57,11 +60,11 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
       const res = await fetch(`/api/apps/${appId}/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd }),
+        body: JSON.stringify({ command: cmd, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<{ output: string }> = await res.json();
 
-      if (json.success && json.data) {
+      if (res.ok && json.success && json.data) {
         const output = json.data.output;
         if (output) {
           const outputLines = output.split("\n").map((l) => ({
@@ -85,7 +88,7 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
       setRunning(false);
       inputRef.current?.focus();
     }
-  }, [appId]);
+  }, [appId, appName, safeMode, running]);
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !running) {
@@ -169,7 +172,7 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
             <button
               key={cmd}
               onClick={() => execCommand(cmd)}
-              disabled={running}
+              disabled={safeMode || running}
               className="text-[10px] px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-50"
             >
               {cmd}
@@ -187,8 +190,8 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={running}
-          placeholder="Type a command..."
+          disabled={safeMode || running}
+          placeholder={safeMode ? "Commands locked" : "Type a command..."}
           className="flex-1 bg-transparent text-white font-mono text-sm outline-none placeholder-gray-600 disabled:opacity-50"
           autoComplete="off"
           spellCheck="false"
@@ -196,7 +199,7 @@ export function WebTerminal({ appId, appName, onClose }: WebTerminalProps) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={running || !input.trim()}
+          disabled={safeMode || running || !input.trim()}
           onClick={() => execCommand(input)}
         >
           Run

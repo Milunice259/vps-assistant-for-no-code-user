@@ -17,6 +17,11 @@ import yaml from "js-yaml";
 import { sanitizeLogs } from "@/lib/sanitize";
 import type { ApiResponse, DeploymentInfo, DeployStatus } from "@/types";
 
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { requireSafeModeOff } from "@/lib/operation-safety";
+import { canAccessServer } from "@/lib/server-access";
+
 export const dynamic = "force-dynamic";
 
 type CommandRunner = (command: string, timeoutMs?: number) => Promise<string>;
@@ -36,15 +41,25 @@ export async function POST(
   const logId: string | null = null;
 
   try {
-    const body = await request.json();
-    const { type, serverId } = body;
-
-    if (!serverId) {
-      return NextResponse.json(
-        { success: false, error: "serverId is required" },
-        { status: 400 }
-      );
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!can(session.role as string, "OPERATOR")) return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    let body;
+    try { body = await request.json(); }
+    catch { return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 }); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Body must be an object" }, { status: 400 });
     }
+    const targetId = body.serverId === undefined ? "local" : body.serverId;
+    if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
+    const { type } = body;
+    const serverId = targetId;
+    const safetyBlock = requireSafeModeOff("deploy_docker", body);
+    if (safetyBlock) return safetyBlock;
 
     if (!type || !["image", "compose"].includes(type)) {
       return NextResponse.json(
@@ -52,6 +67,9 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    const invalid = type === "image" ? validateImageInput(body) : validateComposeInput(body);
+    if (invalid) return invalid;
 
     if (isLocalServer(serverId)) {
       const run: CommandRunner = async (command, timeoutMs) => execLocal(command, timeoutMs);
@@ -100,14 +118,16 @@ interface ImageDeployInput {
   restartPolicy?: string;
 }
 
-async function deployImage(
-  run: CommandRunner,
-  body: ImageDeployInput,
-  serverId: string,
-  _serverName: string,
-): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
+function validateImageInput(body: ImageDeployInput) {
   const { image, name, ports, env, cpuLimit, memoryLimit, restartPolicy } = body;
-
+  if ((name !== undefined && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(name))) ||
+      (ports !== undefined && (!Array.isArray(ports) || ports.some((port) => typeof port !== "string" || !/^\d{1,5}:\d{1,5}(?:\/(?:tcp|udp))?$/.test(port) || port.replace(/\/(tcp|udp)$/, "").split(":").some((n) => Number(n) < 1 || Number(n) > 65535)))) ||
+      (env !== undefined && (!env || typeof env !== "object" || Array.isArray(env))) ||
+      (cpuLimit !== undefined && typeof cpuLimit !== "number") ||
+      (memoryLimit !== undefined && typeof memoryLimit !== "number") ||
+      (restartPolicy !== undefined && typeof restartPolicy !== "string")) {
+    return NextResponse.json({ success: false, error: "Malformed image deploy options" }, { status: 400 });
+  }
   // ── Validate all inputs ──
   const imgCheck = validateDockerImage(image);
   if (!imgCheck.valid) {
@@ -142,6 +162,17 @@ async function deployImage(
       }
     }
   }
+
+  return null;
+}
+
+async function deployImage(
+  run: CommandRunner,
+  body: ImageDeployInput,
+  serverId: string,
+  _serverName: string,
+): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
+  const { image, name, ports, env, cpuLimit, memoryLimit, restartPolicy } = body;
 
   const safeImage = image;
   let allLogs = `Target server: ${_serverName} (${serverId})\nDeploying Docker image: ${safeImage}\n`;
@@ -197,14 +228,17 @@ async function deployImage(
     if (env && typeof env === "object") {
       for (const [key, value] of Object.entries(env)) {
         // Keys and values have been validated above
-        runParts.push(`-e ${key}=${value}`);
+        runParts.push(`-e '${`${key}=${value}`.replace(/'/g, "'\\''")}'`);
       }
     }
 
     runParts.push(safeImage);
 
-    allLogs += `Running: ${runParts.join(" ")}\n`;
-    const runOutput = await run(runParts.join(" ") + " 2>&1", 60_000);
+    allLogs += "Starting container (environment values omitted).\n";
+    const runOutput = await run(runParts.join(" ") + " 2>&1", 60_000).catch(() => {
+      // Executor errors can include the full command and secret environment values.
+      throw new Error("Container start failed; check the target server's Docker logs.");
+    });
     allLogs += runOutput + "\n";
 
     const containerId = runOutput.trim().slice(0, 12);
@@ -263,14 +297,12 @@ interface ComposeDeployInput {
   projectName?: string;
 }
 
-async function deployCompose(
-  run: CommandRunner,
-  body: ComposeDeployInput,
-  serverId: string,
-  _serverName: string,
-): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
+function validateComposeInput(body: ComposeDeployInput) {
   const { composeContent, projectPath, projectName } = body;
-
+  if (typeof composeContent !== "string" || typeof projectPath !== "string" ||
+      (projectName !== undefined && (typeof projectName !== "string" || !/^[a-z0-9][a-z0-9_-]*$/.test(projectName)))) {
+    return NextResponse.json({ success: false, error: "Malformed Compose deploy options" }, { status: 400 });
+  }
   if (!composeContent || !projectPath) {
     return NextResponse.json(
       { success: false, error: "composeContent and projectPath are required" },
@@ -299,6 +331,19 @@ async function deployCompose(
   if (!composeCheck.valid) {
     return NextResponse.json({ success: false, error: composeCheck.reason }, { status: 400 });
   }
+
+  return null;
+}
+
+async function deployCompose(
+  run: CommandRunner,
+  body: ComposeDeployInput,
+  serverId: string,
+  _serverName: string,
+): Promise<NextResponse<ApiResponse<DeploymentInfo>>> {
+  const { composeContent, projectPath, projectName } = body;
+
+  const parsed = yaml.load(composeContent);
 
   const safePath = projectPath;
   let allLogs = `Target server: ${_serverName} (${serverId})\nDeploying Docker Compose to ${safePath}\n`;
@@ -329,7 +374,10 @@ async function deployCompose(
     await run(
       `echo "${base64Content}" | base64 -d > "${safePath}/docker-compose.yml"`,
       15_000
-    );
+    ).catch(() => {
+      // Executor errors can expose the encoded Compose document in the command.
+      throw new Error("Compose file upload failed; check the target server's disk space and permissions.");
+    });
     allLogs += "Uploaded docker-compose.yml\n";
 
     // Run docker compose up

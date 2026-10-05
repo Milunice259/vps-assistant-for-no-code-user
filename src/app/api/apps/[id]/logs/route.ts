@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
@@ -29,6 +30,8 @@ export async function GET(
 
   try {
     const { id } = await context.params;
+    const denied = await authorizeApp(id, false);
+    if (denied) return denied;
     const url = new URL(request.url);
     const lines = parseInt(url.searchParams.get("lines") || "100", 10);
 

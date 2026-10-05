@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -24,7 +25,10 @@ export async function POST(
 ): Promise<NextResponse<ApiResponse<{ output: string }>>> {
   try {
     const { id } = await context.params;
+    const denied = await authorizeApp(id, true);
+    if (denied) return denied;
     const body = await request.json();
+    if (body?.safeModeOff !== true) return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
     const command = body.command as string;
 
     // ── Validate command against allowlist ──

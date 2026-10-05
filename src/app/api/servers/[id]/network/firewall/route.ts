@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { execOnHost, isLocalServer } from "@/lib/local-server";
 import { canAccessServer } from "@/lib/server-access";
@@ -12,10 +13,9 @@ import type { ApiResponse } from "@/types";
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
-type Body = { mode?: "dry-run" | "apply"; action?: "block-port" | "allow-port"; port?: number; protocol?: "tcp" | "udp"; safeModeOff?: boolean };
+type Body = { mode: "dry-run" | "apply"; action: "block-port" | "allow-port"; port: number; protocol: "tcp" | "udp"; safeModeOff?: boolean };
 type FirewallRule = { number: number; action: string; target: string; from: string };
 
-const SELF_LOCKOUT_PORTS = new Set([22]);
 const CHECK_UFW = "command -v ufw >/dev/null 2>&1 || { echo 'ufw is not installed'; exit 3; }";
 
 function parseRules(output: string): FirewallRule[] {
@@ -25,17 +25,11 @@ function parseRules(output: string): FirewallRule[] {
   }).filter((rule): rule is FirewallRule => Boolean(rule));
 }
 
-function planCommand({ mode, action, port, protocol }: Required<Pick<Body, "mode" | "action" | "port" | "protocol">>) {
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Port must be 1-65535");
-  if (!["tcp", "udp"].includes(protocol)) throw new Error("Protocol must be tcp or udp");
-  if (!["block-port", "allow-port"].includes(action)) throw new Error("Invalid action");
-  if (mode === "apply" && action === "block-port" && SELF_LOCKOUT_PORTS.has(port)) throw new Error("Refusing to block SSH port 22 from the map");
-
+function planCommand({ action, port, protocol }: Body) {
   const ufw = action === "block-port" ? `ufw deny ${port}/${protocol}` : `ufw delete deny ${port}/${protocol} >/dev/null 2>&1 || true; ufw allow ${port}/${protocol}`;
   const rollback = action === "block-port" ? `ufw delete deny ${port}/${protocol}` : `ufw deny ${port}/${protocol}`;
   const label = action === "block-port" ? "Block public access" : "Allow public access";
-  if (mode === "dry-run") return { label, rollback, command: `${CHECK_UFW}; echo '${label}: ${protocol.toUpperCase()} ${port}'; echo 'Would run: ${ufw}'; echo 'Rollback: ${rollback}'` };
-  return { label, rollback, command: `${CHECK_UFW}; ${ufw} && ufw status numbered` };
+  return { label, rollback, command: `${CHECK_UFW}; ${ufw} && ufw status numbered`, preview: `${label}: ${protocol.toUpperCase()} ${port}\nWould run: ${ufw}\nRollback: ${rollback}` };
 }
 
 async function runServerCommand(id: string, command: string, sshRef: { ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null }) {
@@ -74,20 +68,44 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
 
-    const body = await request.json() as Body;
-    const mode = body.mode || "dry-run";
-    const action = body.action || "block-port";
-    const protocol = body.protocol || "tcp";
-    const port = Number(body.port);
+    let input: unknown;
+    try {
+      input = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+    }
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return NextResponse.json({ success: false, error: "Expected a firewall action object" }, { status: 400 });
+    }
+    const body = input as Body;
+    const { mode, action, protocol, port } = body;
+    if (mode !== "dry-run" && mode !== "apply") return NextResponse.json({ success: false, error: "Mode must be dry-run or apply" }, { status: 400 });
+    if (action !== "block-port" && action !== "allow-port") return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
+    if (protocol !== "tcp" && protocol !== "udp") return NextResponse.json({ success: false, error: "Protocol must be tcp or udp" }, { status: 400 });
+    if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return NextResponse.json({ success: false, error: "Port must be an integer from 1-65535" }, { status: 400 });
+    if (body.safeModeOff !== undefined && typeof body.safeModeOff !== "boolean") return NextResponse.json({ success: false, error: "safeModeOff must be a boolean" }, { status: 400 });
     if (mode === "apply") {
       const safetyBlock = requireSafeModeOff(`firewall_${action}`, body);
       if (safetyBlock) return safetyBlock;
+      if (action === "block-port") {
+        if (port === 22) return NextResponse.json({ success: false, error: "Refusing to block SSH port 22 from the map" }, { status: 400 });
+        // ponytail: local SSH may use includes/socket activation; block applies stay closed until reliable host management-port discovery exists.
+        if (isLocalServer(id)) return NextResponse.json({ success: false, error: "Cannot safely determine local SSH ports; blocking is disabled" }, { status: 409 });
+        const server = await prisma.server.findUnique({ where: { id }, select: { port: true } });
+        if (!server || !Number.isInteger(server.port) || server.port < 1 || server.port > 65535) {
+          return NextResponse.json({ success: false, error: "Cannot safely determine the server SSH port; blocking is disabled" }, { status: 409 });
+        }
+        if (port === server.port) return NextResponse.json({ success: false, error: `Refusing to block configured SSH port ${server.port} from the map` }, { status: 400 });
+      }
     }
-    const { label, command, rollback } = planCommand({ mode, action, port, protocol });
+    const { label, command, rollback, preview } = planCommand(body);
 
-    const sshRef = { ssh };
-    const output = await runServerCommand(id, command, sshRef);
-    ssh = sshRef.ssh;
+    let output = preview;
+    if (mode === "apply") {
+      const sshRef = { ssh };
+      output = await runServerCommand(id, command, sshRef);
+      ssh = sshRef.ssh;
+    }
 
     await auditLog({
       action: "quick_action",

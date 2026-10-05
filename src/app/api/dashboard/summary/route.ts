@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
 import { execLocal, tryExecOnHost, readHostFile } from "@/lib/local-server";
 import type { ApiResponse, DashboardSummary } from "@/types";
 
@@ -101,7 +103,14 @@ function getOSInfo(): OSInfo {
  * Fetch aggregated dashboard summary data.
  * Exported so the SSE stream endpoint can reuse this.
  */
-export async function getDashboardSummary(): Promise<DashboardSummary> {
+export async function getDashboardSummary(session: NonNullable<Awaited<ReturnType<typeof getSession>>>): Promise<DashboardSummary> {
+  // ponytail: UI requires local metrics; deny rather than fake them until it supports a scoped summary.
+  if (!(await canAccessServer(session.sub, session.role, "local"))) {
+    throw new Error("Local server access required for dashboard summary");
+  }
+  const serverScope = await scopedServerWhere(session.sub, session.role);
+  const appScope = { OR: [{ serverId: serverScope.id ?? { not: "local" } }, { serverId: "local" }] };
+  const deploymentScope = { OR: [...appScope.OR, { serverId: null }] };
   // Run all queries in parallel
   const [
     containers,
@@ -117,12 +126,14 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     Promise.resolve(getListeningPortCount()),
 
     // DB queries
-    prisma.server.groupBy({ by: ["isActive"], _count: true }),
+    prisma.server.groupBy({ where: serverScope, by: ["isActive"], _count: true }),
     prisma.app.groupBy({
+      where: appScope,
       by: ["status"],
       _count: true,
     }),
     prisma.deploymentLog.groupBy({
+      where: deploymentScope,
       by: ["status"],
       _count: true,
     }),
@@ -149,7 +160,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   // Recent deployments (last 24h)
   const oneDayAgo = new Date(Date.now() - 86400_000);
   const recentCount = await prisma.deploymentLog.count({
-    where: { createdAt: { gte: oneDayAgo } },
+    where: { ...deploymentScope, createdAt: { gte: oneDayAgo } },
   });
 
   return {
@@ -189,8 +200,13 @@ export async function GET(): Promise<
   NextResponse<ApiResponse<DashboardSummary>>
 > {
   try {
-    const summary = await getDashboardSummary();
-    return NextResponse.json({ success: true, data: summary });
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!(await canAccessServer(session.sub, session.role, "local"))) {
+      return NextResponse.json({ success: false, error: "Local server access required for dashboard summary" }, { status: 403 });
+    }
+    const summary = await getDashboardSummary(session);
+    return NextResponse.json({ success: true, data: summary }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to get dashboard summary";

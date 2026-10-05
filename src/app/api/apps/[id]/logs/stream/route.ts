@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -26,6 +27,8 @@ export async function GET(
   context: RouteContext
 ): Promise<Response> {
   const { id } = await context.params;
+  const denied = await authorizeApp(id, false);
+  if (denied) return denied;
   const url = new URL(request.url);
   const tailLines = parseInt(url.searchParams.get("lines") || "200", 10);
 

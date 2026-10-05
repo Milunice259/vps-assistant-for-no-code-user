@@ -1,6 +1,7 @@
-import { NextRequest } from "next/server";
+import { authorizeApp } from "@/lib/app-access";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isLocalAppId, parseLocalContainerId, execLocal } from "@/lib/local-server";
+import { isLocalAppId, parseLocalContainerId, execLocal, isLocalServer } from "@/lib/local-server";
 import { createSSEResponse } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +26,19 @@ export async function GET(
   context: RouteContext
 ) {
   const { id: appId } = await context.params;
+  const denied = await authorizeApp(appId, false);
+  if (denied) return denied;
   const isLocal = isLocalAppId(appId);
+  // ponytail: this stream uses local Docker only; remote streaming needs an SSH fetcher.
+  const serverId = isLocal || appId.startsWith("discovered::local::") ? "local"
+    : (await prisma.app.findUnique({ where: { id: appId }, select: { serverId: true } }))?.serverId;
+  if (!serverId || !isLocalServer(serverId)) {
+    return NextResponse.json({ success: false, error: "Live stats stream is only supported for local containers" }, { status: 400 });
+  }
 
   return createSSEResponse<AppStreamData>(
     async () => {
+      if (await authorizeApp(appId)) throw new Error("Application access revoked");
       // Resolve container ID — from DB or from local:: prefix
       let containerId: string | null = null;
       let status = "UNKNOWN";
@@ -49,9 +59,10 @@ export async function GET(
         dbAppId = appId;
         const app = await prisma.app.findUnique({
           where: { id: appId },
-          select: { containerId: true, status: true },
+          select: { containerId: true, status: true, serverId: true },
         });
-        containerId = app?.containerId ?? null;
+        if (!app || !isLocalServer(app.serverId)) throw new Error("Application target changed");
+        containerId = app.containerId;
         status = app?.status ?? "UNKNOWN";
       }
 

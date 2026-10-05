@@ -184,13 +184,11 @@ export async function GET(
     if (checkUpgrades) {
       try {
         if (pkgMgr === "apt") {
-          // apt update first to refresh index, then list upgradable
-          try { runCmd("apt update -qq 2>/dev/null", 120_000); } catch { /* ok */ }
+          // Read the existing package index; refresh is an Advanced Mode POST operation.
           const upgRaw = runCmd("apt list --upgradable 2>/dev/null | tail -n +2");
           packages = mergeAptUpgradable(packages, upgRaw);
         } else {
-          // apk update + check
-          try { runCmd("apk update -q 2>/dev/null", 60_000); } catch { /* ok */ }
+          // Read only; do not refresh the host package index from GET.
           const upgRaw = runCmd("apk version -l '<' 2>/dev/null");
           packages = mergeApkUpgradable(packages, upgRaw);
         }

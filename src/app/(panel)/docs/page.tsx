@@ -96,8 +96,8 @@ const sections = [
     bullets: [
       "Backups include panel database data: servers, apps, users, settings, notifications, and audit logs.",
       "Create a backup before changing notifications, users, deploy config, or remote server settings.",
-      "Restore creates a pre-restore snapshot first so you can undo a wrong restore.",
-      "Panel backups do not include every external app database or Docker volume; back those up inside each app too.",
+      "In-app restore is temporarily unavailable until a maintenance-mode recovery flow can safely replace the database.",
+      "Panel backups do not include VPS files, external app databases or Docker volumes; back those up separately.",
     ],
   },
   {
@@ -133,8 +133,8 @@ const sections = [
       "Use the map to understand traffic flow before changing ports or domains.",
       "Fit and Reset help when many apps make the canvas crowded.",
       "Network Audit shows public ports, ports that need review, and Docker networks with compact visual cards.",
-      "Tap or hover ⋯ on app nodes or connection lines for actions; mobile keeps the action button visible.",
-      "Preview is read-only. Block/Allow changes real UFW firewall rules, stays behind Safe Mode, writes the audit log, and refuses to block SSH port 22.",
+      "Use Actions or right-click an app or wire. Wires show visual paths and never toggle traffic.",
+      "Preview shows a plan without running a server command. Apply changes UFW rules; it does not prove external traffic is blocked. SSH port 22 and the configured remote SSH port are protected; local blocking is unavailable until management ports can be verified.",
     ],
   },
   {
@@ -172,7 +172,7 @@ const sections = [
       "Configurable: session timeout, idle timeout, remember me, force logout, login lockout, audit retention, default Safe Mode, and password policy.",
       "Mandatory: authentication guard, CSRF checks, fixed Edge API rate limit, security headers, role boundaries, audit logging, and secret redaction.",
       "Session Timeout controls how long normal login cookies remain valid; Remember Me adds longer sessions only when Safe Mode is off.",
-      "Idle Timeout auto-logs out inactive browsers; disabling it requires Safe Mode off.",
+      "Idle Timeout locks the browser. Quick Unlock works only while the login session remains valid.",
       "Login Protection controls failed attempts, the counting window, and temporary lockout duration per IP.",
       "Audit Retention controls manual cleanup of old audit logs; Force Logout invalidates existing API sessions.",
       "Password policy applies to new users and password changes. Complexity is locked on while Safe Mode is on.",
@@ -186,7 +186,7 @@ const sections = [
     bullets: [
       "Audit Log records admin actions with time, actor, server/app target, status, and detail.",
       "Use Users to separate accounts instead of sharing one admin login.",
-      "Keep Safe Mode on for daily use. Turn it off only when you understand the action.",
+      "Keep Safe Mode on for daily use. Manager access or higher can explicitly enable Advanced Mode for up to 15 minutes; it returns to Safe Mode when authorization expires. Each risky action still requires its own confirmation.",
       "Terminal is advanced; use guided pages first for common tasks.",
     ],
   },

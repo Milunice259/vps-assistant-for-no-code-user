@@ -80,7 +80,7 @@ function SidebarInner({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
-  const { safeMode, setSafeMode } = useSafeMode();
+  const { safeMode, setSafeMode, safetyLoading, safetyError, expiresAt } = useSafeMode();
   const { user } = useAuth();
 
   return (
@@ -142,12 +142,18 @@ function SidebarInner({
       {showLabels && (
         <div className="border-t border-gray-700 p-3">
           <button
-            onClick={() => setSafeMode(!safeMode)}
-            className="flex w-full items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-300 hover:border-gray-600"
+            onClick={() => void setSafeMode(!safeMode)}
+            disabled={safetyLoading || (safeMode && !can(user?.role, "MANAGER"))}
+            aria-pressed={!safeMode}
+            aria-busy={safetyLoading}
+            title={safeMode && !can(user?.role, "MANAGER") ? "Manager access required" : undefined}
+            className="flex min-h-11 w-full items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-300 hover:border-gray-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>{safeMode ? "Safe Mode On" : "Advanced Mode"}</span>
+            <span>{safetyLoading ? "Checking safety…" : safeMode ? "Safe Mode On" : "Advanced Mode"}</span>
             <span className={safeMode ? "text-emerald-400" : "text-yellow-400"}>{safeMode ? "Safe" : "Risk"}</span>
           </button>
+          {!safeMode && expiresAt && <p className="mt-2 text-xs text-gray-400">Safe Mode returns at {new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p>}
+          {safetyError && <p role="alert" className="mt-2 text-xs text-amber-300">{safetyError}</p>}
         </div>
       )}
     </>

@@ -4,6 +4,9 @@ import { closeSSH, executeCommand } from "@/lib/ssh";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import type { ApiResponse } from "@/types";
 
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
+
 export const dynamic = "force-dynamic";
 
 type DeployMode = "git" | "image" | "compose";
@@ -35,15 +38,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
   let ssh: Awaited<ReturnType<typeof connectToServer>>["ssh"] | null = null;
 
   try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const body = await request.json() as { mode?: DeployMode; serverId?: string };
+    const targetId = body.serverId ?? "local";
+    if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
     const mode = body.mode || "git";
-    const target = body.serverId ? "remote" : "local";
+    const target = targetId === "local" ? "local" : "remote";
     if (!requirements[mode]) {
       return NextResponse.json({ success: false, error: "Invalid deploy mode" }, { status: 400 });
     }
 
-    if (body.serverId) {
-      const conn = await connectToServer(body.serverId);
+    if (target === "remote") {
+      const conn = await connectToServer(targetId);
       ssh = conn.ssh;
     }
 

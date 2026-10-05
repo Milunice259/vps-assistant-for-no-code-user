@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -17,9 +18,7 @@ interface HealthResult {
 }
 
 /**
- * GET /api/apps/[id]/health - Run health check on the container.
- * For local containers: uses execSync.
- * For remote containers: uses SSH.
+ * GET /api/apps/[id]/health - Read Docker-native container health only.
  */
 export async function GET(
   _request: NextRequest,
@@ -27,6 +26,8 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<HealthResult>>> {
   try {
     const { id } = await context.params;
+    const denied = await authorizeApp(id, false);
+    if (denied) return denied;
 
     // ── Local container: run health check directly ──
     if (isLocalAppId(id)) {
@@ -61,7 +62,7 @@ export async function GET(
             status = "unhealthy";
             output = "Docker health check: unhealthy";
           } else {
-            status = "healthy";
+            status = "unknown";
             output = "Container is running (no health check configured)";
           }
         }
@@ -145,19 +146,6 @@ export async function GET(
       if (containerState !== "running") {
         status = "unhealthy";
         output = `Container is ${containerState}`;
-      } else if (app.healthCheck) {
-        try {
-          const escapedCmd = app.healthCheck.replace(/'/g, "'\\''" );
-          const checkOutput = await exec(
-            `docker exec ${safeId} sh -c '${escapedCmd}' 2>&1`,
-            15_000
-          );
-          status = "healthy";
-          output = checkOutput.trim() || "Health check passed";
-        } catch {
-          status = "unhealthy";
-          output = "Health check command failed";
-        }
       } else {
         const healthOutput = await exec(
           `docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ${safeId} 2>&1`,
@@ -172,16 +160,10 @@ export async function GET(
           status = "unhealthy";
           output = "Docker health check: unhealthy";
         } else {
-          status = containerState === "running" ? "healthy" : "unhealthy";
+          status = "unknown";
           output = `Container is ${containerState} (no health check configured)`;
         }
       }
-
-      const appStatus = status === "healthy" ? "RUNNING" : status === "unhealthy" ? "UNHEALTHY" : "UNKNOWN";
-      await prisma.app.update({
-        where: { id },
-        data: { status: appStatus },
-      });
 
       return NextResponse.json({
         success: true,
@@ -190,10 +172,9 @@ export async function GET(
     } finally {
       if (ssh) await closeSSH(ssh);
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Health check failed";
+  } catch {
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, error: "Health check failed" },
       { status: 500 }
     );
   }

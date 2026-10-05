@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Play, HelpCircle, FolderSearch, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import { FileBrowser } from "@/components/ui/FileBrowser";
 import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
 import type { ApiResponse, ServerInfo } from "@/types";
@@ -20,8 +21,9 @@ function Tip({ text }: { text: string }) {
 }
 
 export function DockerComposeDeploy() {
+  const { safeMode } = useSafeMode();
   const [servers, setServers] = useState<ServerInfo[]>([]);
-  const [serverId, setServerId] = useState("");
+  const [serverId, setServerId] = useState("local");
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [composeContent, setComposeContent] = useState(DEFAULT_COMPOSE);
@@ -36,12 +38,9 @@ export function DockerComposeDeploy() {
       const json: ApiResponse<ServerInfo[]> = await res.json();
       if (json.success && json.data) {
         setServers(json.data);
-        if (json.data.length > 0 && !serverId) {
-          setServerId(json.data[0].id);
-        }
       }
     } catch { /* ok */ }
-  }, [serverId]);
+  }, []);
 
   useEffect(() => {
     fetchServers();
@@ -50,7 +49,9 @@ export function DockerComposeDeploy() {
   const selectedServer = servers.find((s) => s.id === serverId);
 
   async function handleDeploy() {
-    if (!serverId || !composeContent.trim() || !projectPath.trim()) return;
+    if (safeMode || deploying || !serverId || !composeContent.trim() || !projectPath.trim()) return;
+    const targetLabel = serverId === "local" ? "Local server" : `${selectedServer?.name || serverId} (${selectedServer?.host || serverId})`;
+    if (!window.confirm(`Deploy Compose stack to ${targetLabel} at ${projectPath.trim()}? This writes docker-compose.yml and creates or updates containers and published ports.`)) return;
     setDeploying(true);
     setResult(null);
 
@@ -61,6 +62,7 @@ export function DockerComposeDeploy() {
         body: JSON.stringify({
           type: "compose",
           serverId,
+          safeModeOff: !safeMode,
           composeContent: composeContent.trim(),
           projectPath: projectPath.trim(),
           projectName: projectName.trim() || undefined,
@@ -83,7 +85,9 @@ export function DockerComposeDeploy() {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <DeployRequirementBanner mode="compose" serverId={deployTarget === "remote" ? serverId : undefined} />
+      {(deployTarget === "local" || serverId) && (
+        <DeployRequirementBanner key={deployTarget === "local" ? "local" : serverId} mode="compose" serverId={deployTarget === "local" ? "local" : serverId} />
+      )}
 
       <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3 text-sm text-gray-300">
         <span className="text-gray-500">Target server:</span>{" "}
@@ -213,10 +217,11 @@ export function DockerComposeDeploy() {
         />
       </Field>
 
+      {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Turn it off to deploy containers on the selected server. Requirement checks remain available.</p>}
       <Button
         variant="primary"
         loading={deploying}
-        disabled={!serverId || !composeContent.trim() || !projectPath.trim()}
+        disabled={safeMode || deploying || !serverId || !composeContent.trim() || !projectPath.trim()}
         onClick={handleDeploy}
       >
         <Play className="h-4 w-4 mr-1" /> Deploy Compose Stack

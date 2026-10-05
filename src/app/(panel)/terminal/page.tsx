@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, KeyboardEvent } from "react";
 import { Terminal as TerminalIcon, ChevronDown, AlertTriangle } from "lucide-react";
 import { PermissionGate } from "@/components/ui/PermissionGate";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 interface ServerOption {
   id: string;
@@ -18,6 +19,7 @@ interface HistoryEntry {
 }
 
 export default function TerminalPage() {
+  const { safeMode } = useSafeMode();
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [serverId, setServerId] = useState("local");
   const [input, setInput] = useState("");
@@ -28,6 +30,7 @@ export default function TerminalPage() {
 
   const termRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const busy = useRef(false);
 
   // Fetch servers
   useEffect(() => {
@@ -50,8 +53,10 @@ export default function TerminalPage() {
 
   const execute = useCallback(async () => {
     const cmd = input.trim();
-    if (!cmd || running) return;
+    if (!cmd || safeMode || busy.current) return;
+    if (cmd !== "clear" && !window.confirm(`Run "${cmd}" on ${serverId === "local" ? "Local server" : servers.find(s => s.id === serverId)?.name || serverId} (${serverId})? Commands execute on this real server and may change files or services. There is no automatic undo.`)) return;
 
+    busy.current = true;
     setInput("");
     setRunning(true);
     setCmdHistory((prev) => [cmd, ...prev.slice(0, 50)]);
@@ -60,6 +65,7 @@ export default function TerminalPage() {
     // Handle local commands
     if (cmd === "clear") {
       setHistory([]);
+      busy.current = false;
       setRunning(false);
       return;
     }
@@ -68,7 +74,7 @@ export default function TerminalPage() {
       const res = await fetch(`/api/servers/${serverId}/terminal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd }),
+        body: JSON.stringify({ command: cmd, safeModeOff: !safeMode }),
       });
       const json = await res.json();
 
@@ -104,10 +110,11 @@ export default function TerminalPage() {
         },
       ]);
     } finally {
+      busy.current = false;
       setRunning(false);
       inputRef.current?.focus();
     }
-  }, [input, running, serverId]);
+  }, [input, safeMode, serverId, servers]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -139,7 +146,7 @@ export default function TerminalPage() {
     return clean;
   }
 
-  const serverName = servers.find((s) => s.id === serverId)?.name || "Server";
+  const serverName = serverId === "local" ? "Local server" : servers.find((s) => s.id === serverId)?.name || serverId;
 
   return (
     <PermissionGate minimum="OPERATOR">
@@ -150,6 +157,7 @@ export default function TerminalPage() {
         <div className="relative">
           <select
             value={serverId}
+            disabled={running}
             onChange={(e) => setServerId(e.target.value)}
             className="appearance-none bg-gray-900 border border-gray-700 rounded-lg pl-3 pr-8 py-1.5 text-sm text-white cursor-pointer hover:border-gray-600"
           >
@@ -169,7 +177,7 @@ export default function TerminalPage() {
       <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Advanced area: commands run on the real server. Prefer the guided pages for apps, deploys, backups, and network changes.
+          {safeMode ? "Safe Mode is on: terminal execution is locked. Turn it off to run commands on the selected server." : "Advanced area: commands run on the real server. Prefer the guided pages for apps, deploys, backups, and network changes."}
         </p>
       </div>
 
@@ -194,8 +202,8 @@ export default function TerminalPage() {
           {history.length === 0 && (
             <div className="text-gray-600 text-xs space-y-1">
               <p className="text-emerald-400">Welcome to VPS Control Terminal</p>
-              <p>Connected to: {serverName}</p>
-              <p>Type a command and press Enter to execute.</p>
+              <p>Target: {serverName}</p>
+              <p>{safeMode ? "Execution locked by Safe Mode." : "Type a command and press Enter to confirm execution."}</p>
               <p className="text-yellow-500/50">⚠ Commands are executed on the actual server. Use with caution.</p>
             </div>
           )}
@@ -235,8 +243,9 @@ export default function TerminalPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={running}
-            placeholder="Enter command..."
+            disabled={running || safeMode}
+            aria-label="Server command"
+            placeholder={safeMode ? "Locked by Safe Mode" : "Enter command..."}
             className="flex-1 bg-transparent text-white placeholder-gray-600 outline-none text-sm font-mono"
             autoFocus
           />

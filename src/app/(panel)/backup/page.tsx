@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Database,
   Download,
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PermissionGate } from "@/components/ui/PermissionGate";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 
 interface BackupEntry {
   name: string;
@@ -30,12 +31,14 @@ function formatSize(bytes: number): string {
 }
 
 export default function BackupPage() {
+  const { safeMode } = useSafeMode();
+  const busy = useRef(false);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const fetchBackups = useCallback(async () => {
@@ -55,41 +58,37 @@ export default function BackupPage() {
   useEffect(() => { fetchBackups(); }, [fetchBackups]);
 
   async function handleCreate() {
+    if (busy.current) return;
+    busy.current = true;
     setCreating(true);
     setError(null);
+    setSuccess(null);
     try {
-      const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create" }) });
       const json = await res.json();
       if (json.success) {
         setSuccess(`Backup created: ${json.data?.name}`);
-        fetchBackups();
+        await fetchBackups();
       } else setError(json.error);
     } catch { setError("Failed to create backup"); }
-    finally { setCreating(false); }
-  }
-
-  async function handleRestore(name: string) {
-    setError(null);
-    try {
-      const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", name }) });
-      const json = await res.json();
-      if (json.success) setSuccess(json.message);
-      else setError(json.error);
-    } catch { setError("Restore failed"); }
-    setConfirmRestore(null);
+    finally { busy.current = false; setCreating(false); }
   }
 
   async function handleDelete(name: string) {
+    if (safeMode || busy.current) return;
+    busy.current = true;
+    setDeleting(name);
     setError(null);
+    setSuccess(null);
     try {
-      const res = await fetch(`/api/backup?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+      const res = await fetch(`/api/backup?name=${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Safe-Mode-Off": "true" } });
       const json = await res.json();
       if (json.success) {
         setSuccess(`Deleted ${name}`);
-        fetchBackups();
+        await fetchBackups();
       } else setError(json.error);
     } catch { setError("Failed to delete backup"); }
-    setConfirmDelete(null);
+    finally { busy.current = false; setDeleting(null); setConfirmDelete(null); }
   }
 
   return (
@@ -101,21 +100,22 @@ export default function BackupPage() {
           <Database className="h-6 w-6 text-brand-400" />
           <div>
             <h1 className="text-xl font-semibold text-white">Backup & Restore</h1>
-            <p className="text-sm text-gray-400">Save a safe checkpoint before fixes, updates, or risky changes</p>
+            <p className="text-sm text-gray-400">Panel database checkpoints — not VPS or app backups</p>
           </div>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={fetchBackups}>
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
-          <Button variant="primary" size="sm" onClick={handleCreate} loading={creating}>
+          <Button variant="primary" size="sm" onClick={handleCreate} loading={creating} disabled={!!deleting}>
             <Plus className="h-4 w-4 mr-1" /> Create Backup
           </Button>
         </div>
       </div>
 
       <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4 text-sm text-gray-400">
-        Backups protect panel data. For what is included and when to restore, see <Link href="/docs#backup" className="text-brand-400 hover:text-brand-300">Backup docs</Link>.
+        Panel database only; excludes VPS files, apps, and volumes. Consistent snapshots are pending, so these file copies are not guaranteed recovery points. Restore is maintenance-only and unavailable here until safe restore is implemented. See <Link href="/docs#backup" className="text-brand-400 hover:text-brand-300">Backup docs</Link>.
+        {safeMode && <p className="mt-2 text-amber-300">Safe Mode is on: deletion is locked. You can still create a panel checkpoint.</p>}
       </div>
 
       {/* Alerts */}
@@ -141,8 +141,8 @@ export default function BackupPage() {
         <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-12 text-center">
           <HardDrive className="h-10 w-10 text-gray-500 mx-auto mb-3" />
           <p className="text-gray-400 mb-2">No backups yet</p>
-          <p className="text-sm text-gray-500 mb-4">Create your first backup to protect your data.</p>
-          <Button variant="primary" size="sm" onClick={handleCreate} loading={creating}>
+          <p className="text-sm text-gray-500 mb-4">Create a copy of the panel database.</p>
+          <Button variant="primary" size="sm" onClick={handleCreate} loading={creating} disabled={!!deleting}>
             <Plus className="h-4 w-4 mr-1" /> Create First Backup
           </Button>
         </div>
@@ -169,10 +169,10 @@ export default function BackupPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end">
-                      <Button variant="secondary" size="sm" onClick={() => setConfirmRestore(b.name)}>
+                      <Button variant="secondary" size="sm" disabled title="Maintenance-only: safe restore is not yet implemented">
                         <RotateCw className="h-3.5 w-3.5 mr-1" /> Restore
                       </Button>
-                      <Button variant="danger" size="sm" onClick={() => setConfirmDelete(b.name)}>
+                      <Button variant="danger" size="sm" disabled={safeMode || creating || !!deleting} loading={deleting === b.name} aria-label={`Delete ${b.name}`} title={safeMode ? "Turn off Safe Mode to delete this checkpoint" : "Permanently delete this panel checkpoint"} onClick={() => setConfirmDelete(b.name)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -186,21 +186,14 @@ export default function BackupPage() {
 
       {/* Confirm Dialogs */}
       <ConfirmDialog
-        open={!!confirmRestore}
-        title="Restore Backup"
-        message={`Are you sure you want to restore from "${confirmRestore}"? A pre-restore backup will be created automatically.`}
-        confirmLabel="Restore"
-        onConfirm={() => confirmRestore && handleRestore(confirmRestore)}
-        onCancel={() => setConfirmRestore(null)}
-      />
-      <ConfirmDialog
-        open={!!confirmDelete}
+        open={!!confirmDelete && !safeMode}
         title="Delete Backup"
-        message={`Are you sure you want to permanently delete "${confirmDelete}"?`}
+        message={`Permanently delete panel database checkpoint "${confirmDelete}"? This removes this recovery file and cannot be undone. It does not delete the live panel database or any VPS/app files.`}
         confirmLabel="Delete"
         variant="danger"
+        loading={!!deleting}
         onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
-        onCancel={() => setConfirmDelete(null)}
+        onCancel={() => { if (!busy.current) setConfirmDelete(null); }}
       />
     </div>
     </PermissionGate>

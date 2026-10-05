@@ -12,14 +12,27 @@ import { validateRepoUrl, validateBranch, validatePath } from "@/lib/validation"
 import { sanitizeLogs } from "@/lib/sanitize";
 import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
+
 export const dynamic = "force-dynamic";
 
 /**
  * Fetch recent deployments list.
  * Exported so the SSE stream endpoint can reuse this.
  */
-export async function getDeployments(): Promise<DeploymentInfo[]> {
+export async function getDeployments(session: NonNullable<Awaited<ReturnType<typeof getSession>>>): Promise<DeploymentInfo[]> {
+  const serverScope = await scopedServerWhere(session.sub as string, session.role as string);
+  const localAllowed = await canAccessServer(session.sub as string, session.role as string, "local");
   const logs = await prisma.deploymentLog.findMany({
+    where: {
+      OR: [
+        { serverId: serverScope.id ?? { not: "local" } },
+        ...(localAllowed ? [{ serverId: null }, { serverId: "local" }] : []),
+      ],
+    },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -46,8 +59,10 @@ export async function GET(): Promise<
   NextResponse<ApiResponse<DeploymentInfo[]>>
 > {
   try {
-    const data = await getDeployments();
-    return NextResponse.json({ success: true, data });
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const data = await getDeployments(session);
+    return NextResponse.json({ success: true, data }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to list deployments";
@@ -71,8 +86,22 @@ export async function POST(
   let projectDir: string | null = null;
 
   try {
-    const body = (await request.json()) as DeployInput;
-    const { repoUrl, branch = "main", domain, serverId, customPath, envVars } = body;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!can(session.role as string, "OPERATOR")) return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    const body = (await request.json()) as DeployInput & { safeModeOff?: boolean };
+    const targetId = body.serverId ?? "local";
+    if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
+    const { repoUrl, branch = "main", domain, customPath, envVars } = body;
+    const serverId = targetId === "local" ? undefined : targetId;
+    if (serverId) {
+      const safetyBlock = requireSafeModeOff("deploy_git", body);
+      if (safetyBlock) return safetyBlock;
+    }
 
     // ── Validate inputs at API boundary ──
     const urlCheck = validateRepoUrl(repoUrl);
@@ -281,8 +310,8 @@ export async function POST(
     // Clean up the cloned directory (detection is done, no need to keep it)
     if (projectDir) {
       cleanupDeployDir(projectDir);
+      // Only prune after authorized local analysis, never on denied requests.
+      pruneOldDeployments();
     }
-    // Prune any leftover old deployment dirs
-    pruneOldDeployments();
   }
 }

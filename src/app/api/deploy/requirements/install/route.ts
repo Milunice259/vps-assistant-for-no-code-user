@@ -6,6 +6,10 @@ import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
 
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { canAccessServer } from "@/lib/server-access";
+
 export const dynamic = "force-dynamic";
 
 type PackageId = "git" | "docker-compose-plugin";
@@ -23,16 +27,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
   let ssh: Awaited<ReturnType<typeof connectToServer>>["ssh"] | null = null;
 
   try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!can(session.role as string, "OPERATOR")) return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     const body = await request.json() as { packageId?: PackageId; serverId?: string; safeModeOff?: boolean };
+    const targetId = body.serverId ?? "local";
+    if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
     const item = body.packageId ? packages[body.packageId] : null;
     if (!item) return NextResponse.json({ success: false, error: "Unsupported package" }, { status: 400 });
     const safetyBlock = requireSafeModeOff("deploy_requirement_install", body);
     if (safetyBlock) return safetyBlock;
 
     const command = `sudo sh -lc '${item.command.replace(/'/g, "'\\''")}'`;
-    const output = body.serverId
+    const output = targetId !== "local"
       ? await (async () => {
-          const conn = await connectToServer(body.serverId as string);
+          const conn = await connectToServer(targetId);
           ssh = conn.ssh;
           return executeCommand(ssh, command, 120_000);
         })()
@@ -41,8 +54,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     await prisma.auditLog.create({
       data: {
         action: "deploy_requirement_install",
-        username: "system",
-        target: body.serverId || "local",
+        userId: session.sub as string,
+        username: session.username as string,
+        target: targetId,
         details: JSON.stringify({ packageId: body.packageId, label: item.label }),
       },
     }).catch(() => {});

@@ -119,7 +119,11 @@ export async function remoteDeployViaSSH(
     if (envVarsDecrypted) {
       logs.push(`[4/5] Writing environment variables to .env...`);
       const envBase64 = Buffer.from(envVarsDecrypted).toString("base64");
-      await executeCommand(ssh, `echo "${envBase64}" | base64 -d > "${safePath}/.env"`, 10_000);
+      try {
+        await executeCommand(ssh, `echo "${envBase64}" | base64 -d > "${safePath}/.env"`, 10_000);
+      } catch {
+        throw new Error("Failed to write environment file.");
+      }
       logs.push("Environment file written.");
     } else {
       logs.push(`[4/5] No environment variables to write — skipped.`);

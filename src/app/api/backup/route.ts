@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from "fs";
 import { join, resolve, basename } from "path";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 
 // ── Rate limiter (5 operations per 60s per IP) ──
 const rateLimitMap = new Map<string, { count: number; firstAttempt: number }>();
@@ -38,8 +39,8 @@ if (typeof _backupCleanup === "object" && _backupCleanup && "unref" in _backupCl
 /**
  * Validate a backup filename — must be a plain .db filename with no path traversal.
  */
-function isValidBackupName(name: string | null | undefined): name is string {
-  if (!name || !name.endsWith(".db")) return false;
+function isValidBackupName(name: unknown): name is string {
+  if (typeof name !== "string" || !name.endsWith(".db")) return false;
   // Must be a bare filename — no directory separators or traversal
   if (name !== basename(name)) return false;
   if (name.includes("..")) return false;
@@ -86,6 +87,23 @@ export async function GET() {
 // ── POST — Create a new backup ──
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const { action } = body;
+    if (action === "restore") {
+      const safetyError = requireSafeModeOff("backup_restore", body);
+      if (safetyError) return safetyError;
+      // ponytail: fail closed until DATA-01 provides a quiesced, consistent restore.
+      return NextResponse.json({
+        success: false,
+        error: "Restore is maintenance-only and unavailable in the panel until a consistent, integrity-checked restore is implemented.",
+      }, { status: 503 });
+    }
+    if (action !== undefined && action !== "create") {
+      return NextResponse.json({ success: false, error: "Invalid backup action" }, { status: 400 });
+    }
     const ip = getClientIp(request);
     if (isRateLimited(ip)) {
       return NextResponse.json(
@@ -93,44 +111,6 @@ export async function POST(request: NextRequest) {
         { status: 429 }
       );
     }
-
-    const body = await request.json().catch(() => ({}));
-    const { action } = body as { action?: string };
-
-    if (action === "restore") {
-      // Restore from a backup
-      const { name } = body as { name: string };
-      if (!isValidBackupName(name)) {
-        return NextResponse.json(
-          { success: false, error: "Invalid backup name" },
-          { status: 400 }
-        );
-      }
-
-      const backupPath = join(BACKUP_DIR, name);
-      if (!existsSync(backupPath)) {
-        return NextResponse.json(
-          { success: false, error: "Backup not found" },
-          { status: 404 }
-        );
-      }
-
-      // Create a pre-restore backup first
-      ensureBackupDir();
-      const preRestoreFile = `pre-restore_${new Date().toISOString().replace(/[:.]/g, "-")}.db`;
-      copyFileSync(DB_PATH, join(BACKUP_DIR, preRestoreFile));
-
-      // Restore
-      copyFileSync(backupPath, DB_PATH);
-
-      auditLog({ action: "backup_restore", details: `Restored from ${name}`, ip }).catch(() => {});
-
-      return NextResponse.json({
-        success: true,
-        message: `Restored from ${name}. Pre-restore backup saved as ${preRestoreFile}.`,
-      });
-    }
-
     // Default: create backup
     ensureBackupDir();
 
@@ -169,6 +149,10 @@ export async function POST(request: NextRequest) {
 // ── DELETE — Remove a backup ──
 export async function DELETE(request: NextRequest) {
   try {
+    const safetyError = requireSafeModeOff("backup_delete", {
+      safeModeOff: request.headers.get("X-Safe-Mode-Off") === "true",
+    });
+    if (safetyError) return safetyError;
     const { searchParams } = new URL(request.url);
     const name = searchParams.get("name");
 

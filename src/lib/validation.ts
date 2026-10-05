@@ -115,7 +115,8 @@ export function validateEnvKey(key: string): ValidationResult {
 
 const DANGEROUS_VALUE_CHARS = /[$`|&;\n\r]/;
 
-export function validateEnvValue(value: string): ValidationResult {
+export function validateEnvValue(value: unknown): ValidationResult {
+  if (typeof value !== "string" || value.includes("\0")) return fail("Env value must be a string without NUL characters");
   if (DANGEROUS_VALUE_CHARS.test(value))
     return fail("Env value contains forbidden characters ($, `, |, &, ;, newlines)");
   return ok();
@@ -204,20 +205,28 @@ const COMPOSE_ALLOWED_SERVICE_KEYS = new Set([
 ]);
 
 export function validateComposeObject(parsed: unknown): ValidationResult {
-  if (!parsed || typeof parsed !== "object") return fail("Invalid compose content");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fail("Invalid compose content");
   const doc = parsed as Record<string, unknown>;
 
   // Must have services
-  if (!doc.services || typeof doc.services !== "object")
+  if (!doc.services || typeof doc.services !== "object" || Array.isArray(doc.services) || !Object.keys(doc.services).length)
     return fail("Compose file must contain a 'services' key");
 
   const services = doc.services as Record<string, unknown>;
 
   for (const [svcName, svcDef] of Object.entries(services)) {
-    if (!svcDef || typeof svcDef !== "object")
+    if (!svcDef || typeof svcDef !== "object" || Array.isArray(svcDef))
       return fail(`Service '${svcName}' is invalid`);
 
     const svc = svcDef as Record<string, unknown>;
+    for (const key of ["image", "restart", "container_name", "working_dir"]) {
+      if (svc[key] !== undefined && (typeof svc[key] !== "string" || !svc[key]))
+        return fail(`Service '${svcName}': '${key}' must be a nonempty string`);
+    }
+    for (const key of ["stdin_open", "tty"]) {
+      if (svc[key] !== undefined && typeof svc[key] !== "boolean")
+        return fail(`Service '${svcName}': '${key}' must be a boolean`);
+    }
 
     // Check dangerous keys
     for (const key of COMPOSE_DANGEROUS_KEYS) {
@@ -231,14 +240,45 @@ export function validateComposeObject(parsed: unknown): ValidationResult {
       }
     }
 
-    // Check for root volume mounts
+    if (svc.ports !== undefined && !Array.isArray(svc.ports))
+      return fail(`Service '${svcName}': ports must be an array of port mappings`);
+    if (Array.isArray(svc.ports)) {
+      for (const port of svc.ports) {
+        if (typeof port === "string" && port) continue;
+        if (typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535) continue;
+        if (port && typeof port === "object" && !Array.isArray(port)) {
+          const mapping = port as Record<string, unknown>;
+          if (typeof mapping.target === "number" && Number.isInteger(mapping.target) && mapping.target > 0 && mapping.target <= 65535 &&
+              (mapping.published === undefined || typeof mapping.published === "string" || typeof mapping.published === "number") &&
+              (mapping.host_ip === undefined || typeof mapping.host_ip === "string") &&
+              (mapping.protocol === undefined || ["tcp", "udp"].includes(String(mapping.protocol)))) continue;
+        }
+        return fail(`Service '${svcName}': invalid port mapping`);
+      }
+    }
+
+    if (svc.volumes !== undefined && !Array.isArray(svc.volumes))
+      return fail(`Service '${svcName}': volumes must be an array`);
     if (Array.isArray(svc.volumes)) {
       for (const vol of svc.volumes) {
-        if (typeof vol === "string") {
-          const hostPart = vol.split(":")[0];
-          if (hostPart === "/" || hostPart === "//" || hostPart?.includes(".."))
-            return fail(`Service '${svcName}': mounting '/' or '..' in volumes is forbidden`);
+        let source: unknown;
+        if (typeof vol === "string" && vol) {
+          source = vol.split(":")[0];
+          if (source === "") return fail(`Service '${svcName}': invalid volume source`);
+        } else if (vol && typeof vol === "object" && !Array.isArray(vol)) {
+          const mapping = vol as Record<string, unknown>;
+          if (typeof mapping.type !== "string" || !["bind", "volume", "tmpfs", "image", "npipe", "cluster"].includes(mapping.type) ||
+              typeof mapping.target !== "string" || !mapping.target.startsWith("/") ||
+              (mapping.source !== undefined && (typeof mapping.source !== "string" || !mapping.source)) ||
+              (mapping.type === "bind" && (typeof mapping.source !== "string" || !mapping.source)))
+            return fail(`Service '${svcName}': invalid volume mapping`);
+          source = mapping.source;
+        } else {
+          return fail(`Service '${svcName}': invalid volume mapping`);
         }
+        if (typeof source === "string" && (source.includes("\0") || source.includes("..") ||
+            (source.startsWith("/") && source.split("/").every((part) => !part || part === "."))))
+          return fail(`Service '${svcName}': mounting '/' or '..' in volumes is forbidden`);
       }
     }
 

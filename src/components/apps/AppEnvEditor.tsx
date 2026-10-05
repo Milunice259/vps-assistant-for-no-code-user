@@ -23,6 +23,7 @@ import {
   Power,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import type { ApiResponse } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -49,7 +50,8 @@ type ActionStep = "idle" | "working" | "done" | "error";
 
 // ─── Component ────────────────────────────────────────────────────────────
 
-export function AppEnvEditor({ appId }: { appId: string }) {
+export function AppEnvEditor({ appId, appName = appId }: { appId: string; appName?: string }) {
+  const { safeMode } = useSafeMode();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,17 +124,19 @@ export function AppEnvEditor({ appId }: { appId: string }) {
   // ── Profile CRUD ──
 
   const handleCreateProfile = async () => {
+    if (safeMode || actionStep === "working") return;
     if (!newProfileName.trim()) return;
+    if (!confirm(`Create profile "${newProfileName.trim()}" for ${appName}?\n\nCreates an empty saved override profile only. The running container will not change until you apply it.`)) return;
     setActionStep("working");
     setActionMessage("Creating profile…");
     try {
       const res = await fetch(`/api/apps/${appId}/env/profiles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newProfileName.trim(), vars: {} }),
+        body: JSON.stringify({ name: newProfileName.trim(), vars: {}, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || !json.success) {
         setActionStep("error");
         setActionError(json.error);
         return;
@@ -149,21 +153,23 @@ export function AppEnvEditor({ appId }: { appId: string }) {
     }
   };
 
-  const handleSaveProfile = async () => {
-    if (!editingProfile) return;
+  const handleSaveProfile = async (confirmed = false) => {
+    if (safeMode || actionStep === "working" || !editingProfile) return false;
 
     // Validate
     const emptyKeys = editEntries.filter((e) => e.key.trim() === "");
     if (emptyKeys.length > 0) {
       setActionError("Some variables have empty names.");
-      return;
+      return false;
     }
     const keys = editEntries.map((e) => e.key.trim());
     const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
     if (dupes.length > 0) {
       setActionError(`Duplicate variable: ${dupes[0]}`);
-      return;
+      return false;
     }
+
+    if (!confirmed && !confirm(`Save profile "${editingProfile.name}" for ${appName}?\n\nReplaces the saved overrides; omitted keys, including stored secrets, will be removed. Hidden values kept under the same key stay unchanged. The running container will not change until you apply the profile.`)) return false;
 
     setActionStep("working");
     setActionMessage("Saving profile…");
@@ -180,27 +186,32 @@ export function AppEnvEditor({ appId }: { appId: string }) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vars }),
+          body: JSON.stringify({ vars, safeModeOff: !safeMode }),
         }
       );
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || !json.success || !json.data) {
         setActionStep("error");
-        setActionError(json.error);
-        return;
+        setActionError(json.error || "Failed to save profile");
+        return false;
       }
+      setEditingProfile(json.data);
+      setEditEntries(Object.entries(json.data.vars as Record<string, string>).map(([key, value]) => ({ key, value })));
       setEditDirty(false);
       setActionStep("done");
       setActionMessage("Profile saved!");
       await fetchEnv();
-      setTimeout(() => setActionStep("idle"), 2000);
+      return true;
     } catch {
       setActionStep("error");
       setActionError("Failed to save");
+      return false;
     }
   };
 
   const handleDeleteProfile = async (profile: ProfileInfo) => {
+    if (safeMode || actionStep === "working") return;
+    if (!confirm(`Delete profile "${profile.name}" for ${appName}?\n\n${profile.isActive ? "This profile is active. The container will be recreated without its overrides, causing downtime; data in its writable layer may be lost." : "Removes the saved overrides. The running container will not change."}`)) return;
     setActionStep("working");
     setActionMessage(
       profile.isActive
@@ -211,10 +222,10 @@ export function AppEnvEditor({ appId }: { appId: string }) {
     try {
       const res = await fetch(
         `/api/apps/${appId}/env/profiles/${profile.id}`,
-        { method: "DELETE" }
+        { method: "DELETE", headers: { "X-Safe-Mode-Off": "true" } }
       );
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || !json.success) {
         setActionStep("error");
         setActionError(json.error);
         return;
@@ -237,7 +248,11 @@ export function AppEnvEditor({ appId }: { appId: string }) {
     }
   };
 
-  const handleApplyProfile = async (profileId: string) => {
+  const handleApplyProfile = async (profileId: string, saveFirst = false) => {
+    if (safeMode || actionStep === "working") return;
+    const profile = profiles.find((item) => item.id === profileId);
+    if (!profile || !confirm(`${saveFirst && editDirty ? "Save and apply" : "Apply"} profile "${profile.name}" to ${appName}?\n\n${saveFirst && editDirty ? "Replaces the saved overrides; omitted keys, including stored secrets, will be removed. Hidden values kept under the same key stay unchanged. " : ""}Recreates the container with these overrides. The app will be briefly unavailable; data in its writable layer may be lost.`)) return;
+    if (saveFirst && editDirty && !(await handleSaveProfile(true))) return;
     setActionStep("working");
     setActionMessage("Applying profile… Recreating container with merged env.");
     setActionError(null);
@@ -245,10 +260,10 @@ export function AppEnvEditor({ appId }: { appId: string }) {
       const res = await fetch(`/api/apps/${appId}/env/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
+        body: JSON.stringify({ profileId, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || !json.success) {
         setActionStep("error");
         setActionError(json.error);
         return;
@@ -266,6 +281,8 @@ export function AppEnvEditor({ appId }: { appId: string }) {
   };
 
   const handleDeactivate = async () => {
+    if (safeMode || actionStep === "working" || !activeProfile) return;
+    if (!confirm(`Revert profile "${activeProfile.name}" on ${appName}?\n\nRecreates the container without this profile's overrides. The app will be briefly unavailable; data in its writable layer may be lost.`)) return;
     setActionStep("working");
     setActionMessage("Deactivating profile… Reverting container to original env.");
     setActionError(null);
@@ -273,10 +290,10 @@ export function AppEnvEditor({ appId }: { appId: string }) {
       const res = await fetch(`/api/apps/${appId}/env/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: null }),
+        body: JSON.stringify({ profileId: null, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || !json.success) {
         setActionStep("error");
         setActionError(json.error);
         return;
@@ -477,7 +494,7 @@ export function AppEnvEditor({ appId }: { appId: string }) {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-brand-400/60 uppercase tracking-wider">Editable</span>
+          <span className="text-[10px] text-brand-400/60 uppercase tracking-wider">{safeMode ? "Read-only" : "Editable"}</span>
         </button>
 
         {profilesExpanded && (
@@ -491,7 +508,7 @@ export function AppEnvEditor({ appId }: { appId: string }) {
             {profiles.length === 0 && !showCreateForm ? (
               <div className="text-center py-6 space-y-3">
                 <div className="text-gray-500 text-sm">No profiles yet.</div>
-                <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(true)}>
+                <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(true)} disabled={safeMode || actionStep === "working"}>
                   <Plus className="h-4 w-4 mr-1" /> Create first profile
                 </Button>
               </div>
@@ -524,15 +541,16 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openProfileEditor(profile)}
+                          disabled={actionStep === "working"}
                           className="text-xs text-gray-500 hover:text-brand-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors"
                         >
-                          Edit
+                          {safeMode ? "View" : "Edit"}
                         </button>
                         {!profile.isActive ? (
                           <button
                             onClick={() => handleApplyProfile(profile.id)}
                             className="text-xs text-gray-500 hover:text-emerald-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
-                            disabled={actionStep === "working"}
+                            disabled={safeMode || actionStep === "working"}
                           >
                             <Play className="h-3 w-3" /> Apply
                           </button>
@@ -540,15 +558,16 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                           <button
                             onClick={handleDeactivate}
                             className="text-xs text-gray-500 hover:text-amber-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
-                            disabled={actionStep === "working"}
+                            disabled={safeMode || actionStep === "working"}
                           >
                             <Power className="h-3 w-3" /> Revert
                           </button>
                         )}
                         <button
                           onClick={() => handleDeleteProfile(profile)}
+                          aria-label={`Delete profile ${profile.name}`}
                           className="text-xs text-gray-500 hover:text-red-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                          disabled={actionStep === "working"}
+                          disabled={safeMode || actionStep === "working"}
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -561,6 +580,7 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                 {!showCreateForm ? (
                   <button
                     onClick={() => setShowCreateForm(true)}
+                    disabled={safeMode || actionStep === "working"}
                     className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-400 py-1 transition-colors"
                   >
                     <Plus className="h-3.5 w-3.5" /> New profile
@@ -571,12 +591,13 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                       type="text"
                       placeholder="Profile name (e.g. Debug, Staging)"
                       value={newProfileName}
+                      disabled={safeMode || actionStep === "working"}
                       onChange={(e) => setNewProfileName(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleCreateProfile()}
                       className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
                       autoFocus
                     />
-                    <Button variant="primary" size="sm" onClick={handleCreateProfile} disabled={!newProfileName.trim()}>
+                    <Button variant="primary" size="sm" onClick={handleCreateProfile} disabled={safeMode || actionStep === "working" || !newProfileName.trim()}>
                       Create
                     </Button>
                     <button onClick={() => { setShowCreateForm(false); setNewProfileName(""); }} className="text-gray-500 hover:text-gray-300 p-1">
@@ -592,7 +613,7 @@ export function AppEnvEditor({ appId }: { appId: string }) {
               <div className="border-t border-gray-800 pt-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium text-white flex items-center gap-2">
-                    Editing: <span className="text-brand-400">{editingProfile.name}</span>
+                    {safeMode ? "Viewing:" : "Editing:"} <span className="text-brand-400">{editingProfile.name}</span>
                     {editDirty && <span className="text-[9px] bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded">unsaved</span>}
                   </h4>
                   <div className="flex items-center gap-2">
@@ -614,9 +635,11 @@ export function AppEnvEditor({ appId }: { appId: string }) {
 
                 <p className="text-xs text-gray-600">
                   Only add variables you want to override. Missing variables will use the original runtime values.
+                  {" "}Hidden values stay unchanged unless replaced.
                 </p>
 
                 {/* Key-Value Editor */}
+                <fieldset disabled={safeMode || actionStep === "working"} className="space-y-3 disabled:opacity-60">
                 <div className="space-y-2">
                   {editEntries.map((entry, i) => (
                     <div key={i} className="flex gap-2 items-center group">
@@ -651,6 +674,7 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                         </span>
                       )}
                       <button
+                        aria-label={`Remove variable ${entry.key || i + 1}`}
                         onClick={() => {
                           setEditEntries((prev) => prev.filter((_, idx) => idx !== i));
                           setEditDirty(true);
@@ -685,8 +709,8 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleSaveProfile}
-                    disabled={!editDirty || actionStep === "working"}
+                    onClick={() => handleSaveProfile()}
+                    disabled={safeMode || !editDirty || actionStep === "working"}
                   >
                     <Save className="h-4 w-4 mr-1" /> Save
                   </Button>
@@ -694,16 +718,14 @@ export function AppEnvEditor({ appId }: { appId: string }) {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={async () => {
-                        if (editDirty) await handleSaveProfile();
-                        handleApplyProfile(editingProfile.id);
-                      }}
-                      disabled={actionStep === "working"}
+                      onClick={() => handleApplyProfile(editingProfile.id, true)}
+                      disabled={safeMode || actionStep === "working"}
                     >
                       <Play className="h-4 w-4 mr-1" /> Save & Apply
                     </Button>
                   )}
                 </div>
+                </fieldset>
               </div>
             )}
           </div>

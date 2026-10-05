@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import type { AppDetailInfo, UpdateAppInput, ApiResponse } from "@/types";
 
 interface AppSettingsProps {
@@ -18,6 +19,7 @@ const RESTART_POLICIES = [
 ];
 
 export function AppSettings({ app, onSaved }: AppSettingsProps) {
+  const { safeMode } = useSafeMode();
   const [form, setForm] = useState<UpdateAppInput>({
     name: app.name,
     domain: app.domain || "",
@@ -37,6 +39,8 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
   }
 
   async function handleSave() {
+    if (safeMode || saving) return;
+    if (!confirm(`Save settings for ${app.name} on ${app.serverName}?\n\nUpdates the panel's saved configuration. Resource limit changes need a separate container recreation to take effect.`)) return;
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -53,11 +57,11 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
       const res = await fetch(`/api/apps/${app.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, safeModeOff: !safeMode }),
       });
 
       const json: ApiResponse<AppDetailInfo> = await res.json();
-      if (json.success) {
+      if (res.ok && json.success) {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
         onSaved();
@@ -85,6 +89,7 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
       )}
 
       {/* General */}
+      <fieldset disabled={safeMode || saving} className="space-y-6 disabled:opacity-60">
       <section>
         <h3 className="text-sm font-medium text-gray-300 mb-1">General</h3>
         <p className="text-xs text-gray-500 mb-3">Basic identification for this application.</p>
@@ -224,13 +229,14 @@ export function AppSettings({ app, onSaved }: AppSettingsProps) {
 
       {/* Save */}
       <div className="pt-2">
-        <Button variant="primary" loading={saving} onClick={handleSave}>
+        <Button variant="primary" loading={saving} disabled={safeMode || saving} onClick={handleSave}>
           <Save className="h-4 w-4 mr-1" /> Save Settings
         </Button>
         <p className="text-xs text-gray-600 mt-2">
           Resource limit changes require container recreate to take effect.
         </p>
       </div>
+      </fieldset>
     </div>
   );
 }

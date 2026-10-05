@@ -7,7 +7,10 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 import { getSecuritySettings } from "./security-settings";
+import { prisma } from "./db";
+import { ADVANCED_COOKIE } from "./operation-safety";
 
 const SESSION_COOKIE = "vps-session";
 const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
@@ -37,7 +40,8 @@ export async function verifyPassword(
 export interface SessionPayload extends JWTPayload {
   sub: string; // userId
   username: string;
-  role: string; // "ADMIN" | "OPERATOR" | "VIEWER"
+  role: string; // Current DB role, not the potentially stale JWT role
+  forceLogoutVersion: number;
 }
 
 export async function createSessionToken(
@@ -49,6 +53,7 @@ export async function createSessionToken(
   const { forceLogoutVersion } = await getSecuritySettings();
   return new SignJWT({ sub: userId, username, role, forceLogoutVersion })
     .setProtectedHeader({ alg: "HS256" })
+    .setJti(randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${maxAgeSeconds}s`)
     .sign(getJwtSecret());
@@ -58,10 +63,18 @@ export async function verifySessionToken(
   token: string
 ): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
+    const { payload } = await jwtVerify(token, getJwtSecret(), { algorithms: ["HS256"] });
+    // Advanced grants share the signing key, never the login token purpose.
+    if (payload.aud || typeof payload.sub !== "string" || typeof payload.iat !== "number" || typeof payload.exp !== "number") return null;
     const { forceLogoutVersion } = await getSecuritySettings();
-    if (Number(payload.forceLogoutVersion ?? 0) < forceLogoutVersion) return null;
-    return payload as SessionPayload;
+    const sessionVersion = Number(payload.forceLogoutVersion ?? 0);
+    if (!Number.isSafeInteger(sessionVersion) || sessionVersion !== forceLogoutVersion) return null;
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { username: true, role: true, isActive: true },
+    });
+    if (!user?.isActive) return null;
+    return { ...payload, sub: payload.sub, username: user.username, role: user.role, forceLogoutVersion: sessionVersion };
   } catch {
     return null;
   }
@@ -98,6 +111,7 @@ export async function refreshSessionIfNeeded(): Promise<string | null> {
 
 export async function setSessionCookie(token: string, maxAgeSeconds: number = SESSION_MAX_AGE): Promise<void> {
   const cookieStore = await cookies();
+  cookieStore.delete(ADVANCED_COOKIE);
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -110,4 +124,5 @@ export async function setSessionCookie(token: string, maxAgeSeconds: number = SE
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(ADVANCED_COOKIE);
 }

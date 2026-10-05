@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Rocket, Monitor, Server, HelpCircle, FolderSearch, CheckCircle, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { FileBrowser } from "@/components/ui/FileBrowser";
@@ -34,6 +35,7 @@ function Tip({ text }: { text: string }) {
 }
 
 export function DeployForm() {
+  const { safeMode } = useSafeMode();
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [domain, setDomain] = useState("");
@@ -88,12 +90,18 @@ export function DeployForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || (deployTarget === "remote" && (safeMode || !selectedServerId))) return;
+    if (deployTarget === "remote") {
+      const server = servers.find((item) => item.id === selectedServerId);
+      if (!window.confirm(`Deploy ${repoUrl} (${branch || "main"}) to ${server?.name || selectedServerId} (${server?.host || selectedServerId}) at ${customPath || "the deploy path"}? This writes project files and creates or updates containers and published ports.`)) return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const body: Record<string, string> = {
+      const body: Record<string, string | boolean> = {
+        safeModeOff: !safeMode,
         repoUrl,
         branch: branch || "main",
       };
@@ -144,7 +152,10 @@ export function DeployForm() {
         </div>
       </div>
 
-      <DeployRequirementBanner mode="git" serverId={deployTarget === "remote" ? selectedServerId : undefined} />
+      {(deployTarget === "local" || selectedServerId) && (
+        <DeployRequirementBanner key={deployTarget === "local" ? "local" : selectedServerId} mode="git" serverId={deployTarget === "local" ? "local" : selectedServerId} />
+      )}
+      {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Package installation is locked; requirement checks, pre-flight and local repository analysis remain available.</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -346,8 +357,9 @@ export function DeployForm() {
         )}
       </div>
 
+        {safeMode && deployTarget === "remote" && <p role="status" className="text-sm text-amber-400">Turn Safe Mode off to deploy on the selected remote server.</p>}
         <div className="flex justify-end">
-          <Button type="submit" loading={loading}>
+          <Button type="submit" loading={loading} disabled={loading || (deployTarget === "remote" && (safeMode || !selectedServerId))}>
             <Rocket className="h-4 w-4" />
             Deploy
           </Button>

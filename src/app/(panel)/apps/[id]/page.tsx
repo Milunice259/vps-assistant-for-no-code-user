@@ -27,6 +27,7 @@ import { AppEnvEditor } from "@/components/apps/AppEnvEditor";
 import { AppSettings } from "@/components/apps/AppSettings";
 import { WebTerminal } from "@/components/apps/WebTerminal";
 import { useSSE } from "@/hooks/useSSE";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import type {
   AppDetailInfo,
   ContainerStats,
@@ -141,6 +142,7 @@ interface AppStreamData {
 }
 
 export default function AppDetailPage() {
+  const { safeMode } = useSafeMode();
   const params = useParams();
   const router = useRouter();
   const appId = params.id as string;
@@ -150,6 +152,7 @@ export default function AppDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // SSE for live stats — replaces 10s polling
   const isStatsTab = activeTab === "overview" || activeTab === "resources";
@@ -205,32 +208,57 @@ export default function AppDetailPage() {
   }, [fetchApp]);
 
   async function handleAction(action: string) {
+    if (safeMode || actionLoading || !app) return;
+    const impacts: Record<string, string> = {
+      start: "Start the container and make the app available.",
+      stop: "Stop the container. The app will be unavailable until started again.",
+      restart: "Restart the container. The app will be briefly unavailable.",
+      pull: "Download the configured image. This uses disk space but does not update the running container.",
+      recreate: "Replace the container using saved settings. The app will be unavailable during recreation; data in its writable layer may be lost.",
+    };
+    if (!impacts[action] || !confirm(`${action.toUpperCase()}: ${deriveAppName(app)} on ${app.serverName}\n\n${impacts[action]}`)) return;
     setActionLoading(action);
+    setActionError(null);
     try {
       const res = await fetch(`/api/apps/${appId}/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, safeModeOff: !safeMode }),
       });
       const json: ApiResponse<{ output: string }> = await res.json();
-      if (json.success) {
+      if (res.ok && json.success) {
         // Refresh after action
         setTimeout(() => fetchApp(true, false), 1500);
+      } else {
+        setActionError(json.error || "App action failed");
       }
     } catch {
-      // ignore
+      setActionError("Could not connect to the server");
     } finally {
       setActionLoading(null);
     }
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this application tracking record?")) return;
+    if (safeMode || actionLoading || !app) return;
+    if (!confirm(`Delete tracking for ${deriveAppName(app)} on ${app.serverName}?\n\nRemoves the panel record only. The container will not be stopped or deleted.`)) return;
+    setActionLoading("delete");
+    setActionError(null);
     try {
-      await fetch(`/api/apps/${appId}`, { method: "DELETE" });
+      const res = await fetch(`/api/apps/${appId}`, {
+        method: "DELETE",
+        headers: { "X-Safe-Mode-Off": "true" },
+      });
+      const json: ApiResponse<unknown> = await res.json();
+      if (!res.ok || !json.success) {
+        setActionError(json.error || "Failed to delete tracking record");
+        return;
+      }
       router.push("/apps");
     } catch {
-      // ignore
+      setActionError("Could not connect to the server");
+    } finally {
+      setActionLoading(null);
     }
   }
 
@@ -293,7 +321,7 @@ export default function AppDetailPage() {
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "start"}
-                disabled={!!actionLoading || app.status === "RUNNING"}
+                disabled={safeMode || !!actionLoading || app.status === "RUNNING"}
                 onClick={() => handleAction("start")}
               >
                 <Play className="w-3.5 h-3.5 mr-1" /> Start
@@ -302,7 +330,7 @@ export default function AppDetailPage() {
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "stop"}
-                disabled={!!actionLoading || app.status === "STOPPED"}
+                disabled={safeMode || !!actionLoading || app.status === "STOPPED"}
                 onClick={() => handleAction("stop")}
               >
                 <Square className="w-3.5 h-3.5 mr-1" /> Stop
@@ -311,7 +339,7 @@ export default function AppDetailPage() {
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "restart"}
-                disabled={!!actionLoading}
+                disabled={safeMode || !!actionLoading}
                 onClick={() => handleAction("restart")}
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restart
@@ -321,7 +349,7 @@ export default function AppDetailPage() {
                   variant="ghost"
                   size="sm"
                   loading={actionLoading === "pull"}
-                  disabled={!!actionLoading}
+                  disabled={safeMode || !!actionLoading}
                   onClick={() => handleAction("pull")}
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Pull
@@ -330,7 +358,7 @@ export default function AppDetailPage() {
             </>
           )}
           {!app.id.startsWith("local-service::") && !app.id.startsWith("local::") && (
-            <Button variant="danger" size="sm" onClick={handleDelete}>
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={safeMode || !!actionLoading} loading={actionLoading === "delete"}>
               <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
             </Button>
           )}
@@ -338,6 +366,8 @@ export default function AppDetailPage() {
       </div>
 
       {/* Live Stats Summary */}
+      {safeMode && <p className="text-xs text-amber-300">Safe Mode locks app changes and terminal commands. Turn it off in the header to continue; diagnostics and logs stay available.</p>}
+      {actionError && <p role="alert" className="text-sm text-red-400">{actionError}</p>}
       {liveStats && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
@@ -383,7 +413,7 @@ export default function AppDetailPage() {
       {activeTab === "terminal" && app.containerId && (
         <WebTerminal
           appId={app.id}
-          appName={displayName}
+          appName={`${displayName} on ${app.serverName}`}
           containerId={app.containerId}
           onClose={() => setActiveTab("overview")}
         />
@@ -405,7 +435,7 @@ export default function AppDetailPage() {
           onRefresh={() => fetchApp(true, true)}
         />
       )}
-      {activeTab === "env" && <AppEnvEditor appId={appId} />}
+      {activeTab === "env" && <AppEnvEditor appId={appId} appName={`${displayName} on ${app.serverName}`} />}
       {activeTab === "settings" && (
         <AppSettings app={app} onSaved={() => fetchApp(false, false)} />
       )}

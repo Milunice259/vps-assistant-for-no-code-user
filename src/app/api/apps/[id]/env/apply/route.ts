@@ -1,3 +1,5 @@
+import { decodeProfileVars } from "@/lib/env-profile";
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recreateContainer } from "../profiles/[profileId]/route";
@@ -32,13 +34,18 @@ export async function POST(
 ): Promise<NextResponse<ApiResponse<ApplyResult>>> {
   try {
     const { id: appId } = await context.params;
+    const denied = await authorizeApp(appId, true);
+    if (denied) return denied;
     const body = await request.json();
+    if (body?.safeModeOff !== true) return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
     const { profileId } = body as { profileId: string | null };
 
-    // 1. Get runtime env (original)
-    const runtimeEnv = await getRuntimeEnv(appId);
+    if (profileId !== null && (typeof profileId !== "string" || !profileId)) {
+      return NextResponse.json({ success: false, error: "profileId must be a string or null" }, { status: 400 });
+    }
 
-    if (!profileId) {
+    if (profileId === null) {
+      const runtimeEnv = await getRuntimeEnv(appId);
       // ── Deactivate all profiles → revert to original env ──
       await prisma.envProfile.updateMany({
         where: { appId },
@@ -60,16 +67,17 @@ export async function POST(
 
     // ── Apply a specific profile ──
     const profile = await prisma.envProfile.findUnique({
-      where: { id: profileId },
+      where: { id: profileId, appId },
     });
-    if (!profile) {
+    if (!profile || profile.appId !== appId) {
       return NextResponse.json(
         { success: false, error: "Profile not found" },
         { status: 404 }
       );
     }
 
-    const profileVars: Record<string, string> = JSON.parse(profile.vars || "{}");
+    const profileVars = decodeProfileVars(profile.vars);
+    const runtimeEnv = await getRuntimeEnv(appId);
 
     // Deactivate all, then activate this one
     await prisma.$transaction([
@@ -78,7 +86,7 @@ export async function POST(
         data: { isActive: false },
       }),
       prisma.envProfile.update({
-        where: { id: profileId },
+        where: { id: profileId, appId },
         data: { isActive: true },
       }),
     ]);
@@ -96,8 +104,8 @@ export async function POST(
         mergedCount,
       },
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to apply profile";
+  } catch {
+    const message = "Failed to apply profile";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

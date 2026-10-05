@@ -84,7 +84,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
       const raw = await run(manager === "apt" ? "apt list --installed 2>/dev/null | tail -n +2" : "apk list --installed 2>/dev/null", 120_000);
       let packages = manager === "apt" ? parseAptInstalled(raw) : parseApkInstalled(raw);
       if (request.nextUrl.searchParams.get("check") === "1" && manager === "apt") {
-        try { await run("apt-get update -qq", 180_000); } catch { /* keep stale list */ }
+        // Read the existing index; refresh requires the Advanced Mode POST action.
         try { packages = mergeAptUpgradable(packages, await run("apt list --upgradable 2>/dev/null | tail -n +2", 60_000)); } catch { /* keep installed list */ }
       }
       return NextResponse.json({ success: true, data: packages, packageManager: manager });

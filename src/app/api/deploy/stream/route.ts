@@ -3,6 +3,8 @@
  * Sends full snapshot on connect, then only delta changes every 5s.
  */
 
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { getDeployments } from "@/app/api/deploy/route";
 import { createSSEResponse } from "@/lib/sse-stream";
 import type { DeploymentInfo } from "@/types";
@@ -16,9 +18,18 @@ interface DeployStreamData {
 }
 
 export async function GET() {
-  return createSSEResponse<DeployStreamData>(
-    async () => ({ deployments: await getDeployments() }),
+  const session = await getSession();
+  if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const response = createSSEResponse<DeployStreamData>(
+    async () => {
+      const current = await getSession();
+      // Recheck permissions for every snapshot; never share another user's logs.
+      return { deployments: current?.sub === session.sub ? await getDeployments(current) : [] };
+    },
     5_000,   // check for changes every 5s (deploy status can change fast)
     30_000   // heartbeat every 30s
   );
+  response.headers.set("Cache-Control", "private, no-store, no-transform");
+  response.headers.set("Vary", "Cookie");
+  return response;
 }

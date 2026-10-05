@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
 import { getLocalServerInfo, isLocalServer } from "@/lib/local-server";
 import { getHostStats } from "@/lib/stats";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
@@ -142,8 +144,11 @@ async function getServerRisk(server: ServerInfo): Promise<ServerRisk> {
   }
 }
 
-async function listServers(): Promise<ServerInfo[]> {
+async function listServers(session: NonNullable<Awaited<ReturnType<typeof getSession>>>): Promise<ServerInfo[]> {
+  const where = await scopedServerWhere(session.sub, session.role);
+  const localAllowed = await canAccessServer(session.sub, session.role, "local");
   const rows = await prisma.server.findMany({
+    where,
     select: {
       id: true,
       name: true,
@@ -159,7 +164,7 @@ async function listServers(): Promise<ServerInfo[]> {
   });
 
   return [
-    getLocalServerInfo(),
+    ...(localAllowed ? [getLocalServerInfo()] : []),
     ...rows.map((s) => ({
       id: s.id,
       name: s.name,
@@ -176,9 +181,12 @@ async function listServers(): Promise<ServerInfo[]> {
 
 export async function GET(): Promise<NextResponse<ApiResponse<RiskSummary>>> {
   try {
-    const servers = await listServers();
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const servers = await listServers(session);
+    if (!servers.length) return NextResponse.json({ success: false, error: "No accessible servers" }, { status: 403 });
     const risks = await Promise.all(servers.map((server) => getServerRisk(server)));
-    const score = risks.length > 0 ? Math.round(risks.reduce((sum, item) => sum + item.score, 0) / risks.length) : 100;
+    const score = Math.round(risks.reduce((sum, item) => sum + item.score, 0) / risks.length);
     const alerts = risks.flatMap((server) => server.alerts.map((alert) => ({ ...alert, serverId: server.serverId, serverName: server.serverName })));
 
     return NextResponse.json({
@@ -189,7 +197,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<RiskSummary>>> {
         servers: risks,
         alerts,
       },
-    });
+    }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to calculate server risk";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

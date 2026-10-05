@@ -62,6 +62,7 @@ type ActionTarget =
 
 export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const { safeMode } = useSafeMode();
+  const localBlockReason = serverId === "local" ? "Local blocking unavailable: SSH ports cannot be verified" : undefined;
   const [topology, setTopology] = useState<NetworkTopology | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +262,7 @@ Type ${phrase} to continue.`);
 
   const runFirewallPortAction = async (port: number, protocol: string, mode: "dry-run" | "apply") => {
     if (mode === "apply") {
+      if (localBlockReason) return setActionMessage(localBlockReason);
       if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
       if (!window.confirm(`Block public access to ${protocol.toUpperCase()} :${port}?`)) return;
       if (!requireTypedConfirm(`BLOCK ${port}`, `Blocking ${protocol.toUpperCase()} :${port} changes the real firewall.`)) return;
@@ -513,10 +515,10 @@ Type ${phrase} to continue.`);
                 {finding.port && finding.protocol && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-800 pt-3">
                     <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${finding.port}`} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "dry-run")}>
-                      <Eye className="mr-1 h-3.5 w-3.5" /> Preview fix
+                      <Eye className="mr-1 h-3.5 w-3.5" /> Preview change
                     </Button>
-                    <Button size="sm" variant="danger" loading={actionBusy === `apply-${finding.port}`} disabled={safeMode || finding.port === 22} title={safeMode ? "Safe Mode locks firewall changes" : finding.port === 22 ? "SSH port 22 is protected from map blocking" : undefined} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "apply")}>
-                      <Shield className="mr-1 h-3.5 w-3.5" /> {safeMode ? "Block locked" : "Block public access"}
+                    <Button size="sm" variant="danger" loading={actionBusy === `apply-${finding.port}`} disabled={!!localBlockReason || safeMode || finding.port === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : finding.port === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "apply")}>
+                      <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Block locked" : "Block public access"}
                     </Button>
                   </div>
                 )}
@@ -680,7 +682,7 @@ Type ${phrase} to continue.`);
                 {actionTarget.type === "container"
                   ? "Real Docker controls for this app."
                   : actionTarget.type === "edge"
-                    ? "Connection lines are visual only. Use Preview/Block below for real UFW firewall changes."
+                    ? "Connection lines are visual only. Preview a change before applying firewall rules."
                     : "Review public ports, exposed services, and firewall rules."}
               </p>
             </div>
@@ -729,7 +731,7 @@ Type ${phrase} to continue.`);
                         <div key={`${port.protocol}-${port.localPort}-${port.process}`} className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
                           <span className="px-2 text-xs font-mono text-white">{port.protocol.toUpperCase()} :{port.localPort}</span>
                           <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "dry-run")} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">Preview</button>
-                          <button disabled={actionBusy !== null || safeMode} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={safeMode ? "Safe Mode locks firewall changes" : "Apply block rule"}>Block</button>
+                          <button disabled={!!localBlockReason || actionBusy !== null || safeMode || port.localPort === 22} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : port.localPort === 22 ? "SSH port 22 is protected from map blocking" : "Apply block rule")}>{localBlockReason ? "Block unavailable" : "Block"}</button>
                         </div>
                       );
                     })}
@@ -760,7 +762,7 @@ Type ${phrase} to continue.`);
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h4 className="text-sm font-semibold text-white">Firewall Rules</h4>
-            <p className="text-xs text-gray-500">Preview is safe. Block/Allow changes real UFW rules and is locked by Safe Mode.</p>
+            <p className="text-xs text-gray-500">{localBlockReason || "Preview is safe. Block/Allow changes real UFW rules and is locked by Safe Mode."}</p>
           </div>
           <Button size="sm" variant="ghost" onClick={fetchFirewallRules} disabled={actionBusy !== null}>
             <RefreshCw className="mr-1 h-3.5 w-3.5" /> Refresh
@@ -865,8 +867,8 @@ Type ${phrase} to continue.`);
             <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${selectedPortInfo.localPort}`} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "dry-run")}>
               <Eye className="mr-1 h-3.5 w-3.5" /> Preview firewall change
             </Button>
-            <Button size="sm" variant="danger" loading={actionBusy === `apply-${selectedPortInfo.localPort}`} disabled={safeMode || selectedPortInfo.localPort === 22} title={safeMode ? "Safe Mode locks firewall changes" : selectedPortInfo.localPort === 22 ? "SSH port 22 is protected from map blocking" : undefined} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "apply")}>
-              <Shield className="mr-1 h-3.5 w-3.5" /> {safeMode ? "Block locked" : "Block public access"}
+            <Button size="sm" variant="danger" loading={actionBusy === `apply-${selectedPortInfo.localPort}`} disabled={!!localBlockReason || safeMode || selectedPortInfo.localPort === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : selectedPortInfo.localPort === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "apply")}>
+              <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Block locked" : "Block public access"}
             </Button>
             <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">Learn more →</a>
           </div>

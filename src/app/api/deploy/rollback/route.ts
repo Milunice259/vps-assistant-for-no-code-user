@@ -5,6 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/permissions";
+import { canAccessServer } from "@/lib/server-access";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import { prisma } from "@/lib/db";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
@@ -16,27 +19,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only ADMIN can rollback
-    if (session.role !== "ADMIN") {
+    // Rollback requires an administrator and access to the deployment target.
+    if (!can(session.role, "ADMIN")) {
       return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
     }
 
     const body = await request.json();
     const { deploymentId } = body as { deploymentId: string };
 
-    if (!deploymentId) {
+    if (typeof deploymentId !== "string" || !deploymentId.trim()) {
       return NextResponse.json({ success: false, error: "deploymentId is required" }, { status: 400 });
     }
 
     // Find the deployment to rollback to
     const deployment = await prisma.deploymentLog.findUnique({
       where: { id: deploymentId },
-      include: { server: true },
     });
 
     if (!deployment) {
       return NextResponse.json({ success: false, error: "Deployment not found" }, { status: 404 });
     }
+
+    if (!(await canAccessServer(session.sub as string, session.role as string, deployment.serverId || "local"))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+    const safetyBlock = requireSafeModeOff("deploy_git", body);
+    if (safetyBlock) return safetyBlock;
 
     if (deployment.status !== "RUNNING") {
       return NextResponse.json(

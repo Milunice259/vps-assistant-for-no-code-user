@@ -44,7 +44,7 @@ Use it to answer simple questions quickly:
 | **Guided Fixes** | Safe repair actions for low-risk maintenance such as cache cleanup and old log trimming. |
 | **Apps + Services** | Discover Docker containers and important systemd services such as Traefik, nginx, n8n, Hermes, and more. |
 | **Deployments** | Deploy from Git repositories, Docker images, or compose projects with logs and rollback-oriented flow. |
-| **Backups** | Create and restore panel database snapshots; restore creates a pre-restore backup automatically. |
+| **Backups** | Create panel database file checkpoints. Restore is disabled until consistent snapshots and maintenance recovery are implemented; VPS/apps/volumes are excluded. |
 | **Notifications** | Discord, Slack, Telegram, and Email alert channels with recommended beginner rules. |
 | **Network Map** | Read-only topology/inspection map for domains, proxy, servers, apps, ports, and Docker networks. |
 | **Audit Log** | Track who did what, when, where, and whether it succeeded. |
@@ -58,7 +58,7 @@ Use it to answer simple questions quickly:
 - **Apps** — inspect containers and system services, logs, env tools, health checks.
 - **Deploy** — guided Git, Docker image, and compose deployment.
 - **Network** — read-only topology and traffic-flow visibility; control-plane actions are planned later.
-- **Backup & Restore** — panel database snapshots and safe restore flow.
+- **Backup & Restore** — panel-only file checkpoints; restore is currently unavailable.
 - **Audit Log** — searchable activity history.
 - **Settings** — notifications, alert rules, security settings, and app preferences.
 - **Users** — Owner/Admin account management with role and server-scope boundaries.
@@ -130,7 +130,7 @@ npm run db:studio
 
 - SSH credentials are encrypted before storage.
 - Sensitive values are redacted from logs and API responses where possible.
-- Destructive operations should be guarded by Safe Mode and confirmations.
+- Server mutations require temporary session-bound Advanced Mode, explicit operation acknowledgment and target permissions. Advanced Mode expires within 15 minutes; previews remain read-only.
 - Role boundaries are enforced in middleware/API, not only hidden in UI.
 - Quick Unlock Passcode is hashed, optional, and only unlocks idle lock while the login session is still valid.
 - Audit logging is part of the core product direction.
@@ -162,14 +162,20 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## Roadmap
 
-| Phase | Status | Scope |
-| --- | --- | --- |
-| **Phase 9 — User/Profile/Permission** | Done | Owner/Admin/Manager/Viewer roles, server-scoped access, `/users`, `/profile`, password/email/display name, Quick Unlock Passcode, logout confirmation, and API permission audit. |
-| **Phase 10 — Remote VPS E2E + Production Ops** | Next | Validate a real remote VPS, SSH environment checks, remote Docker/services/logs smoke, remote deploy E2E, backup/rollback runbooks, production readiness, and cleanup. |
-| **Phase 11 — Network Canvas & Network Control Plane** | Planned | Complete interactive network inspection, diagnostics, exposure map, safe firewall/Docker network actions, dry-run/diff, rollback, audit, and remote support. |
-| **Phase 12 — Advanced Ops / Polish** | Planned | Full theme tokens, language/timezone, device/session management, notification preferences, scheduled risk checks, and fleet/mobile polish. |
+The current priority is reliable, understandable operation for non-technical users—not more controls. Existing features are not considered fully accepted until their safety, results and authenticated UI have been verified.
 
-Network Canvas is currently read-only / inspection-oriented. It is not the Phase 10 control plane.
+| Lane | Status | Acceptance target |
+| --- | --- | --- |
+| **SEC-01 — Safety and permissions** | Implemented; release verification | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
+| **TRUST-01 — Truthful capabilities** | Pending | Label repository analysis accurately; disable unsupported rollback; distinguish command completion, verified state and application health. |
+| **DATA-01 — Recoverable panel backups** | Pending | Consistent SQLite snapshots, integrity checks and safe maintenance restore; clearly exclude VPS/app/volume data. |
+| **UX-01 — Simpler screens** | Pending | One clear job per screen; remove duplicate metrics/actions; correct onboarding and current-input preflight; usable touch/keyboard canvas. |
+| **FLOW-01 — Guided operations** | Pending | Safe app restart, bounded disk cleanup and supported deployment flows with impact, confirmation, readback and real recovery where available. |
+| **QA-01 — Release gates** | Required per lane | Regression checks, lint/type/build, independent review, authenticated desktop/mobile interaction and post-deploy readback. Missing verification remains blocked. |
+
+UI/UX review starts before implementation and repeats at every release. Dashboard owns fleet health and next steps; server/app pages own target-specific operations; Network owns inspection and network controls; Settings owns configuration; Docs owns longer help. Reuse one action flow across entry points, disclose advanced detail only when needed, and always distinguish Local from Remote.
+
+Network wires are visual paths, not traffic switches. Some existing network controls change the real firewall; their effective reachability checks and authenticated canvas/mobile acceptance remain part of the roadmap. The stack stays unchanged; broad redesigns, AI automation and a full VPS backup engine are outside this reliability pass.
 
 ## License
 

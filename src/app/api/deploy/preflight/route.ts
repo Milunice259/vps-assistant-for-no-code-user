@@ -6,6 +6,9 @@ import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
 import { validateBranch, validatePath, validateRepoUrl } from "@/lib/validation";
 import type { ApiResponse } from "@/types";
 
+import { getSession } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
+
 export const dynamic = "force-dynamic";
 
 type CheckStatus = "pass" | "warn" | "fail";
@@ -67,9 +70,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
   let ssh: Awaited<ReturnType<typeof connectToServer>>["ssh"] | null = null;
 
   try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const body = await request.json() as { repoUrl?: string; branch?: string; serverId?: string; customPath?: string; domain?: string };
+    const targetId = body.serverId ?? "local";
+    if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
+    if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
+      return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+    }
+
     const branch = body.branch || "main";
-    const target = body.serverId ? "remote" : "local";
+    const target = targetId === "local" ? "local" : "remote";
 
     const repoCheck = validateRepoUrl(body.repoUrl || "");
     checks.push(check("repo", "Repository URL", repoCheck.valid ? "pass" : "fail", repoCheck.valid ? "Repository URL format is valid." : repoCheck.reason));

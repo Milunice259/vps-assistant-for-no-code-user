@@ -15,6 +15,7 @@ import { execOnHost } from "@/lib/local-server";
 import { validateTerminalCommand } from "@/lib/validation";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { requireSafeModeOff } from "@/lib/operation-safety";
 import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -67,12 +68,17 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
-    const { command } = body as { command: string };
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const safetyError = requireSafeModeOff("terminal_execute", body);
+    if (safetyError) return safetyError;
+    const { command } = body;
 
-    if (!command?.trim()) {
+    if (typeof command !== "string" || !command.trim() || command.includes("\0")) {
       return NextResponse.json(
-        { success: false, error: "Command is required" },
+        { success: false, error: "Command must be a nonempty string without NUL characters" },
         { status: 400 }
       );
     }

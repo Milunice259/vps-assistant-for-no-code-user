@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Play, HelpCircle, Monitor, Server } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useSafeMode } from "@/contexts/SafeModeContext";
 import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
 import type { ApiResponse, ServerInfo } from "@/types";
 
@@ -19,8 +20,9 @@ function Tip({ text }: { text: string }) {
 }
 
 export function DockerImageDeploy() {
+  const { safeMode } = useSafeMode();
   const [servers, setServers] = useState<ServerInfo[]>([]);
-  const [serverId, setServerId] = useState("");
+  const [serverId, setServerId] = useState("local");
   const [image, setImage] = useState("");
   const [name, setName] = useState("");
   const [ports, setPorts] = useState(""); // comma-separated like 8080:80,443:443
@@ -37,12 +39,9 @@ export function DockerImageDeploy() {
       const json: ApiResponse<ServerInfo[]> = await res.json();
       if (json.success && json.data) {
         setServers(json.data);
-        if (json.data.length > 0 && !serverId) {
-          setServerId(json.data[0].id);
-        }
       }
     } catch { /* ok */ }
-  }, [serverId]);
+  }, []);
 
   useEffect(() => {
     fetchServers();
@@ -51,7 +50,9 @@ export function DockerImageDeploy() {
   const selectedServer = servers.find((s) => s.id === serverId);
 
   async function handleDeploy() {
-    if (!serverId || !image) return;
+    if (safeMode || deploying || !serverId || !image) return;
+    const targetLabel = serverId === "local" ? "Local server" : `${selectedServer?.name || serverId} (${selectedServer?.host || serverId})`;
+    if (!window.confirm(`Deploy ${image.trim()} to ${targetLabel}? This pulls an image, starts a container and publishes the configured ports (${ports || "none"}).`)) return;
     setDeploying(true);
     setResult(null);
 
@@ -67,6 +68,7 @@ export function DockerImageDeploy() {
         body: JSON.stringify({
           type: "image",
           serverId,
+          safeModeOff: !safeMode,
           image: image.trim(),
           name: name.trim() || undefined,
           ports: portList.length > 0 ? portList : undefined,
@@ -92,7 +94,9 @@ export function DockerImageDeploy() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <DeployRequirementBanner mode="image" serverId={deployTarget === "remote" ? serverId : undefined} />
+      {(deployTarget === "local" || serverId) && (
+        <DeployRequirementBanner key={deployTarget === "local" ? "local" : serverId} mode="image" serverId={deployTarget === "local" ? "local" : serverId} />
+      )}
 
       <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3 text-sm text-gray-300">
         <span className="text-gray-500">Target server:</span>{" "}
@@ -228,7 +232,8 @@ export function DockerImageDeploy() {
         </select>
       </Field>
 
-      <Button variant="primary" loading={deploying} disabled={!serverId || !image} onClick={handleDeploy}>
+      {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Turn it off to deploy containers on the selected server. Requirement checks remain available.</p>}
+      <Button variant="primary" loading={deploying} disabled={safeMode || deploying || !serverId || !image.trim()} onClick={handleDeploy}>
         <Play className="h-4 w-4 mr-1" /> Deploy Image
       </Button>
     </div>

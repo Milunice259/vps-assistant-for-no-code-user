@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clipboard, Loader2, Terminal, Wrench } from "lucide-react";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 
@@ -10,24 +10,29 @@ type CheckState = { loading: boolean; error: string | null; requirements: Requir
 
 const actionClass = "inline-flex items-center gap-1 rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50";
 
-export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; serverId?: string }) {
+export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; serverId: string }) {
   const { safeMode } = useSafeMode();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [state, setState] = useState<CheckState>({ loading: true, error: null, requirements: [], installOutput: null });
   const [installing, setInstalling] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!serverId || !active.current) return;
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const res = await fetch("/api/deploy/requirements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, serverId: serverId === "local" ? undefined : serverId || undefined }),
+        body: JSON.stringify({ mode, serverId }),
       });
       const json = await res.json();
+      if (!active.current) return;
       if (!json.success) throw new Error(json.error || "Requirement check failed");
       setState({ loading: false, error: null, requirements: json.data?.requirements || [], installOutput: null });
     } catch (err) {
+      if (!active.current) return;
       setState({ loading: false, error: err instanceof Error ? err.message : "Requirement check failed", requirements: [], installOutput: null });
     }
   }, [mode, serverId]);
@@ -35,23 +40,25 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
   useEffect(() => { void load(); }, [load]);
 
   async function installPackage(item: Requirement) {
-    if (!item.packageId || safeMode) return;
-    if (!window.confirm(`Install ${item.name} on ${serverId ? "the selected remote server" : "the local server"}?`)) return;
+    if (!serverId || !active.current || !item.packageId || safeMode || installing || state.loading) return;
+    if (!window.confirm(`Install ${item.name} on ${serverId !== "local" ? "the selected remote server" : "the local server"}?`)) return;
     setInstalling(item.packageId);
     try {
       const res = await fetch("/api/deploy/requirements/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packageId: item.packageId, serverId: serverId === "local" ? undefined : serverId || undefined, safeModeOff: !safeMode }),
+        body: JSON.stringify({ packageId: item.packageId, serverId, safeModeOff: !safeMode }),
       });
       const json = await res.json();
+      if (!active.current) return;
       if (!json.success) throw new Error(json.error || "Install failed");
       setState((current) => ({ ...current, installOutput: json.data?.output || `${item.name} installed.` }));
       await load();
     } catch (err) {
+      if (!active.current) return;
       setState((current) => ({ ...current, installOutput: err instanceof Error ? err.message : "Install failed" }));
     } finally {
-      setInstalling(null);
+      if (active.current) setInstalling(null);
     }
   }
 
@@ -59,6 +66,8 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
     await navigator.clipboard.writeText(command);
     setState((current) => ({ ...current, installOutput: "Command copied." }));
   }
+
+  if (!serverId) return null;
 
   const missing = state.requirements.filter((item) => !item.ok);
 
@@ -95,7 +104,7 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
                     {!item.ok && isOpen && (
                       <div className="mt-2 flex flex-wrap gap-2 border-t border-gray-700/70 pt-2">
                         {item.packageId && (
-                          <button type="button" className={actionClass} disabled={safeMode || installing === item.packageId} onClick={() => installPackage(item)} title={safeMode ? "Turn Safe Mode off to install packages" : undefined}>
+                          <button type="button" className={actionClass} disabled={safeMode || installing !== null || state.loading} onClick={() => installPackage(item)} title={safeMode ? "Turn Safe Mode off to install packages" : undefined}>
                             {installing === item.packageId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
                             {safeMode ? "Install locked" : "Install"}
                           </button>
@@ -110,7 +119,7 @@ export function DeployRequirementBanner({ mode, serverId }: { mode: DeployMode; 
                             <Terminal className="h-3.5 w-3.5" /> Terminal locked
                           </button>
                         ) : (
-                          <a href={serverId ? `/servers/${encodeURIComponent(serverId)}` : "/terminal"} className={actionClass}>
+                          <a href={serverId !== "local" ? `/servers/${encodeURIComponent(serverId)}` : "/terminal"} className={actionClass}>
                             <Terminal className="h-3.5 w-3.5" /> Open terminal
                           </a>
                         )}

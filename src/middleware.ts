@@ -8,7 +8,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { verifySessionToken } from "./lib/auth";
+import { canAccessServer } from "./lib/server-access";
+import { ADVANCED_COOKIE, requiresAdvancedAuthorization, verifyAdvancedToken } from "./lib/operation-safety";
 
 const SESSION_COOKIE = "vps-session";
 
@@ -21,7 +23,7 @@ const ROLE_LEVEL = { VIEWER: 0, MANAGER: 1, OPERATOR: 1, ADMIN: 2, OWNER: 3 } as
 type Role = keyof typeof ROLE_LEVEL;
 
 // ── Global API Rate Limiter (in-memory) ──
-const API_RATE_LIMIT = 100;       // ponytail: Edge middleware cannot read DB settings; move rate limiting to Node/API proxy for runtime tuning.
+const API_RATE_LIMIT = 100;       // ponytail: per-process limit; use a shared limiter when running multiple panel instances.
 const API_RATE_WINDOW = 60_000;   // 1 minute window
 
 interface RateEntry {
@@ -64,12 +66,6 @@ function getClientIp(request: NextRequest): string {
   );
 }
 
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET is required");
-  return new TextEncoder().encode(secret);
-}
-
 function withSecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
@@ -82,12 +78,12 @@ function requiredRole(pathname: string, method: string): Role {
   if (!MUTABLE_METHODS.has(method)) return "VIEWER";
   if (pathname.startsWith("/api/auth/") || pathname === "/api/profile") return "VIEWER";
   if (pathname.startsWith("/api/users/") && pathname.endsWith("/passcode")) return "VIEWER";
-  if (pathname.startsWith("/api/users") || pathname === "/api/backup") return "ADMIN";
+  if (pathname.startsWith("/api/users") || pathname === "/api/backup" || pathname === "/api/servers" || pathname === "/api/servers/test" || /^\/api\/servers\/[^/]+$/.test(pathname)) return "ADMIN";
   return "OPERATOR";
 }
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const pathname = request.nextUrl.pathname.replace(/\/+$/, "") || "/";
 
   // Allow static assets
   if (
@@ -168,13 +164,31 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      const { payload } = await jwtVerify(apiToken, getJwtSecret());
+      const payload = await verifySessionToken(apiToken);
+      if (!payload) throw new Error("Session expired");
       const role = (payload.role as Role) || "VIEWER";
       if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL[requiredRole(pathname, request.method)]) {
         return withSecurityHeaders(NextResponse.json(
           { success: false, error: "Insufficient permissions" },
           { status: 403 }
         ));
+      }
+      if (["/api/stats", "/api/stats/stream", "/api/network/ports", "/api/network/packages"].includes(pathname) &&
+        !(await canAccessServer(payload.sub, payload.role, "local"))) {
+        return withSecurityHeaders(NextResponse.json({ success: false, error: "Local server access denied" }, { status: 403 }));
+      }
+      let body: Record<string, unknown> | null = null;
+      if (MUTABLE_METHODS.has(request.method) && (pathname === "/api/deploy" || pathname === "/api/backup" || /\/actions$|\/network\/firewall$/.test(pathname))) {
+        const json: unknown = await request.clone().json().catch(() => null);
+        if (json && typeof json === "object" && !Array.isArray(json)) body = json as Record<string, unknown>;
+      }
+      if (requiresAdvancedAuthorization(pathname, request.method, body)) {
+        if ((ROLE_LEVEL[role] ?? 0) < ROLE_LEVEL.MANAGER) {
+          return withSecurityHeaders(NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 }));
+        }
+        if (!(await verifyAdvancedToken(request.cookies.get(ADVANCED_COOKIE)?.value, payload))) {
+          return withSecurityHeaders(NextResponse.json({ success: false, error: "Safe Mode is on. Enable temporary Advanced Mode before changing the server.", code: "SAFE_MODE" }, { status: 423 }));
+        }
       }
       return withSecurityHeaders(response);
     } catch {
@@ -198,7 +212,7 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    await jwtVerify(token, getJwtSecret());
+    if (!(await verifySessionToken(token))) throw new Error("Session expired");
     return withSecurityHeaders(NextResponse.next());
   } catch {
     // Invalid or expired token
@@ -209,6 +223,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  runtime: "nodejs", // Existing DB/settings determine current role, disabled users and logout version.
   matcher: [
     // Match all paths except static files and public API
     "/((?!_next/static|_next/image|favicon.ico).*)",

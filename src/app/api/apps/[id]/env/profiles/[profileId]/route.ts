@@ -1,3 +1,5 @@
+import { decodeProfileVars, redactEnvVars, encodeProfileVars, mergeEnvVars } from "@/lib/env-profile";
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
@@ -27,16 +29,30 @@ export async function PUT(
   context: RouteContext
 ): Promise<NextResponse<ApiResponse<ProfileInfo>>> {
   try {
-    const { profileId } = await context.params;
+    const { id: appId, profileId } = await context.params;
+    const denied = await authorizeApp(appId, true);
+    if (denied) return denied;
     const body = await request.json();
+    if (body?.safeModeOff !== true) return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
     const { name, vars } = body as { name?: string; vars?: Record<string, string> };
 
-    const update: Record<string, unknown> = {};
-    if (vars !== undefined) update.vars = JSON.stringify(vars);
-    if (name?.trim()) update.name = name.trim();
+    const existing = await prisma.envProfile.findUnique({ where: { id: profileId, appId } });
+    if (!existing || existing.appId !== appId) {
+      return NextResponse.json({ success: false, error: "Profile not found" }, { status: 404 });
+    }
+    const original = decodeProfileVars(existing.vars);
+    const update: Record<string, unknown> = {
+      vars: encodeProfileVars(vars === undefined ? original : mergeEnvVars(vars, original)),
+    };
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return NextResponse.json({ success: false, error: "Profile name is required" }, { status: 400 });
+      }
+      update.name = name.trim();
+    }
 
     const profile = await prisma.envProfile.update({
-      where: { id: profileId },
+      where: { id: profileId, appId },
       data: update,
     });
 
@@ -45,30 +61,33 @@ export async function PUT(
       data: {
         id: profile.id,
         name: profile.name,
-        vars: JSON.parse(profile.vars),
+        vars: redactEnvVars(decodeProfileVars(profile.vars)),
         isActive: profile.isActive,
         createdAt: profile.createdAt.toISOString(),
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update profile";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const message = "Failed to update profile";
+    return NextResponse.json({ success: false, error: message }, { status: (error as { statusCode?: number }).statusCode === 400 ? 400 : 500 });
   }
 }
 
 // ─── DELETE — Delete profile (if active → recreate with original env) ───
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   context: RouteContext
 ): Promise<NextResponse<ApiResponse<{ reverted: boolean }>>> {
   try {
     const { id: appId, profileId } = await context.params;
+    const denied = await authorizeApp(appId, true);
+    if (denied) return denied;
+    if (request.headers.get("X-Safe-Mode-Off") !== "true") return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
 
     const profile = await prisma.envProfile.findUnique({
-      where: { id: profileId },
+      where: { id: profileId, appId },
     });
-    if (!profile) {
+    if (!profile || profile.appId !== appId) {
       return NextResponse.json(
         { success: false, error: "Profile not found" },
         { status: 404 }
@@ -78,7 +97,7 @@ export async function DELETE(
     const wasActive = profile.isActive;
 
     // Delete the profile
-    await prisma.envProfile.delete({ where: { id: profileId } });
+    await prisma.envProfile.delete({ where: { id: profileId, appId } });
 
     // If it was active → recreate container with original env
     if (wasActive) {
@@ -98,8 +117,8 @@ export async function DELETE(
       data: { reverted: wasActive },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete profile";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const message = "Failed to delete profile";
+    return NextResponse.json({ success: false, error: message }, { status: (error as { statusCode?: number }).statusCode === 400 ? 400 : 500 });
   }
 }
 

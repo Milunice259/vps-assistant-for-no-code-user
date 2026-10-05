@@ -1,3 +1,6 @@
+import { authorizeServer } from "@/lib/app-access";
+import { getSession } from "@/lib/auth";
+import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -175,13 +178,18 @@ async function discoverRemoteSystemServices(ssh: Awaited<ReturnType<typeof creat
  */
 export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
   try {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    const serverWhere = await scopedServerWhere(session.sub, session.role);
+    const appWhere = "id" in serverWhere ? { serverId: serverWhere.id } : {};
+    const canAccessLocal = await canAccessServer(session.sub, session.role, "local");
     const includeRemoteLive = request.nextUrl.searchParams.get("liveRemote") === "true";
 
     // Fetch DB apps immediately; remote SSH discovery is opt-in because offline
     // servers can add several seconds to the Apps page initial load.
     const [dbApps, servers] = await Promise.all([
-      prisma.app.findMany({ include: { server: true } }),
-      includeRemoteLive ? prisma.server.findMany({ where: { isActive: true } }) : Promise.resolve([]),
+      prisma.app.findMany({ where: appWhere, include: { server: { select: { name: true } } } }),
+      includeRemoteLive ? prisma.server.findMany({ where: { isActive: true, ...serverWhere } }) : Promise.resolve([]),
     ]);
 
     const allApps: AppInfo[] = [];
@@ -202,15 +210,15 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
         domain: app.domain,
         createdAt: app.createdAt.toISOString(),
       });
-      if (app.containerId) discoveredContainerIds.add(app.containerId);
+      if (app.containerId) discoveredContainerIds.add(`${app.serverId}::${app.containerId}`);
     }
 
     // ── Discover LOCAL Docker containers (host machine) ──
-    const localContainers = discoverLocalContainers();
+    const localContainers = canAccessLocal ? discoverLocalContainers() : [];
     for (const lc of localContainers) {
       if (!lc.containerId) continue;
 
-      const existing = allApps.find((app) => app.containerId === lc.containerId);
+      const existing = allApps.find((app) => app.serverId === "local" && app.containerId === lc.containerId);
       if (existing) {
         existing.status = lc.status;
         existing.domain = existing.domain || lc.domain;
@@ -218,12 +226,12 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       }
 
       allApps.push(lc);
-      discoveredContainerIds.add(lc.containerId);
+      discoveredContainerIds.add(`local::${lc.containerId}`);
     }
 
-    const localSystemServices = discoverLocalSystemServices();
+    const localSystemServices = canAccessLocal ? discoverLocalSystemServices() : [];
     for (const serviceApp of localSystemServices) {
-      const existing = allApps.find((app) => app.id === serviceApp.id || app.name === serviceApp.name);
+      const existing = allApps.find((app) => app.id === serviceApp.id || (app.serverId === "local" && app.name === serviceApp.name));
       if (!existing) allApps.push(serviceApp);
     }
 
@@ -250,9 +258,9 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
 
         for (const c of containers) {
           // Skip containers already tracked in DB
-          if (discoveredContainerIds.has(c.id)) {
+          if (discoveredContainerIds.has(`${server.id}::${c.id}`)) {
             // Update status for existing DB app
-            const existing = allApps.find((a) => a.containerId === c.id);
+            const existing = allApps.find((a) => a.serverId === server.id && a.containerId === c.id);
             if (existing) {
               existing.status = mapContainerState(c.state);
             }
@@ -310,16 +318,25 @@ export async function POST(
   request: NextRequest,
 ): Promise<NextResponse<ApiResponse<AppInfo>>> {
   try {
-    const body = (await request.json()) as CreateAppInput;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    if (!["OWNER", "ADMIN", "MANAGER", "OPERATOR"].includes(session.role)) {
+      return NextResponse.json({ success: false, error: "Operator access required" }, { status: 403 });
+    }
+    const body = (await request.json()) as CreateAppInput & { safeModeOff?: boolean };
     const { name, serverId, containerId, containerName, image, domain } = body;
 
     // Validate required fields
-    if (!name || !serverId) {
+    if (typeof name !== "string" || !name.trim() || typeof serverId !== "string" || !serverId) {
       return NextResponse.json(
         { success: false, error: "name and serverId are required" },
         { status: 400 },
       );
     }
+
+    const denied = await authorizeServer(serverId, true);
+    if (denied) return denied;
+    if (body?.safeModeOff !== true) return NextResponse.json({ success: false, error: "Safe Mode is on. Turn it off before changing this app." }, { status: 423 });
 
     // Verify the server exists
     const server = await prisma.server.findUnique({ where: { id: serverId } });

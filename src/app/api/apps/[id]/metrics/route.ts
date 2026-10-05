@@ -1,3 +1,4 @@
+import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { ApiResponse } from "@/types";
@@ -40,6 +41,8 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<{ points: MetricPoint[] }>>> {
   try {
     const { id: appId } = await context.params;
+    const denied = await authorizeApp(appId, false);
+    if (denied) return denied;
     const url = new URL(request.url);
     const range = url.searchParams.get("range") || "1h";
 

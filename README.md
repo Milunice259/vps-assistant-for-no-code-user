@@ -166,7 +166,7 @@ The current priority is reliable, understandable operation for non-technical use
 
 | Lane | Status | Acceptance target |
 | --- | --- | --- |
-| **SEC-01 — Safety and permissions** | Implemented; release verification | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
+| **SEC-01 — Safety and permissions** | Released and verified | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
 | **TRUST-01 — Truthful capabilities** | Pending | Label repository analysis accurately; disable unsupported rollback; distinguish command completion, verified state and application health. |
 | **DATA-01 — Recoverable panel backups** | Pending | Consistent SQLite snapshots, integrity checks and safe maintenance restore; clearly exclude VPS/app/volume data. |
 | **UX-01 — Simpler screens** | Pending | One clear job per screen; remove duplicate metrics/actions; correct onboarding and current-input preflight; usable touch/keyboard canvas. |

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
-import { containerAction, closeSSH, executeCommand } from "@/lib/ssh";
+import { closeSSH, executeCommand } from "@/lib/ssh";
 import { execLocal, isLocalServer } from "@/lib/local-server";
 import { validateContainerId } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
@@ -51,9 +51,9 @@ export async function POST(
 
     // ── Validate containerId at API boundary ──
     const idCheck = validateContainerId(containerId);
-    if (!idCheck.valid) {
+    if (!idCheck.valid || containerId.startsWith("-")) {
       return NextResponse.json(
-        { success: false, error: idCheck.reason },
+        { success: false, error: !idCheck.valid ? idCheck.reason : "Invalid container ID" },
         { status: 400 }
       );
     }
@@ -68,39 +68,48 @@ export async function POST(
     const safetyBlock = requireSafeModeOff(`container_${action}`, body);
     if (safetyBlock) return safetyBlock;
 
+    let commandOutput: string;
     if (isLocalServer(id)) {
-      const output = execLocal(`docker ${action} ${containerId} 2>&1`, 30_000);
-      const status = execLocal(`docker inspect -f '{{.State.Status}}' ${containerId} 2>/dev/null || true`, 10_000).trim();
-      const verified = action === "start" ? status === "running" : action === "stop" ? status === "exited" : status.length > 0;
-      await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: JSON.stringify({ containerId, output: output || null, verified, status }) });
-      return NextResponse.json({
-        success: true,
-        data: operationResult({ message: output || `Container ${action} successful`, risk: "danger", verified, output: status ? `Current status: ${status}` : output }),
-      });
+      commandOutput = execLocal(`docker ${action} ${containerId} 2>&1`, 30_000);
+    } else {
+      ssh = (await connectToServer(id)).ssh;
+      // ssh2-promise ignores exit codes, so stdout alone is not success evidence.
+      const output = await executeCommand(ssh, `docker ${action} ${containerId} 2>&1 && printf '\\n__ACTION_COMPLETED__\\n'`, 30_000);
+      if (!output.trim().endsWith("__ACTION_COMPLETED__")) throw new Error("Container command did not complete successfully");
+      commandOutput = output.replace(/\s*__ACTION_COMPLETED__\s*$/, "");
     }
 
-    const result = await connectToServer(id);
-    ssh = result.ssh;
-
-    const actionResult = await containerAction(
-      ssh,
-      containerId,
-      action as (typeof VALID_ACTIONS)[number]
-    );
-
-    if (!actionResult.success) {
-      return NextResponse.json(
-        { success: false, error: actionResult.message },
-        { status: 500 }
-      );
+    // One immediate lifecycle/health snapshot, not an application endpoint probe.
+    const verifyCmd = `docker inspect -f '{{json .State}}' ${containerId} 2>/dev/null`;
+    let status = "unknown";
+    let health: NonNullable<OperationResult["health"]> = "unknown";
+    let readbackError = "";
+    try {
+      const raw = ssh ? await executeCommand(ssh, verifyCmd, 10_000) : execLocal(verifyCmd, 10_000);
+      const state = JSON.parse(raw);
+      if (!["running", "exited", "created", "restarting", "paused", "removing", "dead"].includes(state?.Status)) {
+        throw new Error("Unknown container state");
+      }
+      status = state.Status;
+      health = state.Health == null ? "absent"
+        : ["healthy", "starting", "unhealthy"].includes(state.Health.Status) ? state.Health.Status : "unknown";
+    } catch (error) {
+      readbackError = safeErrorMessage(error, "Container readback unavailable or invalid");
     }
-
-    const status = (await executeCommand(ssh, `docker inspect -f '{{.State.Status}}' ${containerId} 2>/dev/null || true`, 10_000)).trim();
-    const verified = action === "start" ? status === "running" : action === "stop" ? status === "exited" : status.length > 0;
-    await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: JSON.stringify({ containerId, verified, status }) });
+    const expected = action === "stop" ? "exited" : "running";
+    const verified = !readbackError && status === expected;
+    const outcome = verified ? "verified" : readbackError ? "unverified" : "failed";
+    const healthMessage = health === "absent" ? "no health check configured; application readiness unverified"
+      : health === "healthy" ? "Docker health check healthy"
+      : health === "starting" ? "health check starting; application not ready yet"
+      : health === "unhealthy" ? "health check unhealthy"
+      : "application health unknown";
+    const output = `Expected state: ${expected}; observed: ${status}; ${healthMessage}${readbackError ? `; ${readbackError}` : ""}`;
+    const message = `Container ${action} command completed; ${verified ? `${status} confirmed${action === "stop" ? "" : `; ${healthMessage}`}` : outcome === "failed" ? `expected ${expected}, observed ${status}` : "result unverified — readback unavailable or unknown"}`;
+    await auditLog({ action: `container_${action}` as "container_start" | "container_stop" | "container_restart", userId: session.sub, username: session.username, ip: getClientIp(request), target: id, details: JSON.stringify({ containerId, action, commandOutput, expected, status, verified, outcome, health, output }) });
     return NextResponse.json({
       success: true,
-      data: operationResult({ message: actionResult.message, risk: "danger", verified, output: status ? `Current status: ${status}` : actionResult.message }),
+      data: operationResult({ message, risk: "danger", verified, outcome, health, output }),
     });
   } catch (error) {
     if (isDisconnectedError(error)) {

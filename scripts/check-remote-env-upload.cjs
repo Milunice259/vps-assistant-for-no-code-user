@@ -32,15 +32,19 @@ function load(relativePath, dependencies = {}) {
 const validation = load("src/lib/validation.ts");
 const env = "API_KEY=SEC01_PLAIN_MARKER\nPASSWORD=SEC01_OTHER_MARKER";
 const encoded = Buffer.from(env).toString("base64");
-const upload = `echo "${encoded}" | base64 -d > "/opt/apps/check/.env"`;
+const completed = command => `(${command}) 2>&1 && printf '\\n__VPS_DEPLOY_OK__\\n'`;
+const marker = '\n__VPS_DEPLOY_OK__\n';
+const upload = completed(`echo "${encoded}" | base64 -d > "/opt/apps/check/.env"`);
 const expected = [
-  'mkdir -p "/opt/apps"',
+  completed('mkdir -p "/opt/apps"'),
   'test -d "/opt/apps/check/.git" && echo "exists" || echo "missing"',
-  'git clone --depth 1 --branch "main" "https://github.com/example/check.git" "/opt/apps/check" 2>&1',
+  completed('git clone --depth 1 --branch "main" "https://github.com/example/check.git" "/opt/apps/check" 2>&1'),
   'cd "/opt/apps/check" && git rev-parse --short HEAD 2>/dev/null',
   upload,
-  'test -f "/opt/apps/check/docker-compose.yml" -o -f "/opt/apps/check/docker-compose.yaml" -o -f "/opt/apps/check/compose.yml" && echo "found" || echo "none"',
-  'cd "/opt/apps/check" && docker compose up -d --build 2>&1',
+  'test -f "/opt/apps/check/docker-compose.yml" -o -f "/opt/apps/check/docker-compose.yaml" -o -f "/opt/apps/check/compose.yml" -o -f "/opt/apps/check/compose.yaml" && echo "found" || echo "none"',
+  completed('cd "/opt/apps/check" && docker compose up -d --build 2>&1'),
+  completed('cd "/opt/apps/check" && docker compose config --services'),
+  completed('cd "/opt/apps/check" && docker compose ps --all --format json'),
 ];
 
 async function check(failureKind) {
@@ -54,7 +58,7 @@ async function check(failureKind) {
       const message = `Command failed: ${command}; stderr: ${env}`;
       throw failureKind === "error" ? new Error(message) : message;
     }
-    return ["", "missing", "Cloned.", "abc123\n", "", "found", "Started."][calls.length - 1];
+    return [marker, "missing", marker, "abc123\n", marker, "found", marker, "web" + marker, JSON.stringify([{ Service: "web", State: "running", Health: "healthy" }]) + marker][calls.length - 1];
   }
   const { remoteDeployViaSSH } = load("src/lib/ssh/actions.ts", {
     "./connection": { executeCommand: execute, executeCommandSafe: execute },
@@ -75,7 +79,8 @@ async function check(failureKind) {
     assert.ok(!calls.some(command => command.includes("compose")), "Upload failure must stop before Compose");
   } else {
     assert.ok(result.logs.includes("Environment file written."));
-    assert.ok(result.logs.includes("Started."));
+    assert.equal(result.status, "RUNNING");
+    assert.ok(result.logs.includes("running and healthy"));
   }
 }
 

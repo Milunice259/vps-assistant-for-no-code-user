@@ -43,8 +43,8 @@ Use it to answer simple questions quickly:
 | **Plain-English Alerts** | Alerts explain impact and next steps without forcing users into logs first. |
 | **Guided Fixes** | Safe repair actions for low-risk maintenance such as cache cleanup and old log trimming. |
 | **Apps + Services** | Discover Docker containers and important systemd services such as Traefik, nginx, n8n, Hermes, and more. |
-| **Deployments** | Deploy from Git repositories, Docker images, or compose projects with logs and rollback-oriented flow. |
-| **Backups** | Create panel database file checkpoints. Restore is disabled until consistent snapshots and maintenance recovery are implemented; VPS/apps/volumes are excluded. |
+| **Deployments** | Analyze local Git repositories; deploy remote Git repositories, Docker images or Compose projects. Automatic rollback is unavailable. |
+| **Backups** | Save integrity-checked, SQLite-consistent panel snapshots on the persistent data volume. Live restore is locked; maintenance recovery is documented. VPS/apps/volumes and encryption keys are excluded. |
 | **Notifications** | Discord, Slack, Telegram, and Email alert channels with recommended beginner rules. |
 | **Network Map** | Read-only topology/inspection map for domains, proxy, servers, apps, ports, and Docker networks. |
 | **Audit Log** | Track who did what, when, where, and whether it succeeded. |
@@ -56,9 +56,9 @@ Use it to answer simple questions quickly:
 - **Dashboard** — daily health, Fleet Risk Score, Alert Center, Safe Repair.
 - **Servers** — add remote VPS machines, view stats, Docker, services, and server actions.
 - **Apps** — inspect containers and system services, logs, env tools, health checks.
-- **Deploy** — guided Git, Docker image, and compose deployment.
-- **Network** — read-only topology and traffic-flow visibility; control-plane actions are planned later.
-- **Backup & Restore** — panel-only file checkpoints; restore is currently unavailable.
+- **Deploy** — local Git analysis, remote Git deployment, and Docker Image/Compose deployment.
+- **Network** — topology inspection and scoped UFW rule controls; external blocking is not independently verified.
+- **Backups** — consistent panel-only snapshots; online restore is locked to prevent unsafe database replacement.
 - **Audit Log** — searchable activity history.
 - **Settings** — notifications, alert rules, security settings, and app preferences.
 - **Users** — Owner/Admin account management with role and server-scope boundaries.
@@ -167,10 +167,10 @@ The current priority is reliable, understandable operation for non-technical use
 | Lane | Status | Acceptance target |
 | --- | --- | --- |
 | **SEC-01 — Safety and permissions** | Released and verified | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
-| **TRUST-01 — Truthful capabilities** | Pending | Label repository analysis accurately; disable unsupported rollback; distinguish command completion, verified state and application health. |
-| **DATA-01 — Recoverable panel backups** | Pending | Consistent SQLite snapshots, integrity checks and safe maintenance restore; clearly exclude VPS/app/volume data. |
-| **UX-01 — Simpler screens** | Pending | One clear job per screen; remove duplicate metrics/actions; correct onboarding and current-input preflight; usable touch/keyboard canvas. |
-| **FLOW-01 — Guided operations** | Pending | Safe app restart, bounded disk cleanup and supported deployment flows with impact, confirmation, readback and real recovery where available. |
+| **TRUST-01 — Truthful capabilities** | Verified release candidate | Local Git is analysis only; rollback is locked; command completion, state and readiness are distinct. |
+| **DATA-01 — Recoverable panel backups** | Verified release candidate | Concurrent-write SQLite snapshots and integrity checks pass; web restore stays locked; disposable maintenance recovery passes. Panel database only. |
+| **UX-01 — Simpler screens** | Verified release candidate | Current-state onboarding, single responsive route tree, current-input preflight and target-bound touch/keyboard canvas. |
+| **FLOW-01 — Guided operations** | Verified release candidate | Canonical app restart; package-cache-only cleanup; fresh Image/Compose deployment; uncertain submissions require explicit read-only inspection, never automatic retry. |
 | **QA-01 — Release gates** | Required per lane | Regression checks, lint/type/build, independent review, authenticated desktop/mobile interaction and post-deploy readback. Missing verification remains blocked. |
 
 UI/UX review starts before implementation and repeats at every release. Dashboard owns fleet health and next steps; server/app pages own target-specific operations; Network owns inspection and network controls; Settings owns configuration; Docs owns longer help. Reuse one action flow across entry points, disclose advanced detail only when needed, and always distinguish Local from Remote.

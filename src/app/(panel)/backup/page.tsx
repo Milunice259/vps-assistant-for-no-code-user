@@ -46,16 +46,19 @@ export default function BackupPage() {
       setLoading(true);
       const res = await fetch("/api/backup");
       const json = await res.json();
-      if (json.success) setBackups(json.data || []);
-      else setError(json.error);
+      if (!res.ok || !json.success || !Array.isArray(json.data)) throw new Error(json.error || "Failed to verify backup list");
+      setBackups(json.data);
+      return json.data as BackupEntry[];
     } catch {
+      setBackups([]);
       setError("Failed to load backups");
+      throw new Error("Backup list unavailable; refresh to verify the outcome before retrying.");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchBackups(); }, [fetchBackups]);
+  useEffect(() => { fetchBackups().catch(() => {}); }, [fetchBackups]);
 
   async function handleCreate() {
     if (busy.current) return;
@@ -67,10 +70,11 @@ export default function BackupPage() {
       const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create" }) });
       const json = await res.json();
       if (json.success) {
-        setSuccess(`Backup created: ${json.data?.name}`);
-        await fetchBackups();
+        const files = await fetchBackups();
+        if (!files.some(file => file.name === json.data?.name)) throw new Error("Creation completed, but the snapshot was not found in readback. Refresh before retrying.");
+        setSuccess(`Backup created and listed: ${json.data?.name}`);
       } else setError(json.error);
-    } catch { setError("Failed to create backup"); }
+    } catch (error) { setSuccess(null); setError(error instanceof Error ? error.message : "Creation outcome unknown. Refresh before retrying."); }
     finally { busy.current = false; setCreating(false); }
   }
 
@@ -84,10 +88,11 @@ export default function BackupPage() {
       const res = await fetch(`/api/backup?name=${encodeURIComponent(name)}`, { method: "DELETE", headers: { "X-Safe-Mode-Off": "true" } });
       const json = await res.json();
       if (json.success) {
-        setSuccess(`Deleted ${name}`);
-        await fetchBackups();
+        const files = await fetchBackups();
+        if (files.some(file => file.name === name)) throw new Error("Deletion completed, but the checkpoint remains in readback. Refresh before retrying.");
+        setSuccess(`Deletion verified: ${name}`);
       } else setError(json.error);
-    } catch { setError("Failed to delete backup"); }
+    } catch (error) { setSuccess(null); setError(error instanceof Error ? error.message : "Deletion outcome unknown. Refresh before retrying."); }
     finally { busy.current = false; setDeleting(null); setConfirmDelete(null); }
   }
 
@@ -95,16 +100,16 @@ export default function BackupPage() {
     <PermissionGate minimum="ADMIN">
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Database className="h-6 w-6 text-brand-400" />
           <div>
-            <h1 className="text-xl font-semibold text-white">Backup & Restore</h1>
+            <h1 className="text-xl font-semibold text-white">Panel database backups</h1>
             <p className="text-sm text-gray-400">Panel database checkpoints — not VPS or app backups</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={fetchBackups}>
+          <Button variant="secondary" size="sm" disabled={creating || !!deleting} onClick={() => { setError(null); fetchBackups().catch(() => {}); }}>
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
           <Button variant="primary" size="sm" onClick={handleCreate} loading={creating} disabled={!!deleting}>
@@ -114,7 +119,7 @@ export default function BackupPage() {
       </div>
 
       <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4 text-sm text-gray-400">
-        Panel database only; excludes VPS files, apps, and volumes. Consistent snapshots are pending, so these file copies are not guaranteed recovery points. Restore is maintenance-only and unavailable here until safe restore is implemented. See <Link href="/docs#backup" className="text-brand-400 hover:text-brand-300">Backup docs</Link>.
+        SQLite-consistent snapshots with an integrity check before saving. Includes panel data only, not VPS files, apps, volumes or encryption keys. Live restore stays locked: recovery requires stopping the panel and preserving a pre-restore snapshot. See <Link href="/docs#backup" className="text-brand-400 hover:text-brand-300">Recovery steps</Link>.
         {safeMode && <p className="mt-2 text-amber-300">Safe Mode is on: deletion is locked. You can still create a panel checkpoint.</p>}
       </div>
 
@@ -141,7 +146,7 @@ export default function BackupPage() {
         <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-12 text-center">
           <HardDrive className="h-10 w-10 text-gray-500 mx-auto mb-3" />
           <p className="text-gray-400 mb-2">No backups yet</p>
-          <p className="text-sm text-gray-500 mb-4">Create a copy of the panel database.</p>
+          <p className="text-sm text-gray-500 mb-4">Save an integrity-checked snapshot of the panel database.</p>
           <Button variant="primary" size="sm" onClick={handleCreate} loading={creating} disabled={!!deleting}>
             <Plus className="h-4 w-4 mr-1" /> Create First Backup
           </Button>
@@ -190,6 +195,7 @@ export default function BackupPage() {
         title="Delete Backup"
         message={`Permanently delete panel database checkpoint "${confirmDelete}"? This removes this recovery file and cannot be undone. It does not delete the live panel database or any VPS/app files.`}
         confirmLabel="Delete"
+        confirmationText="DELETE"
         variant="danger"
         loading={!!deleting}
         onConfirm={() => confirmDelete && handleDelete(confirmDelete)}

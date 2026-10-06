@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   variant?: "primary" | "danger";
   loading?: boolean;
+  confirmationText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -28,15 +29,22 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   variant = "primary",
   loading = false,
+  confirmationText,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [typed, setTyped] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) { setWasOpen(open); setTyped(""); }
 
   // Focus the cancel button when dialog opens (safe default)
   useEffect(() => {
     if (open) {
+      const previous = document.activeElement as HTMLElement | null;
       cancelRef.current?.focus();
+      return () => previous?.focus();
     }
   }, [open]);
 
@@ -44,21 +52,27 @@ export function ConfirmDialog({
   useEffect(() => {
     if (!open) return;
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !loading) onCancel();
+      if (e.key === "Tab") {
+        const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') || []);
+        const first = controls[0], last = controls.at(-1);
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onCancel]);
+  }, [open, onCancel, loading]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       {/* Backdrop click to cancel */}
-      <div className="absolute inset-0" onClick={onCancel} />
+      <div className="absolute inset-0" onClick={() => { if (!loading) onCancel(); }} />
 
       {/* Dialog */}
-      <div className="relative bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} className="relative bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md shadow-2xl">
         <div className="p-6">
           {/* Icon + Title */}
           <div className="flex items-start gap-4">
@@ -82,6 +96,9 @@ export function ConfirmDialog({
               <p className="mt-2 text-sm text-gray-400 leading-relaxed">
                 {message}
               </p>
+              {confirmationText && <label className="mt-3 block text-sm text-gray-300">Type <strong>{confirmationText}</strong> to confirm
+                <input autoComplete="off" value={typed} disabled={loading} onChange={e => setTyped(e.target.value)} className="mt-2 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white" />
+              </label>}
             </div>
           </div>
         </div>
@@ -100,8 +117,9 @@ export function ConfirmDialog({
           <Button
             variant={variant === "danger" ? "danger" : "primary"}
             size="sm"
-            onClick={onConfirm}
+            onClick={() => { if (!loading && (!confirmationText || typed === confirmationText)) onConfirm(); }}
             loading={loading}
+            disabled={!!confirmationText && typed !== confirmationText}
           >
             {confirmLabel}
           </Button>

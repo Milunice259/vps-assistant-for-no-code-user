@@ -1,11 +1,11 @@
 /**
  * API: /api/backup
- * Database backup and restore operations.
+ * Panel SQLite database snapshots only; online restore is deliberately unavailable.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from "fs";
-import { join, resolve, basename } from "path";
+import { prisma } from "@/lib/db";
+import { createPanelBackup, deletePanelBackup, isValidBackupName, listPanelBackups } from "@/lib/panel-backup";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { requireSafeModeOff } from "@/lib/operation-safety";
@@ -36,48 +36,11 @@ if (typeof _backupCleanup === "object" && _backupCleanup && "unref" in _backupCl
   (_backupCleanup as NodeJS.Timeout).unref();
 }
 
-/**
- * Validate a backup filename — must be a plain .db filename with no path traversal.
- */
-function isValidBackupName(name: unknown): name is string {
-  if (typeof name !== "string" || !name.endsWith(".db")) return false;
-  // Must be a bare filename — no directory separators or traversal
-  if (name !== basename(name)) return false;
-  if (name.includes("..")) return false;
-  // Only allow safe characters in the filename
-  if (!/^[a-zA-Z0-9_.-]+\.db$/.test(name)) return false;
-  return true;
-}
-
-const DB_PATH = resolve(process.env.DATABASE_URL?.replace("file:", "") || "./prisma/dev.db");
-const BACKUP_DIR = resolve("./backups");
-
-// Ensure backup directory exists
-function ensureBackupDir() {
-  if (!existsSync(BACKUP_DIR)) {
-    mkdirSync(BACKUP_DIR, { recursive: true });
-  }
-}
-
 // ── GET — List existing backups ──
 export async function GET() {
   try {
-    ensureBackupDir();
-
-    const files = readdirSync(BACKUP_DIR)
-      .filter((f) => f.endsWith(".db"))
-      .map((f) => {
-        const fpath = join(BACKUP_DIR, f);
-        const stat = statSync(fpath);
-        return {
-          name: f,
-          size: stat.size,
-          created: stat.birthtime.toISOString(),
-        };
-      })
-      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
-
-    return NextResponse.json({ success: true, data: files });
+    const files = await listPanelBackups(prisma);
+    return NextResponse.json({ success: true, data: files, scope: "panel-database" });
   } catch (error) {
     const msg = safeErrorMessage(error, "Failed to list backups");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
@@ -111,34 +74,12 @@ export async function POST(request: NextRequest) {
         { status: 429 }
       );
     }
-    // Default: create backup
-    ensureBackupDir();
-
-    if (!existsSync(DB_PATH)) {
-      return NextResponse.json(
-        { success: false, error: "Database file not found" },
-        { status: 404 }
-      );
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupFile = `backup_${timestamp}.db`;
-    const destination = join(BACKUP_DIR, backupFile);
-
-    copyFileSync(DB_PATH, destination);
-
-    auditLog({ action: "backup_create", details: `Created ${backupFile}`, ip }).catch(() => {});
-
-    const stat = statSync(destination);
-
+    const backup = await createPanelBackup(prisma);
+    auditLog({ action: "backup_create", details: `Created panel database snapshot ${backup.name}; integrity check: ok`, ip }).catch(() => {});
     return NextResponse.json({
       success: true,
-      data: {
-        name: backupFile,
-        size: stat.size,
-        created: stat.birthtime.toISOString(),
-      },
-      message: `Backup created: ${backupFile}`,
+      data: backup,
+      message: `Panel database backup created: ${backup.name}. VPS apps and volumes are not included.`,
     });
   } catch (error) {
     const msg = safeErrorMessage(error, "Backup failed");
@@ -163,16 +104,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const backupPath = join(BACKUP_DIR, name);
-    if (!existsSync(backupPath)) {
+    if (!await deletePanelBackup(prisma, name)) {
       return NextResponse.json(
         { success: false, error: "Backup not found" },
         { status: 404 }
       );
     }
-
-    const { unlinkSync } = await import("fs");
-    unlinkSync(backupPath);
 
     const ip = getClientIp(request);
     auditLog({ action: "backup_delete", details: `Deleted ${name}`, ip }).catch(() => {});

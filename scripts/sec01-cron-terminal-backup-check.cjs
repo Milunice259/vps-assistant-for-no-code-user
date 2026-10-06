@@ -24,6 +24,12 @@ function load(file) {
     '@/lib/server-access': { canAccessServer: async () => access },
     '@/lib/operation-safety': safety,
     '@/lib/db': { prisma: { server: { findUnique: async () => { throw Error('Unexpected DB lookup'); } } } },
+    '@/lib/panel-backup': {
+      isValidBackupName: name => typeof name === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.db$/.test(name) && !name.includes('..'),
+      listPanelBackups: async () => [],
+      createPanelBackup: async () => { effects.push(['snapshot']); return { name: 'backup.db', size: 1, integrity: 'ok' }; },
+      deletePanelBackup: async (_, name) => { effects.push(['unlink', name]); return true; },
+    },
     '@/lib/crypto': { decrypt: () => { throw Error('Unexpected credentials'); } },
     '@/lib/local-server': { isLocalServer: id => id === 'local', execOnHost: async command => { effects.push(command); return command.startsWith('crontab -l 2>') ? crontab : 'mock output'; } },
     '@/lib/validation': { validateTerminalCommand: () => ({ valid: true }) },
@@ -77,7 +83,7 @@ async function blocked(route, method, req, status) {
   assert.match(effects.at(-1), /sed '3d'/);
   assert.equal((await terminal.POST(request({ command: 'date', safeModeOff: true }), context)).status, 200);
   assert.equal((await backup.POST(request({ action: 'create' }))).status, 200, 'Creating a panel checkpoint remains available in Safe Mode');
-  assert.ok(effects.some(effect => Array.isArray(effect) && effect[0] === 'copy'));
+  assert.ok(effects.some(effect => Array.isArray(effect) && effect[0] === 'snapshot'));
   await blocked(backup, 'DELETE', request({}, '?name=..%2Fbackup.db', true), 400);
   assert.equal((await backup.DELETE(request({}, '?name=backup.db', true))).status, 200);
   assert.equal(effects.at(-1)[0], 'unlink');

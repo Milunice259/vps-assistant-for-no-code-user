@@ -97,7 +97,6 @@ export function RiskOverview() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fixing, setFixing] = useState<string | null>(null);
   const [guidePanel, setGuidePanel] = useState<{ key: string; message: string } | null>(null);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [notificationChannels, setNotificationChannels] = useState<NotificationChannel[]>([]);
@@ -151,50 +150,9 @@ export function RiskOverview() {
     }
   }
 
-  async function runServerAction(action: string) {
-    const res = await fetch("/api/servers/local/actions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    const json: ApiResponse<{ output: string }> = await res.json();
-    if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
-    return json.data?.output || "Done";
-  }
-
-  async function fixAlert(server: ServerRisk, alert: RiskAlert) {
-    const key = `${server.serverId}-${alert.id}`;
-    setFixing(key);
-    setGuidePanel(null);
-    try {
-      if (server.serverId !== "local") {
-        router.push(`/servers/${encodeURIComponent(server.serverId)}`);
-        return;
-      }
-
-      if (alert.id === "disk") {
-        const backup = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-        const backupJson: ApiResponse<{ name: string }> = await backup.json();
-        if (!backup.ok || !backupJson.success) throw new Error(backupJson.error || "Backup failed");
-        const logs = await runServerAction("clear-logs");
-        const cache = await runServerAction("clear-apt-cache");
-        setGuidePanel({ key, message: `Safe disk cleanup completed after backup ${backupJson.data?.name || "created"}.\n\n${logs}\n\n${cache}` });
-        await fetchRisk();
-        return;
-      }
-
-      if (alert.id === "memory" || alert.id === "cpu") {
-        const output = await runServerAction("system-health-check");
-        setGuidePanel({ key, message: `Read-only diagnosis completed. Review the output before restarting anything.\n\n${output}` });
-        return;
-      }
-
-      router.push(`/servers/${encodeURIComponent(server.serverId)}`);
-    } catch (err) {
-      setGuidePanel({ key, message: err instanceof Error ? err.message : "Guided fix failed" });
-    } finally {
-      setFixing(null);
-    }
+  function fixAlert(server: ServerRisk, alert: RiskAlert) {
+    // Dashboard owns findings; the target server owns the only operation flow.
+    router.push(`/servers/${encodeURIComponent(server.serverId)}#${alert.id.includes("disk") || alert.id === "memory" || alert.id === "cpu" ? "actions" : "overview"}`);
   }
 
   function explainAlert(server: ServerRisk, alert: RiskAlert) {
@@ -527,7 +485,7 @@ No urgent issue detected. Alert Center stays empty until a server needs attentio
                             <div className="mt-3 space-y-2">
                               {server.alerts.slice(0, 2).map((alert, index) => {
                                 const key = `${server.serverId}-${alert.id}`;
-                                const fixLabel = server.serverId === "local" && alert.id === "disk" ? "Local safe repair" : server.serverId === "local" && (alert.id === "memory" || alert.id === "cpu") ? "Local diagnose" : "View server";
+                                const fixLabel = alert.id.includes("disk") ? "Review disk cleanup" : alert.id === "memory" || alert.id === "cpu" ? "Open diagnostics" : "View server";
                                 return (
                                   <div key={`${alert.id}-fix-${index}`} className="rounded-lg border border-gray-700/70 bg-gray-950/60 p-2">
                                     <p className="truncate text-xs font-medium text-gray-200">{alert.title}</p>
@@ -535,8 +493,7 @@ No urgent issue detected. Alert Center stays empty until a server needs attentio
                                       <button onClick={() => explainAlert(server, alert)} className="rounded-md border border-gray-700 px-2 py-1 text-[11px] text-gray-300 hover:text-white">
                                         Explain
                                       </button>
-                                      <button onClick={() => fixAlert(server, alert)} disabled={fixing !== null} className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
-                                        {fixing === key ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                      <button onClick={() => fixAlert(server, alert)} className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
                                         {fixLabel}
                                       </button>
                                     </div>

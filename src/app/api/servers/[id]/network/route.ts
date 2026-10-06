@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 const RISKY_PORTS: Record<number, { title: string; detail: string }> = {
-  21: { title: "FTP is publicly reachable", detail: "FTP is old and often sends data without modern protection." },
-  22: { title: "SSH is publicly reachable", detail: "SSH is expected on many VPSes, but it should be protected by strong keys, fail2ban, or trusted IPs." },
-  23: { title: "Telnet is publicly reachable", detail: "Telnet is insecure and should not be exposed to the internet." },
-  3306: { title: "MySQL is publicly reachable", detail: "Databases should usually be private or restricted to trusted IPs." },
-  5432: { title: "PostgreSQL is publicly reachable", detail: "Databases should usually be private or restricted to trusted IPs." },
-  6379: { title: "Redis is publicly reachable", detail: "Redis exposure can lead to data loss or server compromise." },
-  27017: { title: "MongoDB is publicly reachable", detail: "Databases should usually be private or restricted to trusted IPs." },
-  9200: { title: "Elasticsearch is publicly reachable", detail: "Search clusters often expose sensitive data and should be restricted." },
+  21: { title: "FTP is potentially exposed", detail: "FTP is old and often sends data without modern protection." },
+  22: { title: "SSH is potentially exposed", detail: "SSH is expected on many VPSes, but it should be protected by strong keys, fail2ban, or trusted IPs." },
+  23: { title: "Telnet is potentially exposed", detail: "Telnet is insecure and should not be exposed to the internet." },
+  3306: { title: "MySQL is potentially exposed", detail: "Databases should usually be private or restricted to trusted IPs." },
+  5432: { title: "PostgreSQL is potentially exposed", detail: "Databases should usually be private or restricted to trusted IPs." },
+  6379: { title: "Redis is potentially exposed", detail: "Redis exposure can lead to data loss or server compromise." },
+  27017: { title: "MongoDB is potentially exposed", detail: "Databases should usually be private or restricted to trusted IPs." },
+  9200: { title: "Elasticsearch is potentially exposed", detail: "Search clusters often expose sensitive data and should be restricted." },
 };
 
 function isPublicAddress(address: string) {
@@ -38,8 +38,8 @@ function networkFindings(hostPorts: PortInfo[]): NetworkFinding[] {
       id: `public-${key}`,
       severity: port.localPort === 22 ? "medium" : "high",
       title: risk.title,
-      detail: risk.detail,
-      suggestedFix: port.localPort === 22 ? "Keep SSH protected with keys/fail2ban; restrict by IP if possible." : "Use Preview first, then block public access if this service should not be internet-facing.",
+      detail: `${risk.detail} Listening on a wildcard address; external reachability is not verified.`,
+      suggestedFix: port.localPort === 22 ? "Keep SSH protected with keys/fail2ban; restrict by IP if possible." : "Preview a UFW deny rule; earlier allow rules or Docker publishing may bypass it.",
       port: port.localPort,
       protocol: port.protocol,
     } satisfies NetworkFinding];

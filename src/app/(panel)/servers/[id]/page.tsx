@@ -71,7 +71,11 @@ export default function ServerDetailPage() {
   }
 
   useEffect(() => {
+    const openLinkedTab = () => { const tab = window.location.hash.slice(1); if (SERVER_TABS.some(item => item.key === tab)) setActiveTab(tab); };
+    openLinkedTab();
+    window.addEventListener("hashchange", openLinkedTab);
     fetchServer();
+    return () => window.removeEventListener("hashchange", openLinkedTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
@@ -205,11 +209,11 @@ export default function ServerDetailPage() {
         />
       )}
       {activeTab === "containers" && <DockerContainerList serverId={serverId} />}
-      {activeTab === "networks" && <ServerNetworkMap serverId={serverId} />}
+      {activeTab === "networks" && <ServerNetworkMap key={serverId} serverId={serverId} />}
       {activeTab === "services" && <ServiceList serverId={serverId} />}
       {activeTab === "packages" && <PackageManager serverId={serverId} />}
       {activeTab === "ssl" && <SSLChecker serverId={serverId} />}
-      {activeTab === "actions" && <QuickActions serverId={serverId} />}
+      {activeTab === "actions" && <QuickActions key={serverId} serverId={serverId} serverName={server.name} />}
       {activeTab === "logs" && <ServerAuditLog serverId={serverId} />}
     </div>
   );

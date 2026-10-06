@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { GitBranch, Box, Layers, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { DeployForm } from "@/components/deploy/DeployForm";
@@ -17,13 +17,16 @@ const DEPLOY_TABS = [
 ];
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
-  git: "Best when your app is already in GitHub.",
+  git: "Local analyzes the repository only. Remote deploys via SSH and Docker Compose.",
   image: "Best when you already have a Docker image.",
   compose: "Best for multi-container apps with docker-compose.yml.",
 };
 
 export default function DeployPage() {
   const [activeTab, setActiveTab] = useState("git");
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const onBusyChange = (value: boolean) => { busyRef.current = value; setBusy(value); };
 
   return (
     <PermissionGate minimum="OPERATOR">
@@ -40,7 +43,10 @@ export default function DeployPage() {
             Review secrets and ports before pressing Deploy.
           </div>
         </div>
-        <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={setActiveTab} />
+        <fieldset disabled={busy}>
+          <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={tab => { if (!busyRef.current) setActiveTab(tab); }} />
+        </fieldset>
+        {busy && <p role="status" className="mt-2 text-sm text-gray-400">Execution in progress. Wait for the result before changing the deployment source.</p>}
         <div className="mt-3 flex items-start gap-2 text-sm text-gray-400 leading-relaxed">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
           <p>{TAB_DESCRIPTIONS[activeTab]}</p>
@@ -49,9 +55,9 @@ export default function DeployPage() {
 
       {/* Deploy Form */}
       <section>
-        {activeTab === "git" && <DeployForm />}
-        {activeTab === "image" && <DockerImageDeploy />}
-        {activeTab === "compose" && <DockerComposeDeploy />}
+        {activeTab === "git" && <DeployForm onBusyChange={onBusyChange} />}
+        {activeTab === "image" && <DockerImageDeploy onBusyChange={onBusyChange} />}
+        {activeTab === "compose" && <DockerComposeDeploy onBusyChange={onBusyChange} />}
       </section>
 
       {/* Deployment History — title is inside DeployLog */}

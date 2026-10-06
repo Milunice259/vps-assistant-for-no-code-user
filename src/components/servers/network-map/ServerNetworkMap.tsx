@@ -33,6 +33,7 @@ import {
   Eye,
 } from "lucide-react";
 import type { NetworkTopology, ApiResponse } from "@/types";
+import type { OperationResult } from "@/lib/operation-result";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useSafeMode } from "@/contexts/SafeModeContext";
@@ -60,8 +61,24 @@ type ActionTarget =
   | { type: "edge"; key: string; label: string; fromType?: string; toType?: string; x: number; y: number }
   | { type: "internet"; x: number; y: number };
 
+// Retain uncertainty across tab/target remounts; never replay a submitted command.
+// ponytail: SPA lifetime only; cross-tab/reload deduplication needs server operation IDs.
+const pendingTargets = new Map<string, boolean>();
+
 export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
+  return <ServerNetworkCanvas key={serverId} serverId={serverId} />;
+}
+
+function ServerNetworkCanvas({ serverId }: ServerNetworkMapProps) {
   const { safeMode } = useSafeMode();
+  const live = useRef(false);
+  const operation = useRef(false);
+  const topologyRead = useRef(0);
+  const firewallRead = useRef(0);
+  const topologyReady = useRef(false);
+  const firewallReady = useRef(false);
+  const [needsCheck, setNeedsCheck] = useState(pendingTargets.has(serverId));
+  const uncertain = useRef(pendingTargets.has(serverId));
   const localBlockReason = serverId === "local" ? "Local blocking unavailable: SSH ports cannot be verified" : undefined;
   const [topology, setTopology] = useState<NetworkTopology | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,27 +89,44 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(pendingTargets.has(serverId) ? "Outcome unknown: a prior request needs a read-only state check. No retry was sent." : null);
   const [firewallRules, setFirewallRules] = useState<Array<{ number: number; target: string; action: string; from: string }>>([]);
   const [firewallError, setFirewallError] = useState<string | null>(null);
+  const [ufwActive, setUfwActive] = useState<boolean | null>(null);
 
   // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [draggedNode, setDraggedNode] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0, nodeX: 0, nodeY: 0 });
   const dragMoved = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const actionTrigger = useRef<HTMLElement | SVGElement | null>(null);
+  const activePointer = useRef<{ id: number; nodeId: string | null } | null>(null);
 
-  const pointerInViewport = (e: React.MouseEvent) => {
+  const closeActionPanel = useCallback((restoreFocus = true) => {
+    setActionTarget(null);
+    if (restoreFocus && panelRef.current && actionTrigger.current?.isConnected) actionTrigger.current.focus();
+  }, []);
+
+  const openActionPanel = (target: ActionTarget, e: React.MouseEvent | React.KeyboardEvent) => {
+    if (activePointer.current || ((e.type === "contextmenu" || ("detail" in e && e.detail > 0)) && dragMoved.current)) return;
+    const element = e.currentTarget as HTMLElement | SVGElement;
+    actionTrigger.current = element.matches('button, [role="button"]') ? element : element.querySelector('button, [role="button"]');
+    setActionTarget(target);
+  };
+
+  const pointerInViewport = (e: React.MouseEvent | React.KeyboardEvent) => {
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect) return { x: 16, y: 16 };
+    const triggerRect = e.currentTarget.getBoundingClientRect();
+    const keyboard = !("clientX" in e) || (e.type === "click" && e.detail === 0);
     return {
-      x: Math.min(Math.max(16, e.clientX - rect.left), Math.max(16, rect.width - 340)),
-      y: Math.min(Math.max(16, e.clientY - rect.top), Math.max(16, rect.height - 280)),
+      x: Math.min(Math.max(16, (keyboard ? triggerRect.left : e.clientX) - rect.left), Math.max(16, rect.width - 356)),
+      y: Math.min(Math.max(16, (keyboard ? triggerRect.bottom : e.clientY) - rect.top), Math.max(16, rect.height - 296)),
     };
   };
 
@@ -118,6 +152,13 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
   }, []);
 
   const fetchTopology = useCallback(async () => {
+    if (!live.current) return false;
+    const read = ++topologyRead.current;
+    topologyReady.current = false;
+    setTopology(null);
+    setActionTarget(null);
+    setSelectedContainer(null);
+    setSelectedPort(null);
     setLoading(true);
     setError(null);
     setDisconnected(false);
@@ -125,40 +166,69 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     try {
       const res = await fetch(`/api/servers/${serverId}/network`);
       const json: ApiResponse<NetworkTopology> = await res.json();
-      if (!res.ok) {
-        if (json.code === "DISCONNECTED") {
+      if (!live.current || read !== topologyRead.current) return false;
+      if (!res.ok || !json?.success) {
+        if (json?.code === "DISCONNECTED") {
           setDisconnected(true);
-          return;
+          return false;
         }
-        throw new Error(json.error || "Failed to load network data");
+        throw new Error(json?.error || "Failed to load network data");
       }
-      setTopology(json.data || null);
+      const data = json.data;
+      if (!data || !Array.isArray(data.networks) || !Array.isArray(data.hostPorts) ||
+        !data.networks.every((n) => n && typeof n.id === "string" && typeof n.name === "string" && typeof n.driver === "string" && Array.isArray(n.containers) && n.containers.every((c) => c && typeof c.id === "string" && typeof c.name === "string" && typeof c.ipv4 === "string" && [c.state, c.image, c.ports].every((v) => v == null || typeof v === "string"))) ||
+        !data.hostPorts.every((p) => p && Number.isInteger(p.localPort) && p.localPort > 0 && p.localPort <= 65535 && typeof p.protocol === "string" && typeof p.localAddress === "string" && (p.process == null || typeof p.process === "string")) ||
+        (data.findings !== undefined && (!Array.isArray(data.findings) || !data.findings.every((f) => f && typeof f.id === "string" && typeof f.title === "string" && typeof f.detail === "string" && ["info", "medium", "high"].includes(f.severity) && [f.protocol, f.suggestedFix].every((v) => v == null || typeof v === "string") && (f.port == null || (Number.isInteger(f.port) && f.port > 0 && f.port <= 65535)))))) throw new Error("Invalid network state response");
+      topologyReady.current = true;
+      setTopology(data);
       setNodePositions({});
       requestFitToContent();
       if (json.warning) setWarning(json.warning);
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      if (live.current && read === topologyRead.current) setError(err instanceof Error ? err.message : "Unknown error");
+      return false;
     } finally {
-      setLoading(false);
+      if (live.current && read === topologyRead.current) setLoading(false);
     }
   }, [requestFitToContent, serverId]);
 
   const fetchFirewallRules = useCallback(async () => {
-    setFirewallError(null);
+    if (!live.current) return false;
+    const read = ++firewallRead.current;
+    firewallReady.current = false;
+    setFirewallRules([]);
+    setUfwActive(null);
+    setFirewallError("Checking firewall state…");
     try {
       const res = await fetch(`/api/servers/${serverId}/network/firewall`);
-      const json: ApiResponse<{ rules: Array<{ number: number; target: string; action: string; from: string }> }> = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Firewall rules unavailable");
-      setFirewallRules(json.data?.rules || []);
+      const json: ApiResponse<{ rules: Array<{ number: number; target: string; action: string; from: string }>; ufwActive: boolean | null }> = await res.json();
+      if (!live.current || read !== firewallRead.current) return false;
+      if (!res.ok || !json?.success) throw new Error(json?.error || "Firewall rules unavailable");
+      const data = json.data;
+      if (!data || !Array.isArray(data.rules) || typeof data.ufwActive !== "boolean" || !data.rules.every((r) => r && Number.isInteger(r.number) && r.number > 0 && [r.target, r.action, r.from].every((v) => typeof v === "string"))) throw new Error("Invalid firewall state response");
+      firewallReady.current = true;
+      setFirewallRules(data.rules);
+      setUfwActive(data.ufwActive);
+      setFirewallError(null);
+      return true;
     } catch (err) {
-      setFirewallRules([]);
-      setFirewallError(err instanceof Error ? err.message : "Firewall rules unavailable");
+      if (live.current && read === firewallRead.current) setFirewallError(err instanceof Error ? err.message : "Firewall rules unavailable");
+      return false;
     }
   }, [serverId]);
 
   useEffect(() => {
+    live.current = true;
+    const topologyRequests = topologyRead;
+    const firewallRequests = firewallRead;
     fetchTopology();
     fetchFirewallRules();
+    return () => {
+      live.current = false;
+      topologyRequests.current++;
+      firewallRequests.current++;
+    };
   }, [fetchFirewallRules, fetchTopology]);
 
   useEffect(() => {
@@ -168,48 +238,76 @@ export function ServerNetworkMap({ serverId }: ServerNetworkMapProps) {
     return () => cancelAnimationFrame(frame);
   }, [fitCanvasToViewport, fitRequest, topology]);
 
-  /* ─── Mouse drag handlers ─── */
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    setActionTarget(null);
-    dragMoved.current = false;
-    setIsDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: 0, nodeY: 0 };
-  }, [pan]);
+  useEffect(() => {
+    if (!actionTarget) return;
+    panelRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const dismissOutside = (e: PointerEvent) => {
+      if (e.isPrimary && !panelRef.current?.contains(e.target as Node)) closeActionPanel();
+    };
+    const dismissEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeActionPanel();
+      }
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    document.addEventListener("keydown", dismissEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      document.removeEventListener("keydown", dismissEscape);
+    };
+  }, [actionTarget, closeActionPanel]);
 
-  const handleNodeMouseDown = useCallback((cardId: string, x: number, y: number) => (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+  /* ─── Single-pointer drag with capture ─── */
+  const startDrag = (e: React.PointerEvent, nodeId: string | null = null, x = 0, y = 0) => {
     e.stopPropagation();
+    if (e.button !== 0 || !e.isPrimary || activePointer.current) return;
+    closeActionPanel();
     dragMoved.current = false;
-    setDraggedNode(cardId);
+    activePointer.current = { id: e.pointerId, nodeId };
+    viewportRef.current?.setPointerCapture(e.pointerId);
+    setIsDragging(true);
     dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, nodeX: x, nodeY: y };
-  }, [pan]);
+  };
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const pointer = activePointer.current;
+    if (!pointer) {
+      if (e.isPrimary && e.buttons === 1 && (Math.abs(e.clientX - dragStart.current.x) > 4 || Math.abs(e.clientY - dragStart.current.y) > 4)) dragMoved.current = true;
+      return;
+    }
+    if (pointer.id !== e.pointerId) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragMoved.current = true;
-    if (draggedNode) {
+    if (!dragMoved.current) return;
+    if (pointer.nodeId) {
+      const nodeId = pointer.nodeId;
       setNodePositions((prev) => ({
         ...prev,
-        [draggedNode]: { x: dragStart.current.nodeX + dx / zoom, y: dragStart.current.nodeY + dy / zoom },
+        [nodeId]: { x: dragStart.current.nodeX + dx / zoom, y: dragStart.current.nodeY + dy / zoom },
       }));
-      return;
+    } else {
+      setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy });
     }
-    if (!isDragging) return;
-    setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy });
-  }, [draggedNode, isDragging, zoom]);
+  };
 
-  const handleMouseUp = useCallback(() => {
+  const finishDrag = (e: React.PointerEvent) => {
+    if (activePointer.current && activePointer.current.id !== e.pointerId) return;
+    if (e.isPrimary && e.type === "pointercancel") dragMoved.current = true;
+    if (activePointer.current?.id !== e.pointerId) return;
+    if (e.type !== "pointerup") dragMoved.current = true;
+    activePointer.current = null;
     setIsDragging(false);
-    setDraggedNode(null);
-  }, []);
+    if (viewportRef.current?.hasPointerCapture(e.pointerId)) viewportRef.current.releasePointerCapture(e.pointerId);
+  };
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
     const handleWheel = (e: WheelEvent) => {
+      if (panelRef.current?.contains(e.target as Node)) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.08 : 0.08;
       setZoom((z) => Math.min(2, Math.max(0.3, z + delta)));
@@ -235,87 +333,127 @@ Type ${phrase} to continue.`);
     return typed === phrase;
   };
 
-  const runContainerAction = async (container: ContainerInfo, action: "start" | "stop" | "restart") => {
-    if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing app state.");
-    const warning = action === "stop" ? `Stop ${container.name}? This can take the app offline.` : `${action === "restart" ? "Restart" : "Start"} ${container.name}?`;
-    if (!window.confirm(warning)) return;
-    if (["stop", "restart"].includes(action) && !requireTypedConfirm(action.toUpperCase(), `${action.toUpperCase()} ${container.name} is a high-risk app action.`)) return;
-    setActionBusy(action);
-    setActionMessage(null);
+  // A ref closes the same-tick window and stays held through readback.
+  const submitAction = async (label: string, endpoint: string, body: object, confirm: () => boolean, firewall: boolean, mutates = true) => {
+    if (!live.current || operation.current || uncertain.current || pendingTargets.has(serverId)) return;
+    operation.current = true;
+    let submitted = false;
+    let received = false;
     try {
-      const res = await fetch(`/api/servers/${serverId}/docker/action`, {
+      if (!confirm() || !live.current) return;
+      setActionBusy(label);
+      setActionMessage(null);
+      submitted = true;
+      if (mutates) pendingTargets.set(serverId, true);
+      const res = await fetch(`/api/servers/${serverId}/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ containerId: container.id || container.name, action, safeModeOff: !safeMode }),
+        body: JSON.stringify({ ...body, safeModeOff: !safeMode }),
       });
-      const json: ApiResponse<{ message: string }> = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
-      setActionMessage(json.data?.message || `${action} sent`);
-      setActionTarget(null);
-      await fetchTopology();
+      const json: ApiResponse<OperationResult> = await res.json();
+      if (!live.current) return;
+      if (mutates && res.status >= 500) throw new Error("Server response does not establish command outcome");
+      if (json?.success === false && typeof json.error === "string") {
+        received = true;
+        setActionMessage(`Server reported: ${json.error}`);
+      } else {
+        if (!res.ok || json?.success !== true || !json.data || typeof json.data.message !== "string" || typeof json.data.verified !== "boolean") throw new Error("Invalid operation response");
+        received = true;
+        setActionMessage([firewall ? json.data.message : `${json.data.verified ? "Expected state verified" : "Expected state not verified"}: ${json.data.message}`, json.data.output].filter(Boolean).join("\n"));
+        if (mutates && !json.data.verified) {
+          uncertain.current = true;
+          setNeedsCheck(true);
+        }
+      }
+      if (mutates) {
+        closeActionPanel();
+        const topologyOK = await fetchTopology();
+        const firewallOK = firewall ? await fetchFirewallRules() : true;
+        if (live.current && (!topologyOK || !firewallOK)) {
+          uncertain.current = true;
+          setNeedsCheck(true);
+          setActionMessage((message) => `${message || "Outcome unknown"}\nCurrent state readback unavailable. Changes locked until a read-only state check.`);
+        }
+      }
     } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Action failed");
+      if (!live.current) return;
+      if (submitted && !received && mutates) {
+        uncertain.current = true;
+        setNeedsCheck(true);
+        setActionMessage("Outcome unknown: the request was submitted but its result was not received. No retry was sent. Changes locked until a read-only state check.");
+      } else setActionMessage(err instanceof Error ? err.message : "Preview unavailable");
     } finally {
-      setActionBusy(null);
+      if (submitted && mutates) {
+        if (live.current && !uncertain.current) pendingTargets.delete(serverId);
+        else pendingTargets.set(serverId, false);
+      }
+      operation.current = false;
+      if (live.current) setActionBusy(null);
     }
   };
 
+  const checkCurrentState = async () => {
+    if (!live.current || operation.current || pendingTargets.get(serverId)) return;
+    operation.current = true;
+    setActionBusy("check-state");
+    try {
+      const topologyOK = await fetchTopology();
+      const firewallOK = await fetchFirewallRules();
+      if (!live.current) return;
+      if (topologyOK && firewallOK) {
+        pendingTargets.delete(serverId);
+        uncertain.current = false;
+        setNeedsCheck(false);
+        setActionMessage((message) => `${message || "Outcome unknown"}\nCurrent server state checked (read-only). The prior command outcome is unchanged; no retry was sent.`);
+      }
+    } finally {
+      operation.current = false;
+      if (live.current) setActionBusy(null);
+    }
+  };
+
+  const runContainerAction = async (container: ContainerInfo, action: "start" | "stop" | "restart") => {
+    if (!live.current || operation.current || uncertain.current) return;
+    if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing app state.");
+    if (!topologyReady.current || !topology?.networks.some((n) => n.containers.some((c) => c.id === container.id && c.name === container.name))) return;
+    await submitAction(action, "docker/action", { containerId: container.id || container.name, action }, () => {
+      const warning = action === "stop" ? `Stop ${container.name} on server ${serverId}? This can take the app offline.` : `${action === "restart" ? "Restart" : "Start"} ${container.name} on server ${serverId}?`;
+      return window.confirm(warning) && (!["stop", "restart"].includes(action) || requireTypedConfirm(action.toUpperCase(), `${action.toUpperCase()} ${container.name} on server ${serverId} is a high-risk app action.`));
+    }, false);
+  };
+
   const runFirewallPortAction = async (port: number, protocol: string, mode: "dry-run" | "apply") => {
+    if (!live.current || operation.current || uncertain.current || !topologyReady.current || !Number.isInteger(port) || port < 1 || port > 65535 || !["tcp", "udp"].includes(protocol)) return;
     if (mode === "apply") {
       if (localBlockReason) return setActionMessage(localBlockReason);
       if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
-      if (!window.confirm(`Block public access to ${protocol.toUpperCase()} :${port}?`)) return;
-      if (!requireTypedConfirm(`BLOCK ${port}`, `Blocking ${protocol.toUpperCase()} :${port} changes the real firewall.`)) return;
+      if (port === 22) return;
     }
-    setActionBusy(`${mode}-${port}`);
-    setActionMessage(null);
-    try {
-      const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, action: "block-port", port, protocol, safeModeOff: !safeMode }),
-      });
-      const json: ApiResponse<{ message?: string; output?: string }> = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Firewall action failed");
-      setActionMessage(json.data?.output || json.data?.message || "Done");
-      if (mode === "apply") {
-        await fetchTopology();
-        await fetchFirewallRules();
-      }
-    } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Firewall action failed");
-    } finally {
-      setActionBusy(null);
-    }
+    await submitAction(`${mode}-${port}`, "network/firewall", { mode, action: "block-port", port, protocol }, () => mode === "dry-run" || (
+      window.confirm(`Add a UFW deny rule for ${protocol.toUpperCase()} :${port} on server ${serverId}? External blocking is not guaranteed.`) &&
+      requireTypedConfirm(`BLOCK ${port}`, `Blocking ${protocol.toUpperCase()} :${port} on server ${serverId} changes the real firewall.`)
+    ), true, mode === "apply");
   };
 
   const runFirewallAction = async (portIndex: number, mode: "dry-run" | "apply") => {
     const port = listeningPorts[portIndex];
-    if (!port) return;
-    await runFirewallPortAction(port.localPort, port.protocol, mode);
+    if (port) await runFirewallPortAction(port.localPort, port.protocol, mode);
   };
 
   const allowPort = async (port: number, protocol: string) => {
+    if (!live.current || operation.current || uncertain.current || !topologyReady.current || !Number.isInteger(port) || port < 1 || port > 65535 || !["tcp", "udp"].includes(protocol)) return;
     if (safeMode) return setActionMessage("Safe Mode is on. Turn it off before changing firewall rules.");
-    if (!window.confirm(`Allow ${protocol.toUpperCase()} :${port} again?`)) return;
-    setActionBusy(`allow-${port}`);
-    setActionMessage(null);
-    try {
-      const res = await fetch(`/api/servers/${serverId}/network/firewall`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "apply", action: "allow-port", port, protocol, safeModeOff: !safeMode }),
-      });
-      const json: ApiResponse<{ output: string }> = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Allow rule failed");
-      setActionMessage(json.data?.output || "Allow rule applied");
-      await fetchFirewallRules();
-    } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : "Allow rule failed");
-    } finally {
-      setActionBusy(null);
-    }
+    if (!firewallReady.current) return;
+    await submitAction(`allow-${port}`, "network/firewall", { mode: "apply", action: "allow-port", port, protocol }, () =>
+      window.confirm(`Add a UFW allow rule for ${protocol.toUpperCase()} :${port} on server ${serverId}? This may permit public access; reachability is not verified.`), true);
   };
+
+  const recovery = needsCheck && (
+    <div className="space-y-2 rounded-lg border border-amber-500/30 p-3">
+      <p role="status" className="whitespace-pre-wrap break-words text-xs text-amber-300">{actionMessage}</p>
+      <Button size="sm" variant="secondary" disabled={actionBusy !== null} onClick={checkCurrentState}>Check current server state (read-only)</Button>
+    </div>
+  );
 
   // ── Loading ──
   if (loading) {
@@ -324,6 +462,7 @@ Type ${phrase} to continue.`);
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
           <p className="text-sm text-gray-500">Loading network map...</p>
+          {recovery}
         </div>
       </div>
     );
@@ -333,6 +472,7 @@ Type ${phrase} to continue.`);
   if (disconnected) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 bg-gray-800/50 rounded-xl border border-gray-700">
+        {recovery}
         <WifiOff className="h-10 w-10 text-gray-500" />
         <div className="text-center">
           <p className="text-sm font-medium text-gray-300">Server Offline</p>
@@ -349,6 +489,7 @@ Type ${phrase} to continue.`);
   if (error) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 bg-red-500/5 rounded-xl border border-red-500/20">
+        {recovery}
         <AlertCircle className="h-10 w-10 text-red-400" />
         <p className="text-sm text-red-400 max-w-md text-center">{error}</p>
         <Button variant="secondary" size="sm" onClick={fetchTopology}>
@@ -382,7 +523,7 @@ Type ${phrase} to continue.`);
   const selectedPortNeedsReview = selectedPortInfo ? sensitivePorts.has(selectedPortInfo.localPort) && selectedPortInfo.isPublic : false;
   const findings = topology.findings || [];
   const secureChecklist = [
-    { label: "Public exposure reviewed", ok: findings.length === 0, detail: findings.length ? `${findings.length} exposure finding(s) need review.` : "No risky public port finding in this snapshot." },
+    { label: "Potential exposure findings", ok: findings.length === 0, detail: findings.length ? `${findings.length} potential exposure finding(s) need review.` : "No common risky wildcard listener found; external reachability is not verified." },
     { label: "Firewall rules readable", ok: !firewallError, detail: firewallError || `${firewallRules.length} numbered rule(s) loaded.` },
     { label: "Safe Mode protects changes", ok: safeMode, detail: safeMode ? "Dangerous fixes are locked until Safe Mode is off." : "Safe Mode is off. Review carefully before applying changes." },
     { label: "SSH self-lockout protected", ok: !findings.some((f) => f.port === 22 && f.severity === "high"), detail: "Port 22 cannot be blocked from the map." },
@@ -420,7 +561,7 @@ Type ${phrase} to continue.`);
           <StatChip icon={<Globe className="h-3.5 w-3.5" />} label="Open Ports" value={listeningPorts.length} color="text-amber-400" />
         </div>
 
-        <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh network data">
+        <Button variant="ghost" size="sm" onClick={fetchTopology} disabled={actionBusy !== null} title="Refresh network data">
           <RefreshCw className="h-4 w-4 mr-1" />
           Refresh
         </Button>
@@ -434,18 +575,21 @@ Type ${phrase} to continue.`);
         </div>
       )}
 
+      {recovery}
+      {actionMessage && !needsCheck && <p role="status" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-700 bg-gray-900 p-3 text-xs text-gray-300">{actionMessage}</p>}
+
       <div className="rounded-xl border border-gray-700 bg-gray-900/70 p-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-white">Network Audit</h3>
           <a href="/docs" className="text-xs text-gray-500 hover:text-brand-300">Docs</a>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div title="Ports reachable outside localhost." className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-gray-700 bg-gray-950/60 p-4 text-center">
+          <div title="Non-loopback listeners; external reachability is not verified." className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-gray-700 bg-gray-950/60 p-4 text-center">
             <div className="rounded-2xl bg-sky-500/10 p-3 ring-1 ring-sky-400/20">
               <Globe className="h-6 w-6 text-sky-300" />
             </div>
             <p className="mt-3 text-3xl font-bold leading-none text-white">{publicPorts.length}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-wide text-gray-500">Public</p>
+            <p className="mt-1 text-[11px] uppercase tracking-wide text-gray-500">Potential exposure</p>
           </div>
           <div
             title={sensitiveOpenPorts.length > 0 ? `Review: ${sensitiveOpenPorts.slice(0, 6).map((p) => `${p.protocol.toUpperCase()}:${p.localPort} (${p.process || "unknown"})`).join(", ")}${sensitiveOpenPorts.length > 6 ? "…" : ""}` : "No common database/admin port is publicly listening in this snapshot."}
@@ -497,7 +641,7 @@ Type ${phrase} to continue.`);
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-white">Exposure Advisor</h3>
-              <p className="mt-1 text-xs text-gray-400">Real findings from currently listening public ports.</p>
+              <p className="mt-1 text-xs text-gray-400">Listening-port evidence only. External reachability is not verified.</p>
             </div>
             <Badge variant={findings.some((f) => f.severity === "high") ? "warning" : "default"}>{findings.length} finding(s)</Badge>
           </div>
@@ -514,11 +658,11 @@ Type ${phrase} to continue.`);
                 </div>
                 {finding.port && finding.protocol && (
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-800 pt-3">
-                    <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${finding.port}`} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "dry-run")}>
+                    <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${finding.port}`} disabled={needsCheck || actionBusy !== null} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "dry-run")}>
                       <Eye className="mr-1 h-3.5 w-3.5" /> Preview change
                     </Button>
-                    <Button size="sm" variant="danger" loading={actionBusy === `apply-${finding.port}`} disabled={!!localBlockReason || safeMode || finding.port === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : finding.port === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "apply")}>
-                      <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Block locked" : "Block public access"}
+                    <Button size="sm" variant="danger" loading={actionBusy === `apply-${finding.port}`} disabled={!!localBlockReason || needsCheck || actionBusy !== null || safeMode || finding.port === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : finding.port === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(finding.port as number, finding.protocol as string, "apply")}>
+                      <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Rule locked" : "Add deny rule"}
                     </Button>
                   </div>
                 )}
@@ -545,7 +689,7 @@ Type ${phrase} to continue.`);
           <span>Actions pill / right-click = actions · Click empty canvas = close · Drag canvas/nodes</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / exposed port</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Internet / potential exposure</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400" /> Host</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400" /> Network group</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Running app</span>
@@ -565,14 +709,23 @@ Type ${phrase} to continue.`);
         ref={viewportRef}
         className="bg-gray-900/50 rounded-xl border border-gray-700 overflow-hidden relative"
         style={{ height: Math.min(Math.max(canvasH + 40, 480), 700), cursor: isDragging ? "grabbing" : "grab" }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onPointerDownCapture={(e) => {
+          if (e.isPrimary && !activePointer.current) {
+            dragMoved.current = false;
+            dragStart.current.x = e.clientX;
+            dragStart.current.y = e.clientY;
+          }
+        }}
+        onPointerDown={(e) => startDrag(e)}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
       >
+        <div className="absolute inset-0 touch-none" />
         <div
           className="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-xl border border-gray-700/80 bg-gray-950/80 p-1 shadow-xl backdrop-blur"
-          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           <button onClick={zoomOut} className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white" title="Zoom out">
@@ -606,6 +759,7 @@ Type ${phrase} to continue.`);
               width: canvasW,
               height: canvasH,
               position: "relative",
+              touchAction: "none",
               transition: isDragging ? "none" : "transform 0.15s ease-out",
             }}
           >
@@ -633,15 +787,16 @@ Type ${phrase} to continue.`);
                     from={fromCard}
                     to={toCard}
                     color={edge.color}
+                    actionLabel={[fromCard, toCard].map((card) => containerDataMap.get(card.id)?.name || orderedNets.find((net) => card.id === `net-${net.id}`)?.name || (card.type === "internet" ? "Internet" : "Docker host")).join(" to ")}
                     label={edge.label}
-                    onAction={(e) => setActionTarget({
+                    onAction={(e) => openActionPanel({
                       type: "edge",
                       key: `${edge.fromId}->${edge.toId}`,
                       label: `${fromCard.type} → ${toCard.type}`,
                       fromType: fromCard.type,
                       toType: toCard.type,
                       ...pointerInViewport(e),
-                    })}
+                    }, e)}
                   />
                 );
               })}
@@ -650,21 +805,21 @@ Type ${phrase} to continue.`);
             {/* Render HTML cards */}
             {cards.map(card => {
               if (card.type === "internet") {
-                return <InternetCard key={card.id} card={card} onAction={(e) => setActionTarget({ type: "internet", ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <InternetCard key={card.id} card={card} onAction={(e) => openActionPanel({ type: "internet", ...pointerInViewport(e) }, e)} onPointerDown={(e) => startDrag(e, card.id, card.x, card.y)} />;
               }
               if (card.type === "server") {
-                return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <ServerCard key={card.id} card={card} hostname={topology.networks[0]?.containers[0]?.name ? "Docker Host" : "Server"} onPointerDown={(e) => startDrag(e, card.id, card.x, card.y)} />;
               }
               if (card.type === "network") {
                 const netData = orderedNets.find(n => card.id === `net-${n.id}`);
                 if (!netData) return null;
                 const colorIdx = orderedNets.indexOf(netData);
-                return <NetworkCard key={card.id} card={card} net={netData} colorIdx={colorIdx >= 0 ? colorIdx : 0} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <NetworkCard key={card.id} card={card} net={netData} colorIdx={colorIdx >= 0 ? colorIdx : 0} onPointerDown={(e) => startDrag(e, card.id, card.x, card.y)} />;
               }
               if (card.type === "container") {
                 const contData = containerDataMap.get(card.id);
                 if (!contData) return null;
-                return <ContainerCard key={card.id} card={card} container={contData} onAction={(container, e) => setActionTarget({ type: "container", container, ...pointerInViewport(e) })} onMouseDown={handleNodeMouseDown(card.id, card.x, card.y)} />;
+                return <ContainerCard key={card.id} card={card} container={contData} onAction={(container, e) => openActionPanel({ type: "container", container, ...pointerInViewport(e) }, e)} onPointerDown={(e) => startDrag(e, card.id, card.x, card.y)} />;
               }
               return null;
             })}
@@ -672,10 +827,10 @@ Type ${phrase} to continue.`);
         )}
               {/* ── Action Panel ── */}
       {actionTarget && (
-        <div className="absolute z-30 w-[min(340px,calc(100%-2rem))] rounded-xl border border-brand-500/30 bg-gray-900/95 p-4 shadow-2xl backdrop-blur" style={{ left: actionTarget.x, top: actionTarget.y }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <div ref={panelRef} role="dialog" aria-labelledby="canvas-action-title" className="absolute z-30 w-[340px] max-w-[calc(100%_-_2rem)] overflow-auto overscroll-contain break-words rounded-xl border border-brand-500/30 bg-gray-900/95 p-4 shadow-2xl backdrop-blur" style={{ left: `min(${actionTarget.x}px, max(16px, calc(100% - 356px)))`, top: `min(${actionTarget.y}px, max(16px, calc(100% - 296px)))`, maxHeight: "min(280px, calc(100% - 32px))", touchAction: "pan-y" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
-              <h4 className="text-sm font-semibold text-white">
+              <h4 id="canvas-action-title" className="text-sm font-semibold text-white">
                 {actionTarget.type === "container" ? actionTarget.container.name : actionTarget.type === "edge" ? "Connection options" : "Internet access"}
               </h4>
               <p className="mt-1 text-xs text-gray-400">
@@ -683,21 +838,21 @@ Type ${phrase} to continue.`);
                   ? "Real Docker controls for this app."
                   : actionTarget.type === "edge"
                     ? "Connection lines are visual only. Preview a change before applying firewall rules."
-                    : "Review public ports, exposed services, and firewall rules."}
+                    : "Review potentially exposed listeners and firewall rules."}
               </p>
             </div>
-            <button onClick={() => setActionTarget(null)} className="text-gray-500 hover:text-white">✕</button>
+            <button type="button" aria-label="Close canvas actions" onClick={() => closeActionPanel()} className="min-h-11 min-w-11 shrink-0 text-gray-500 hover:text-white">✕</button>
           </div>
 
           {actionTarget.type === "container" && (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "start")}>
+              <Button size="sm" variant="secondary" disabled={safeMode || needsCheck || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "start")}>
                 <Play className="mr-1 h-3.5 w-3.5" /> Start
               </Button>
-              <Button size="sm" variant="secondary" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "restart")}>
+              <Button size="sm" variant="secondary" disabled={safeMode || needsCheck || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "restart")}>
                 <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restart
               </Button>
-              <Button size="sm" variant="danger" disabled={safeMode || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "stop")}>
+              <Button size="sm" variant="danger" disabled={safeMode || needsCheck || actionBusy !== null} title={safeMode ? "Safe Mode locks app state changes" : undefined} onClick={() => runContainerAction(actionTarget.container, "stop")}>
                 <Square className="mr-1 h-3.5 w-3.5" /> Stop
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedContainer(actionTarget.container)}>
@@ -723,15 +878,15 @@ Type ${phrase} to continue.`);
               {publicPorts.length > 0 && (
                 <div className="rounded-lg border border-gray-700 bg-gray-950/60 p-3">
                   <p className="mb-1 text-xs font-medium text-gray-300">Real firewall action · high risk requires typed confirmation</p>
-                  <p className="mb-2 text-[11px] text-gray-500">Choose the exact public port to preview or block. Wires do not directly toggle traffic.</p>
+                  <p className="mb-2 text-[11px] text-gray-500">Choose a port to preview or add a deny rule. Wires do not toggle traffic; external blocking is not verified.</p>
                   <div className="flex flex-wrap gap-2">
                     {publicPorts.slice(0, 6).map((port) => {
                       const index = listeningPorts.indexOf(port);
                       return (
                         <div key={`${port.protocol}-${port.localPort}-${port.process}`} className="flex items-center gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
                           <span className="px-2 text-xs font-mono text-white">{port.protocol.toUpperCase()} :{port.localPort}</span>
-                          <button disabled={actionBusy !== null} onClick={() => runFirewallAction(index, "dry-run")} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">Preview</button>
-                          <button disabled={!!localBlockReason || actionBusy !== null || safeMode || port.localPort === 22} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : port.localPort === 22 ? "SSH port 22 is protected from map blocking" : "Apply block rule")}>{localBlockReason ? "Block unavailable" : "Block"}</button>
+                          <button disabled={needsCheck || actionBusy !== null} onClick={() => runFirewallAction(index, "dry-run")} className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50">Preview</button>
+                          <button disabled={!!localBlockReason || needsCheck || actionBusy !== null || safeMode || port.localPort === 22} onClick={() => runFirewallAction(index, "apply")} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : port.localPort === 22 ? "SSH port 22 is protected from map blocking" : "Apply block rule")}>{localBlockReason ? "Block unavailable" : "Add deny rule"}</button>
                         </div>
                       );
                     })}
@@ -750,7 +905,6 @@ Type ${phrase} to continue.`);
             </div>
           )}
 
-          {actionMessage && <p className="mt-3 text-xs text-gray-400">{actionMessage}</p>}
         </div>
       )}
 
@@ -762,7 +916,8 @@ Type ${phrase} to continue.`);
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h4 className="text-sm font-semibold text-white">Firewall Rules</h4>
-            <p className="text-xs text-gray-500">{localBlockReason || "Preview is safe. Block/Allow changes real UFW rules and is locked by Safe Mode."}</p>
+            <p className="text-xs text-gray-500">{localBlockReason || "Preview is read-only. Deny/Allow edits UFW rules, not a guarantee of external blocking."}</p>
+            <p className="mt-1 text-xs text-amber-300">{ufwActive === false ? "UFW is inactive; stored rules do not filter traffic." : ufwActive === true ? "UFW is active; earlier allow rules and Docker publishing may bypass a deny rule." : "UFW state is unknown."} External reachability is not verified.</p>
           </div>
           <Button size="sm" variant="ghost" onClick={fetchFirewallRules} disabled={actionBusy !== null}>
             <RefreshCw className="mr-1 h-3.5 w-3.5" /> Refresh
@@ -786,8 +941,8 @@ Type ${phrase} to continue.`);
                     <p className="mt-1 truncate text-xs text-gray-500">{rule.action} · from {rule.from}</p>
                   </div>
                   {canAllow && (
-                    <button disabled={safeMode || actionBusy !== null} onClick={() => allowPort(port, protocol)} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500 disabled:opacity-50" title={safeMode ? "Safe Mode locks firewall changes" : "Rollback by allowing this port"}>
-                      Allow
+                    <button disabled={safeMode || needsCheck || actionBusy !== null} onClick={() => allowPort(port, protocol)} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500 disabled:opacity-50" title={safeMode ? "Safe Mode locks firewall changes" : "Rollback by allowing this port"}>
+                      Add allow rule
                     </button>
                   )}
                 </div>
@@ -829,7 +984,7 @@ Type ${phrase} to continue.`);
             Open Ports
           </h4>
           <p className="text-xs text-gray-500 mb-3">
-            Ports currently listening for external connections.
+            Ports currently listening on this server. External reachability is not verified.
           </p>
           <div className="flex flex-wrap gap-2">
             {listeningPorts.map((p, i) => (
@@ -864,11 +1019,11 @@ Type ${phrase} to continue.`);
             {selectedPortNeedsReview ? "Common admin/database port. Keep it open only if you really need external access." : "Listening port detected. Review only if this service should not receive traffic."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${selectedPortInfo.localPort}`} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "dry-run")}>
+            <Button size="sm" variant="secondary" loading={actionBusy === `dry-run-${selectedPortInfo.localPort}`} disabled={needsCheck || actionBusy !== null} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "dry-run")}>
               <Eye className="mr-1 h-3.5 w-3.5" /> Preview firewall change
             </Button>
-            <Button size="sm" variant="danger" loading={actionBusy === `apply-${selectedPortInfo.localPort}`} disabled={!!localBlockReason || safeMode || selectedPortInfo.localPort === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : selectedPortInfo.localPort === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "apply")}>
-              <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Block locked" : "Block public access"}
+            <Button size="sm" variant="danger" loading={actionBusy === `apply-${selectedPortInfo.localPort}`} disabled={!!localBlockReason || needsCheck || actionBusy !== null || safeMode || selectedPortInfo.localPort === 22} title={localBlockReason || (safeMode ? "Safe Mode locks firewall changes" : selectedPortInfo.localPort === 22 ? "SSH port 22 is protected from map blocking" : undefined)} onClick={() => runFirewallPortAction(selectedPortInfo.localPort, selectedPortInfo.protocol, "apply")}>
+              <Shield className="mr-1 h-3.5 w-3.5" /> {localBlockReason ? "Block unavailable" : safeMode ? "Rule locked" : "Add deny rule"}
             </Button>
             <a href="/docs#network" className="inline-flex items-center rounded-lg px-3 py-2 text-xs text-brand-300 hover:bg-brand-500/10">Learn more →</a>
           </div>

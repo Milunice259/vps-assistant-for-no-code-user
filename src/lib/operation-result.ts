@@ -4,6 +4,8 @@ export type OperationResult = {
   message: string;
   risk: OperationRisk;
   verified: boolean;
+  outcome?: "verified" | "failed" | "unverified";
+  health?: "healthy" | "starting" | "unhealthy" | "absent" | "unknown";
   rollback?: string;
   output?: string;
 };

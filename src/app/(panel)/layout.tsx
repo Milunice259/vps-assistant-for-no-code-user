@@ -14,13 +14,13 @@ const pageTitles: Record<string, string> = {
   "/servers": "Server Management",
   "/network": "Network Manager",
   "/apps": "Applications",
-  "/deploy": "GitHub Deployer",
+  "/deploy": "Deployment Assistant",
   "/terminal": "Terminal",
   "/audit": "Audit Log",
   "/settings": "Settings",
   "/users": "User Management",
   "/profile": "My Profile",
-  "/backup": "Backup & Restore",
+  "/backup": "Panel database backups",
   "/docs": "Docs",
 };
 
@@ -39,28 +39,13 @@ function PanelContent({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-950">
       <Sidebar />
       <div
-        className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300"
-        style={{ marginLeft: undefined }}
+        className={`flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ${collapsed ? "md:ml-16" : "md:ml-64"}`}
       >
-        {/* Desktop: use inline style for margin; Mobile: no margin */}
-        <div
-          className="hidden md:flex md:flex-1 md:flex-col md:overflow-hidden"
-          style={{ marginLeft: collapsed ? "4rem" : "16rem" }}
-        >
           <Header title={title} />
-          <main className="flex-1 overflow-y-auto p-6">
+          <main className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
             <Breadcrumbs />
             {children}
           </main>
-        </div>
-        {/* Mobile: no sidebar margin, add top padding for hamburger */}
-        <div className="flex flex-1 flex-col overflow-hidden md:hidden">
-          <Header title={title} />
-          <main className="flex-1 overflow-y-auto p-4 pt-2">
-            <Breadcrumbs />
-            {children}
-          </main>
-        </div>
       </div>
       {/* Command Palette */}
       <CommandPalette />

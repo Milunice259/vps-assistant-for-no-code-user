@@ -23,13 +23,15 @@ export function SvgEdge({
   from,
   to,
   color,
+  actionLabel,
   onAction,
 }: {
   from: CardRect;
   to: CardRect;
   color: string;
+  actionLabel?: string;
   label?: string;
-  onAction?: (e: React.MouseEvent<SVGGElement>) => void;
+  onAction?: (e: React.MouseEvent<SVGGElement> | React.KeyboardEvent<SVGGElement>) => void;
 }) {
   const { x1, y1, x2, y2 } = getSideAnchors(from, to);
 
@@ -39,7 +41,7 @@ export function SvgEdge({
 
 
   return (
-    <g className="group cursor-default" onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}>
+    <g className="group cursor-default" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}>
       <title>Right-click the wire, or click Actions, for real connection options.</title>
       <path d={pathD} fill="none" stroke={`${color}18`} strokeWidth={14} />
       <path
@@ -53,8 +55,14 @@ export function SvgEdge({
       </path>
       <circle cx={x1} cy={y1} r={4} fill={color} opacity={0.6} />
       <circle cx={x2} cy={y2} r={4} fill={color} opacity={0.85} />
-      <g className="cursor-pointer opacity-100 sm:opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); onAction?.(e); }}>
-        <rect x={midX - 30} y={midY - 13} width={60} height={26} rx={13} fill="#020617" stroke={color} strokeWidth={1.5} />
+      <g role="button" tabIndex={0} aria-label={`Connection actions: ${actionLabel || `${from.type} to ${to.type}`}`} aria-haspopup="dialog" className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400" onClick={(e) => { e.stopPropagation(); onAction?.(e); }} onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!e.repeat) onAction?.(e);
+        }
+      }}>
+        <rect x={midX - 32} y={midY - 22} width={64} height={44} rx={13} fill="#020617" stroke={color} strokeWidth={1.5} />
         <text x={midX} y={midY + 4} textAnchor="middle" fill="#e5e7eb" fontSize={10} fontWeight={800}>Actions</text>
       </g>
    </g>

@@ -31,9 +31,10 @@ const mocks = {
   '@/lib/deployer': { prepareDeployment: touched('analyze', () => ({ projectDir: '/mock', detectedStack: 'node', port: 3000 })), cleanupDeployDir: touched('cleanup'), pruneOldDeployments: touched('prune') },
   '@/lib/crypto': { encrypt: x => x, decrypt: x => x },
   '@/lib/server-ssh': { connectToServer: touched('ssh', () => ({ ssh: {}, server: { name: 'Remote A' } })), isDisconnectedError: () => false },
-  '@/lib/ssh': { closeSSH: async () => {}, executeCommand: touched('command', async () => 'ok'), remoteDeployViaSSH: touched('execute', () => ({ success: true, logs: '' })) },
-  '@/lib/local-server': { isLocalServer: id => !id || id === 'local', execLocal: touched('command', () => 'missing') },
+  '@/lib/ssh': { closeSSH: async () => {}, executeCommand: touched('command', async (_ssh, command) => require('./check-guided-deploy.cjs').output(command)), remoteDeployViaSSH: touched('execute', () => ({ success: true, logs: '' })) },
+  '@/lib/local-server': { isLocalServer: id => !id || id === 'local', execOnHost: touched('command', command => require('./check-guided-deploy.cjs').output(command)), execLocal: touched('command', () => 'missing') },
   child_process: { execFileSync: touched('command', () => 'ok') },
+  '@/lib/deploy-preflight': require('./check-guided-deploy.cjs').load('src/lib/deploy-preflight.ts'),
   '@/lib/validation': loadSource('src/lib/validation.ts'),
   '@/lib/sanitize': { sanitizeLogs: x => x },
   '@/lib/audit': { auditLog: async () => {}, getClientIp: () => 'mock' },
@@ -93,7 +94,10 @@ async function securityRegressions() {
       reset(); allowed = true;
       assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: 'services: {app: {image: nginx}}', safeModeOff: true, ...extra }))).status, 400); untouched();
     }
-    const safeCompose = 'services: {app: {image: nginx, volumes: [{type: bind, source: /opt/data, target: /data}, "data:/db", "./data:/files"]}}';
+    const bindCompose = 'services: {app: {image: nginx, volumes: [{type: bind, source: /opt/data, target: /data}]}}';
+    reset(); allowed = true;
+    assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: bindCompose, safeModeOff: true }))).status, 400); untouched();
+    const safeCompose = 'services: {web: {image: nginx}}';
     assert.equal(validator(yaml.load(safeCompose)).valid, true);
     reset(); allowed = true;
     const response = await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: safeCompose, safeModeOff: true }));
@@ -106,10 +110,7 @@ async function securityRegressions() {
     const runner = async (...args) => {
       calls.push(['command', ...args]);
       const command = typeof args[0] === 'string' ? args[0] : args[1];
-      if (command.startsWith('docker info')) return 'ok';
-      if (command.startsWith('df ') || command.startsWith('awk ')) return '50';
-      if (command.startsWith('docker run')) return 'abcdef123456';
-      return '';
+      return require('./check-guided-deploy.cjs').output(command);
     };
     const old = mocks['@/lib/ssh'].executeCommand;
     mocks['@/lib/ssh'].executeCommand = runner;
@@ -117,7 +118,7 @@ async function securityRegressions() {
       const value = 'x -v /:/host --privileged';
       const res = await docker().POST(request({ ...validImage, env: { TOKEN: value, QUOTE: "it's > ./host" } }));
       assert.equal(res.status, 201);
-      const command = calls.find(([name, _ssh, cmd]) => name === 'command' && typeof cmd === 'string' && cmd.startsWith('docker run'))[2];
+      const command = calls.find(([name, _ssh, cmd]) => name === 'command' && typeof cmd === 'string' && cmd.includes('docker run -d'))[2];
       // Parse only: never execute the captured Docker command.
       const parsed = require('node:child_process').spawnSync('python3', ['-c', 'import json,shlex,sys; print(json.dumps(shlex.split(sys.argv[1])))', command], { encoding: 'utf8' });
       assert.equal(parsed.status, 0);
@@ -128,7 +129,7 @@ async function securityRegressions() {
       assert(!JSON.stringify(res.body).includes(value));
       reset(); allowed = true;
       mocks['@/lib/ssh'].executeCommand = async (...args) => {
-        if (args[1].startsWith('docker run')) throw new Error(`Failed command: ${args[1]}`);
+        if (args[1].includes('docker run -d')) throw new Error(`Failed command: ${args[1]}`);
         return runner(...args);
       };
       const failed = await docker().POST(request({ ...validImage, env: { TOKEN: value } }));
@@ -144,19 +145,17 @@ async function securityRegressions() {
     for (const serverId of ['local', 'remote-a']) {
       reset(); allowed = true;
       const executor = serverId === 'local' ? mocks['@/lib/local-server'] : mocks['@/lib/ssh'];
-      const method = serverId === 'local' ? 'execLocal' : 'executeCommand';
+      const method = serverId === 'local' ? 'execOnHost' : 'executeCommand';
       const old = executor[method];
       let uploadCommand;
       executor[method] = async (...args) => {
         calls.push(['command', ...args]);
         const command = serverId === 'local' ? args[0] : args[1];
-        if (command.includes('base64 -d')) {
+        if (command.includes('base64 -d') && command.includes('docker-compose.yml')) {
           uploadCommand = command;
           throw new Error(`Failed command: ${command}`);
         }
-        if (command.startsWith('docker info')) return 'ok';
-        if (command.startsWith('df ') || command.startsWith('awk ')) return '50';
-        return '';
+        return require('./check-guided-deploy.cjs').output(command);
       };
       try {
         const res = await docker().POST(request({ serverId, type: 'compose', projectPath: '/opt/app', composeContent, safeModeOff: true }));
@@ -170,7 +169,7 @@ async function securityRegressions() {
             assert(!text.includes(secret) && !text.includes(JSON.stringify(secret).slice(1, -1)), `${serverId}: ${label} leaked Compose document/command`);
           }
         }
-        assert.equal(res.body.error, "Compose file upload failed; check the target server's disk space and permissions.");
+        assert.match(res.body.error, /Deployment failed.*partial assets/);
         assert(!calls.some(([name, ...args]) => name === 'command' && args.some(arg => typeof arg === 'string' && arg.includes(' up -d'))), 'failed upload must stop deployment');
       } finally { executor[method] = old; }
     }
@@ -181,10 +180,10 @@ async function securityRegressions() {
       const states = [], Banner = () => null;
       let cursor = 0;
       const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
-      const react = { useState: initial => { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; }, useEffect: () => {}, useCallback: fn => fn };
+      const react = { useState: initial => { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; }, useRef: initial => { const i = cursor++; if (!(i in states)) states[i] = { current: initial }; return states[i]; }, useEffect: () => {}, useCallback: fn => fn };
       const module = { exports: {} };
       const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-      vm.runInNewContext(code, { module, exports: module.exports, require: name => name === 'react' ? react : name === 'react/jsx-runtime' ? runtime : name.endsWith('/DeployRequirementBanner') ? { DeployRequirementBanner: Banner } : name.endsWith('/SafeModeContext') ? { useSafeMode: () => ({ safeMode: false }) } : new Proxy({}, { get: (_, key) => key }) });
+      vm.runInNewContext(code, { module, exports: module.exports, require: name => name === './useDeployPreflight' ? { useDeployPreflight: () => ({ preflight: null, checking: false, runPreflight: () => {}, invalidate: () => {}, readyRef: { current: false }, busyRef: { current: false } }) } : name === 'react' ? react : name === 'react/jsx-runtime' ? runtime : name.endsWith('/DeployRequirementBanner') ? { DeployRequirementBanner: Banner } : name.endsWith('/SafeModeContext') ? { useSafeMode: () => ({ safeMode: false }) } : new Proxy({}, { get: (_, key) => key }) });
       const render = () => { cursor = 0; return module.exports[component](); };
       function nodes(tree) { return !tree || typeof tree !== 'object' ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)]; }
       let tree = nodes(render());
@@ -290,6 +289,11 @@ async function main() {
     assert.equal(res.status, 200); assert.equal(res.body.data.target, 'local');
     assert(!calls.some(([name]) => ['ssh', 'server', 'safety', 'write'].includes(name)));
   }
+  reset(); allowed = true;
+  const requirementsResult = await load('requirements/route.ts').POST(request({ serverId: 'local', mode: 'compose' }));
+  assert.equal(requirementsResult.status, 200);
+  assert.ok(requirementsResult.body.data.requirements.every(item => item.ok), 'Compose requirements must use the host executor, matching real execution');
+  assert.ok(calls.some(([name, command]) => name === 'command' && command === 'docker compose version'));
   reset(); allowed = true;
   assert.equal((await load('route.ts').POST(request({ serverId: 'local', repoUrl: 'https://github.com/example/repo' }))).status, 201);
   assert(calls.some(([name]) => name === 'analyze')); assert(!calls.some(([name]) => ['ssh', 'server', 'safety'].includes(name)));

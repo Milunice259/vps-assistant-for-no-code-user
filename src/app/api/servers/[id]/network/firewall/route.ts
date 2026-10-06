@@ -28,8 +28,9 @@ function parseRules(output: string): FirewallRule[] {
 function planCommand({ action, port, protocol }: Body) {
   const ufw = action === "block-port" ? `ufw deny ${port}/${protocol}` : `ufw delete deny ${port}/${protocol} >/dev/null 2>&1 || true; ufw allow ${port}/${protocol}`;
   const rollback = action === "block-port" ? `ufw delete deny ${port}/${protocol}` : `ufw deny ${port}/${protocol}`;
-  const label = action === "block-port" ? "Block public access" : "Allow public access";
-  return { label, rollback, command: `${CHECK_UFW}; ${ufw} && ufw status numbered`, preview: `${label}: ${protocol.toUpperCase()} ${port}\nWould run: ${ufw}\nRollback: ${rollback}` };
+  const label = action === "block-port" ? "UFW deny rule" : "UFW allow rule";
+  // ponytail: rule readback only; external reachability needs separately authorized independent testing.
+  return { label, rollback, command: `${CHECK_UFW}; { ${ufw}; } && printf '\\n__UFW_APPLIED__\\n' && ufw status numbered && printf '\\n__UFW_RULES__\\n' && ufw show added`, preview: `${label}: ${protocol.toUpperCase()} ${port}\nWould run: ${ufw}\nRollback: ${rollback}` };
 }
 
 async function runServerCommand(id: string, command: string, sshRef: { ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null }) {
@@ -39,7 +40,7 @@ async function runServerCommand(id: string, command: string, sshRef: { ssh: Awai
   return executeCommand(result.ssh, command, 30_000);
 }
 
-export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<{ rules: FirewallRule[]; output: string }>>> {
+export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<{ rules: FirewallRule[]; output: string; ufwActive: boolean | null }>>> {
   const sshRef: { ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null } = { ssh: null };
   try {
     const session = await getSession();
@@ -49,7 +50,8 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
       return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
     }
     const output = await runServerCommand(id, `${CHECK_UFW}; ufw status numbered`, sshRef);
-    return NextResponse.json({ success: true, data: { rules: parseRules(output), output } });
+    const ufwActive = /^Status: active$/m.test(output) ? true : /^Status: inactive$/m.test(output) ? false : null;
+    return NextResponse.json({ success: true, data: { rules: parseRules(output), output, ufwActive } });
   } catch (error) {
     if (isDisconnectedError(error)) return NextResponse.json({ success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" }, { status: 503 });
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Firewall rules failed" }, { status: 500 });
@@ -59,7 +61,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
 }
 
 export async function POST(request: NextRequest, context: RouteContext): Promise<NextResponse<ApiResponse<OperationResult>>> {
-  let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
+  const sshRef: { ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null } = { ssh: null };
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -102,10 +104,17 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
     let output = preview;
     if (mode === "apply") {
-      const sshRef = { ssh };
       output = await runServerCommand(id, command, sshRef);
-      ssh = sshRef.ssh;
     }
+
+    const commandExecuted = mode === "apply" && output.split("\n").includes("__UFW_APPLIED__");
+    const rule = `ufw ${action === "block-port" ? "deny" : "allow"} ${port}/${protocol}`;
+    const ruleObserved = commandExecuted && (output.split("__UFW_RULES__\n")[1] || "").split("\n").some((line) => line.trim() === rule);
+    const ufwActive = mode === "dry-run" ? null : /^Status: active$/m.test(output) ? true : /^Status: inactive$/m.test(output) ? false : null;
+    const evidence = { commandExecuted, ruleObserved, ufwActive, externalBlockingVerified: false };
+    const message = mode === "dry-run" ? `${label} preview (no command executed)` : ruleObserved ? `${label} readback confirmed; external access not verified` : `${label} application/readback not confirmed; external access not verified`;
+    const caveat = `${ufwActive === false ? "UFW is inactive; stored rules do not filter traffic. " : ""}An earlier allow rule or Docker-published port may bypass this rule; external reachability is not verified.`;
+    output = `${caveat}\n${output.replace(/^__UFW_(?:APPLIED|RULES)__\n?/gm, "")}`;
 
     await auditLog({
       action: "quick_action",
@@ -113,16 +122,16 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       username: session.username,
       ip: getClientIp(request),
       target: id,
-      details: JSON.stringify({ mode, label, protocol, port, rollback, verified: mode === "apply" }),
+      details: JSON.stringify({ mode, label, protocol, port, rollback, verified: false, outcome: "unverified", evidence }),
     });
 
-    return NextResponse.json({ success: true, data: operationResult({ message: mode === "apply" ? `${label} applied` : `${label} preview`, risk: mode === "apply" ? "danger" : "caution", verified: mode === "apply", rollback, output }) });
+    return NextResponse.json({ success: true, data: { ...operationResult({ message, risk: mode === "apply" ? "danger" : "caution", verified: false, outcome: "unverified", rollback, output }), evidence } });
   } catch (error) {
     if (isDisconnectedError(error)) {
       return NextResponse.json({ success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" }, { status: 503 });
     }
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Firewall action failed" }, { status: 500 });
   } finally {
-    await closeSSH(ssh);
+    await closeSSH(sshRef.ssh);
   }
 }

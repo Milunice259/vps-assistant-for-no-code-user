@@ -277,7 +277,6 @@ const LOCAL_ACTION_COMMANDS: Record<string, string> = {
   "connection-stats":   "echo '=== CONNECTION SUMMARY ===' && ss -s && echo '' && echo '=== LISTENING PORTS ===' && ss -tlnp",
   // Cleanup
   "docker-prune":       "docker system prune -af",
-  "clear-apt-cache":    "apt clean && apt autoclean",
   "clear-logs":         "journalctl --vacuum-time=3d",
   "clear-temp":         "rm -rf /tmp/* /var/tmp/* 2>/dev/null && echo 'Temp files cleared'",
   "remove-old-kernels": "apt autoremove --purge -y",
@@ -304,7 +303,28 @@ const LOCAL_ACTION_COMMANDS: Record<string, string> = {
 export function localQuickAction(
   action: string,
   param?: string,
-): { success: boolean; output: string } {
+): { success: boolean; output: string; operation?: import("@/lib/operation-result").OperationResult & { evidence: { target: string; commandCompleted: boolean; before?: string; after?: string } } } {
+  if (action === "check-disk" || action === "clear-apt-cache") {
+    const target = "/var/cache/apt/archives";
+    const evidence: { target: string; commandCompleted: boolean; before?: string; after?: string } = { target, commandCompleted: false };
+    const check = "LC_ALL=C df -Pk / /var/cache/apt/archives && du -sk /var/cache/apt/archives && command -v apt-get";
+    const run = (command: string) => { if (!canAccessHost()) throw new Error("Host access unavailable"); return execOnHost(command, 120_000); };
+    const readDisk = () => run(check);
+    try {
+      evidence.before = readDisk();
+      if (!/\d+\s+\d+\s+\d+\s+\d+%\s+\//.test(evidence.before)) throw new Error("Disk check returned no usable evidence");
+      if (action === "check-disk") return { success: true, output: evidence.before, operation: { message: "Disk and package cache checked; nothing changed", risk: "safe", verified: true, outcome: "verified", evidence } };
+      run("apt-get clean -o Dir::Cache=/var/cache/apt -o Dir::Cache::archives=/var/cache/apt/archives");
+      evidence.commandCompleted = true;
+      try { evidence.after = readDisk(); } catch { /* Completed command remains evidence even when readback is unavailable. */ }
+      const verified = !!evidence.after && /\d+\s+\d+\s+\d+\s+\d+%\s+\//.test(evidence.after);
+      const message = verified ? "Package cache command completed; before/after disk readings available. Other disk use may change concurrently." : "Package cache command completed; disk result unverified. Check disk before considering another cleanup.";
+      return { success: true, output: message, operation: { message, risk: "danger", verified, outcome: verified ? "verified" : "unverified", evidence } };
+    } catch {
+      const message = action === "check-disk" ? "Disk check unavailable; nothing changed" : evidence.before ? "Cleanup completion unverified. Check disk; do not blindly retry." : "Disk check unavailable; cleanup not submitted";
+      return { success: false, output: message, operation: { message, risk: action === "check-disk" ? "safe" : "danger", verified: false, outcome: evidence.before ? "unverified" : "failed", evidence } };
+    }
+  }
   let command = LOCAL_ACTION_COMMANDS[action];
   if (!command) {
     return { success: false, output: `Unknown action: ${action}` };

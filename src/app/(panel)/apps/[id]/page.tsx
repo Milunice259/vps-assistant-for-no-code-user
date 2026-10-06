@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -20,6 +20,8 @@ import {
   Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import type { OperationResult } from "@/lib/operation-result";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
 import { AppLogViewer } from "@/components/apps/AppLogViewer";
@@ -142,10 +144,15 @@ interface AppStreamData {
 }
 
 export default function AppDetailPage() {
-  const { safeMode } = useSafeMode();
   const params = useParams();
-  const router = useRouter();
   const appId = params.id as string;
+  // Route identity owns all state, including confirmations, readbacks and SSE.
+  return <AppDetail key={appId} appId={appId} />;
+}
+
+function AppDetail({ appId }: { appId: string }) {
+  const { safeMode } = useSafeMode();
+  const router = useRouter();
 
   const [app, setApp] = useState<AppDetailInfo | null>(null);
   const [metrics, setMetrics] = useState<AppMetricInfo[]>([]);
@@ -153,6 +160,10 @@ export default function AppDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<(OperationResult & { action?: string }) | null>(null);
+  const [needsReadback, setNeedsReadback] = useState(false);
+  const operationBusy = useRef(false);
 
   // SSE for live stats — replaces 10s polling
   const isStatsTab = activeTab === "overview" || activeTab === "resources";
@@ -183,19 +194,21 @@ export default function AppDetailPage() {
         const params = new URLSearchParams();
         if (includeStats) params.set("stats", "true");
         if (includeMetrics) params.set("metrics", "true");
-        const res = await fetch(`/api/apps/${appId}?${params}`);
+        const res = await fetch(`/api/apps/${appId}?${params}`, { cache: "no-store" });
         const json: ApiResponse<
           AppDetailInfo & {
             liveStats?: ContainerStats;
             metrics?: AppMetricInfo[];
           }
         > = await res.json();
-        if (json.success && json.data) {
+        if (res.ok && json.success && json.data) {
           setApp(json.data);
           if (json.data.metrics) setMetrics(json.data.metrics);
+          return true;
         }
+        return false;
       } catch {
-        // ignore
+        return false;
       } finally {
         setLoading(false);
       }
@@ -204,39 +217,93 @@ export default function AppDetailPage() {
   );
 
   useEffect(() => {
+    setPendingAction(null);
+    setActionResult(null);
+    setActionError(null);
+    setNeedsReadback(false);
     fetchApp(false, true);
   }, [fetchApp]);
 
-  async function handleAction(action: string) {
-    if (safeMode || actionLoading || !app) return;
-    const impacts: Record<string, string> = {
-      start: "Start the container and make the app available.",
-      stop: "Stop the container. The app will be unavailable until started again.",
-      restart: "Restart the container. The app will be briefly unavailable.",
-      pull: "Download the configured image. This uses disk space but does not update the running container.",
-      recreate: "Replace the container using saved settings. The app will be unavailable during recreation; data in its writable layer may be lost.",
-    };
-    if (!impacts[action] || !confirm(`${action.toUpperCase()}: ${deriveAppName(app)} on ${app.serverName}\n\n${impacts[action]}`)) return;
+  const impacts: Record<string, string> = {
+    start: "Start this container. Saved data and mounted volumes are kept. This does not verify application readiness.",
+    stop: "Stop this container. The app will be unavailable until started again. Saved data and mounted volumes are kept.",
+    restart: "Restart this container once. Expect a brief interruption. No image update, recreation, or data cleanup; mounted volumes are kept. Docker state and health will be checked.",
+    pull: "Download the configured image. This uses disk space but does not update the running container.",
+    recreate: "Replace the container using saved settings. Data in its writable layer may be lost. This is not a guided restart.",
+  };
+
+  function handleAction(action: string) {
+    if (safeMode || actionLoading || needsReadback || !app || app.appSource === "systemd" || !impacts[action]) return;
+    setPendingAction(action);
+  }
+
+  async function executeAction() {
+    const action = pendingAction;
+    if (safeMode || operationBusy.current || needsReadback || !app || !action) return;
+    operationBusy.current = true;
+    setPendingAction(null);
     setActionLoading(action);
     setActionError(null);
+    setActionResult(null);
+    const lifecycle = ["start", "stop", "restart"].includes(action);
+    let submitted = false;
     try {
-      const res = await fetch(`/api/apps/${appId}/actions`, {
+      if (!navigator.onLine) { setActionError("You are offline. No command was submitted."); return; }
+      if (lifecycle && (!app.serverId || !app.containerId)) { setActionError("Container target unavailable. Refresh the app details."); return; }
+      submitted = true;
+      const res = await fetch(lifecycle ? `/api/servers/${encodeURIComponent(app.serverId)}/docker/action` : `/api/apps/${appId}/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, safeModeOff: !safeMode }),
+        body: JSON.stringify({ action, safeModeOff: !safeMode, ...(lifecycle ? { containerId: app.containerId } : {}) }),
       });
-      const json: ApiResponse<{ output: string }> = await res.json();
-      if (res.ok && json.success) {
-        // Refresh after action
-        setTimeout(() => fetchApp(true, false), 1500);
+      const json: ApiResponse<OperationResult> = await res.json();
+      if (!res.ok || !json.success) {
+        setActionError(res.status >= 500 ? `${json.error || "Server unavailable"}. Outcome unknown — check state before another action.` : json.error || "App action failed");
+        if (res.status >= 500) setNeedsReadback(true);
       } else {
-        setActionError(json.error || "App action failed");
+        setActionResult(lifecycle && json.data?.message ? { ...json.data, action } : { message: lifecycle ? "Outcome unknown. Check state before another action." : "Advanced command response received; outcome unverified. This was not a guided restart.", output: json.data?.output, risk: "danger", verified: false, outcome: "unverified" });
+        if (json.data?.verified !== true || json.data?.outcome !== "verified") setNeedsReadback(true);
+      }
+      // Keep single-flight busy through the real detail readback, not a timer.
+      const detailRead = await fetchApp(true, false);
+      const stateRead = lifecycle ? await readContainerState() : true;
+      if (!detailRead || !stateRead) {
+        setActionError("Live container readback unavailable. The command result above is retained; check state before another action.");
+        setNeedsReadback(true);
       }
     } catch {
-      setActionError("Could not connect to the server");
+      setActionError(submitted ? "Outcome unknown — connection lost after submission. The command may have run. Check state; do not blindly retry." : "Server unavailable; no command submitted.");
+      if (submitted) setNeedsReadback(true);
     } finally {
+      operationBusy.current = false;
       setActionLoading(null);
     }
+  }
+
+  async function readContainerState() {
+    if (!app?.serverId || !app.containerId) return false;
+    try {
+      const response = await fetch(`/api/servers/${encodeURIComponent(app.serverId)}/docker`, { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok || !json.success || !Array.isArray(json.data)) return false;
+      const container = json.data.find((item: { id: string }) => item.id === app.containerId || (!!app.containerId && (item.id.startsWith(app.containerId) || app.containerId.startsWith(item.id))));
+      const statuses: Record<string, AppStatusType> = { running: "RUNNING", exited: "STOPPED", restarting: "RESTARTING", dead: "STOPPED", created: "STOPPED", paused: "STOPPED" };
+      if (!container || !statuses[container.state]) return false;
+      setApp(current => current ? { ...current, status: statuses[container.state] } : current);
+      return true;
+    } catch { return false; }
+  }
+
+  async function checkState() {
+    if (operationBusy.current) return;
+    operationBusy.current = true;
+    setActionLoading("readback");
+    await fetchApp(true, false);
+    const read = await readContainerState();
+    if (read) { setNeedsReadback(false); setActionError("Current app state refreshed. This does not prove a previous command completed. Review state and health before any new action."); }
+    else setActionError("Server offline or app detail unavailable. Outcome remains unknown; no command retried.");
+    operationBusy.current = false;
+    setActionLoading(null);
   }
 
   async function handleDelete() {
@@ -315,13 +382,13 @@ export default function AppDetailPage() {
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {/* Container Actions */}
-          {app.containerId && (
+          {!isSystemService && app.containerId && (
             <>
               <Button
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "start"}
-                disabled={safeMode || !!actionLoading || app.status === "RUNNING"}
+                disabled={safeMode || !!actionLoading || needsReadback || app.status === "RUNNING"}
                 onClick={() => handleAction("start")}
               >
                 <Play className="w-3.5 h-3.5 mr-1" /> Start
@@ -330,7 +397,7 @@ export default function AppDetailPage() {
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "stop"}
-                disabled={safeMode || !!actionLoading || app.status === "STOPPED"}
+                disabled={safeMode || !!actionLoading || needsReadback || app.status === "STOPPED"}
                 onClick={() => handleAction("stop")}
               >
                 <Square className="w-3.5 h-3.5 mr-1" /> Stop
@@ -339,7 +406,7 @@ export default function AppDetailPage() {
                 variant="secondary"
                 size="sm"
                 loading={actionLoading === "restart"}
-                disabled={safeMode || !!actionLoading}
+                disabled={safeMode || !!actionLoading || needsReadback}
                 onClick={() => handleAction("restart")}
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1" /> Restart
@@ -349,7 +416,7 @@ export default function AppDetailPage() {
                   variant="ghost"
                   size="sm"
                   loading={actionLoading === "pull"}
-                  disabled={safeMode || !!actionLoading}
+                  disabled={safeMode || !!actionLoading || needsReadback}
                   onClick={() => handleAction("pull")}
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Pull
@@ -358,13 +425,17 @@ export default function AppDetailPage() {
             </>
           )}
           {!app.id.startsWith("local-service::") && !app.id.startsWith("local::") && (
-            <Button variant="danger" size="sm" onClick={handleDelete} disabled={safeMode || !!actionLoading} loading={actionLoading === "delete"}>
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={safeMode || !!actionLoading || needsReadback} loading={actionLoading === "delete"}>
               <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
             </Button>
           )}
         </div>
       </div>
 
+      <ConfirmDialog open={!!pendingAction} title={`${pendingAction || "Action"}: ${displayName}`} message={`Target: ${app.serverName} · ${app.containerName || app.containerId || displayName}. ${impacts[pendingAction || ""] || ""}`} confirmLabel={pendingAction === "restart" ? "Restart once" : "Confirm action"} variant="danger" onConfirm={executeAction} onCancel={() => setPendingAction(null)} />
+      {isSystemService && <a className="inline-block text-sm text-brand-400" href={`/servers/${encodeURIComponent(app.serverId)}#services`}>Manage this system service in Services →</a>}
+      {actionResult && <div role="status" className={`rounded-lg border p-3 text-sm ${actionResult.outcome === "failed" || actionResult.health === "unhealthy" ? "border-red-500/30 text-red-300" : actionResult.verified && actionResult.outcome === "verified" && (actionResult.health === "healthy" || actionResult.action === "stop") ? "border-emerald-500/30 text-emerald-300" : "border-amber-500/30 text-amber-300"}`}><p>{actionResult.message}</p>{actionResult.output && <p className="mt-1 break-words text-xs">{actionResult.output}</p>}</div>}
+      {needsReadback && <Button variant="secondary" size="sm" loading={actionLoading === "readback"} disabled={!!actionLoading} onClick={checkState}>Check state (no retry)</Button>}
       {/* Live Stats Summary */}
       {safeMode && <p className="text-xs text-amber-300">Safe Mode locks app changes and terminal commands. Turn it off in the header to continue; diagnostics and logs stay available.</p>}
       {actionError && <p role="alert" className="text-sm text-red-400">{actionError}</p>}

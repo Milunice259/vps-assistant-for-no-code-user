@@ -131,6 +131,9 @@ export type DeployStatus =
   | "PENDING"
   | "CLONING"
   | "BUILDING"
+  | "ANALYZED"
+  | "PREPARED"
+  | "UNVERIFIED"
   | "RUNNING"
   | "FAILED";
 

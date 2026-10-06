@@ -1,4 +1,5 @@
 import { execFileSync } from "child_process";
+import { execOnHost } from "@/lib/local-server";
 import { NextRequest, NextResponse } from "next/server";
 import { closeSSH, executeCommand } from "@/lib/ssh";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
@@ -25,9 +26,10 @@ const requirements: Record<DeployMode, Array<Omit<Requirement, "ok" | "detail">>
   ],
 };
 
-function runLocal(command: string) {
+function runLocal(command: string, mode: DeployMode) {
   try {
-    execFileSync("sh", ["-lc", command], { encoding: "utf8", timeout: 10_000 });
+    if (mode === "compose") execOnHost(command, 10_000);
+    else execFileSync("sh", ["-lc", command], { encoding: "utf8", timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -58,10 +60,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       ssh = conn.ssh;
     }
 
-    const data = await Promise.all(requirements[mode].map(async (item) => {
+    const required = target === "local" && mode === "git" ? requirements.git.filter((item) => item.name === "Git") : requirements[mode];
+    const data = await Promise.all(required.map(async (item) => {
       const ok = ssh
         ? (await executeCommand(ssh, `${item.command} >/dev/null 2>&1 && echo ok || echo missing`, 10_000)) === "ok"
-        : runLocal(item.command);
+        : runLocal(item.command, mode);
       return {
         ...item,
         ok,

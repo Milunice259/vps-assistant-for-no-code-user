@@ -42,7 +42,7 @@ export async function POST(
     }
 
     // Validate service name — alphanumeric, dashes, dots, underscores, @
-    if (!service || !/^[a-zA-Z0-9._@-]+$/.test(service)) {
+    if (typeof service !== "string" || !/^[a-zA-Z0-9_@][a-zA-Z0-9._@-]*$/.test(service)) {
       return NextResponse.json(
         { success: false, error: "Invalid service name" },
         { status: 400 }
@@ -52,13 +52,17 @@ export async function POST(
     const safetyBlock = requireSafeModeOff(`service_${action}`, body);
     if (safetyBlock) return safetyBlock;
 
-    const cmd = `systemctl ${action} ${service}`;
-    const verifyCmd = `systemctl is-active ${service} 2>/dev/null || true`;
+    const cmd = `systemctl ${action} -- ${service}`;
+    const property = action === "enable" || action === "disable" ? "is-enabled" : "is-active";
+    const expected = action === "enable" ? "enabled" : action === "disable" ? "disabled" : action === "stop" ? "inactive" : "active";
+    const verifyCmd = `systemctl ${property} -- ${service} 2>/dev/null || true`;
     let status = "";
+    let readbackError = "";
 
     if (serverId === "local") {
       await execOnHost(cmd);
-      status = (await execOnHost(verifyCmd)).trim();
+      try { status = (await execOnHost(verifyCmd)).trim(); }
+      catch (err) { readbackError = safeErrorMessage(err, "Service readback unavailable"); }
     } else {
       const server = await prisma.server.findUnique({
         where: { id: serverId },
@@ -87,20 +91,29 @@ export async function POST(
       const ssh = new SSH2Promise(sshConfig);
       try {
         await ssh.connect();
-        await ssh.exec(cmd);
-        status = String(await ssh.exec(verifyCmd)).trim();
+        // ssh2-promise ignores remote exit codes; require explicit completion evidence.
+        const commandOutput = String(await ssh.exec(`${cmd} 2>&1 && printf '\\n__ACTION_COMPLETED__\\n'`));
+        if (!commandOutput.trim().endsWith("__ACTION_COMPLETED__")) throw new Error("Service command did not complete successfully");
+        try { status = String(await ssh.exec(verifyCmd)).trim(); }
+        catch (err) { readbackError = safeErrorMessage(err, "Service readback unavailable"); }
       } finally {
-        ssh.close();
+        try { await ssh.close(); } catch { /* Cleanup must not replace action evidence. */ }
       }
     }
 
+    const verified = !readbackError && status === expected;
+    const knownStates = property === "is-enabled"
+      ? ["enabled", "enabled-runtime", "linked", "linked-runtime", "alias", "masked", "masked-runtime", "static", "indirect", "disabled", "generated", "transient", "not-found"]
+      : ["active", "inactive", "failed", "activating", "deactivating", "reloading", "maintenance", "refreshing"];
+    const outcome = verified ? "verified" : !readbackError && knownStates.includes(status) ? "failed" : "unverified";
+    const output = `Expected ${property}: ${expected}; observed: ${status || "unknown"}${readbackError ? `; ${readbackError}` : ""}`;
     const ip = getClientIp(request);
     await auditLog({
       action: `service_${action}` as `service_${ServiceAction}`,
       userId: session?.sub as string | undefined,
       username: session?.username as string | undefined,
       target: `${serverId}:${service}`,
-      details: JSON.stringify({ service, action, status, verified: true }),
+      details: JSON.stringify({ service, action, property, expected, status, verified, outcome, output }),
       ip,
     });
 
@@ -108,10 +121,13 @@ export async function POST(
     return NextResponse.json({
       success: true,
       data: operationResult({
-        message: `Service "${service}" ${pastTense[action] || action + "ed"} successfully`,
+        message: verified
+          ? `Service "${service}" ${pastTense[action]}; ${property} confirmed ${status}`
+          : `Service "${service}" ${action} command completed; ${outcome === "failed" ? `expected ${expected}, observed ${status}` : "result unverified — readback unavailable or unknown"}`,
         risk: "danger",
-        verified: true,
-        output: status ? `Current status: ${status}` : undefined,
+        verified,
+        outcome,
+        output,
       }),
     });
   } catch (err) {

@@ -21,6 +21,7 @@ import type { ServiceInfo, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useSafeMode } from "@/contexts/SafeModeContext";
+import type { OperationResult } from "@/lib/operation-result";
 
 /* ══════════════════════════════════════════════════════════
    Well-known service descriptions (non-tech friendly)
@@ -144,6 +145,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
   const [disconnected, setDisconnected] = useState(false);
   const [filter, setFilter] = useState<FilterMode>("active");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<{ message: string; output?: string; tone: "success" | "warning" | "danger" } | null>(null);
 
   const fetchServices = useCallback(async () => {
     setLoading(true);
@@ -174,6 +176,8 @@ export function ServiceList({ serverId }: ServiceListProps) {
   }, [fetchServices]);
 
   const handleServiceAction = async (serviceName: string, action: "start" | "stop" | "restart" | "enable" | "disable") => {
+    if (safeMode || actionLoading) return;
+    setActionResult(null);
     setActionLoading(`${serviceName}-${action}`);
     try {
       const res = await fetch(`/api/servers/${serverId}/services/action`, {
@@ -181,11 +185,17 @@ export function ServiceList({ serverId }: ServiceListProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ service: serviceName, action, safeModeOff: !safeMode }),
       });
-      const json: ApiResponse<unknown> = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
+      const json: ApiResponse<OperationResult> = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
       if (!res.ok || !json.success) throw new Error(json.error || "Service action failed");
+      setActionResult({
+        message: json.data?.message || "Command response received; outcome unknown. Refresh to check state.",
+        output: json.data?.output,
+        tone: json.data?.outcome === "failed" ? "danger"
+          : json.data?.verified === true && json.data.outcome === "verified" ? "success" : "warning",
+      });
       await fetchServices();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Service action failed");
+      setActionResult({ message: err instanceof Error ? err.message : "Service action failed", tone: "danger" });
     } finally {
       setActionLoading(null);
     }
@@ -202,9 +212,17 @@ export function ServiceList({ serverId }: ServiceListProps) {
   const activeCount = services.filter((s) => s.activeState === "active").length;
   const inactiveCount = services.filter((s) => s.activeState === "inactive").length;
 
+  const actionFeedback = actionResult && (
+    <div role="status" className={`rounded-lg border p-3 text-sm ${actionResult.tone === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : actionResult.tone === "danger" ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-amber-500/20 bg-amber-500/10 text-amber-300"}`}>
+      <p>{actionResult.message}</p>
+      {actionResult.output && <p className="mt-1 break-words text-xs">{actionResult.output}</p>}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        {actionFeedback}
         <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
       </div>
     );
@@ -213,6 +231,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
   if (disconnected) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
+        {actionFeedback}
         <WifiOff className="h-8 w-8 text-gray-500" />
         <p className="text-sm text-gray-400">Server is offline</p>
         <Button variant="secondary" size="sm" onClick={fetchServices}>
@@ -231,6 +250,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
 
     return (
       <div className="flex flex-col items-center gap-3 py-12">
+        {actionFeedback}
         <AlertCircle className="h-8 w-8 text-amber-400" />
         <div className="text-center max-w-md">
           {isHostAccessError ? (
@@ -262,6 +282,7 @@ export function ServiceList({ serverId }: ServiceListProps) {
 
   return (
     <div className="space-y-4">
+      {actionFeedback}
       {/* Warning banner */}
       {warning && (
         <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">

@@ -6,6 +6,7 @@ import type { ContainerInfo, ApiResponse } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useSafeMode } from "@/contexts/SafeModeContext";
+import type { OperationResult } from "@/lib/operation-result";
 
 interface DockerContainerListProps {
   serverId: string;
@@ -27,6 +28,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   const [error, setError] = useState<string | null>(null);
   const [disconnected, setDisconnected] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<{ message: string; output?: string; tone: "success" | "warning" | "danger" } | null>(null);
 
   const fetchContainers = useCallback(async () => {
     setLoading(true);
@@ -55,6 +57,8 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   }, [fetchContainers]);
 
   async function handleAction(containerId: string, action: string) {
+    if (safeMode || actionLoading) return;
+    setActionResult(null);
     setActionLoading(`${containerId}-${action}`);
     try {
       const res = await fetch(`/api/servers/${serverId}/docker/action`, {
@@ -62,19 +66,33 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ containerId, action, safeModeOff: !safeMode }),
       });
-      const json = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
+      const json: ApiResponse<OperationResult> = await res.json().catch(() => ({ success: false, error: "Invalid server response" }));
       if (!res.ok || !json.success) throw new Error(json.error || "Action failed");
+      setActionResult({
+        message: json.data?.message || "Command response received; outcome unknown. Refresh to check state.",
+        output: json.data?.output,
+        tone: json.data?.outcome === "failed" || json.data?.health === "unhealthy" ? "danger"
+          : json.data?.verified === true && json.data.outcome === "verified" && (action === "stop" || json.data.health === "healthy") ? "success" : "warning",
+      });
       await fetchContainers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to perform action");
+      setActionResult({ message: err instanceof Error ? err.message : "Failed to perform action", tone: "danger" });
     } finally {
       setActionLoading(null);
     }
   }
 
+  const actionFeedback = actionResult && (
+    <div role="status" className={`rounded-lg border p-3 text-sm ${actionResult.tone === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : actionResult.tone === "danger" ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-amber-500/20 bg-amber-500/10 text-amber-300"}`}>
+      <p>{actionResult.message}</p>
+      {actionResult.output && <p className="mt-1 break-words text-xs">{actionResult.output}</p>}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        {actionFeedback}
         <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
       </div>
     );
@@ -83,6 +101,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   if (disconnected) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
+        {actionFeedback}
         <WifiOff className="h-8 w-8 text-gray-500" />
         <p className="text-sm text-gray-400">Server is offline</p>
         <Button variant="secondary" size="sm" onClick={fetchContainers}>
@@ -95,6 +114,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   if (error) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
+        {actionFeedback}
         <AlertCircle className="h-8 w-8 text-red-400" />
         <p className="text-sm text-red-400">{error}</p>
         <Button variant="secondary" size="sm" onClick={fetchContainers}>
@@ -107,6 +127,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
   if (containers.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
+        {actionFeedback}
         <Box className="h-8 w-8 text-gray-500" />
         <p className="text-sm text-gray-400">No applications found on this server</p>
         <p className="text-xs text-gray-600">Deploy an application to see it here. Check the Deploy page to get started.</p>
@@ -119,6 +140,7 @@ export function DockerContainerList({ serverId }: DockerContainerListProps) {
 
   return (
     <div className="space-y-4">
+      {actionFeedback}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-gray-400">{containers.length} application(s)</p>

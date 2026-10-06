@@ -2,24 +2,19 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Rocket, Monitor, Server, HelpCircle, FolderSearch, CheckCircle, ShieldCheck, AlertTriangle } from "lucide-react";
+import { useDeployPreflight } from "./useDeployPreflight";
 import { Button } from "@/components/ui/Button";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { FileBrowser } from "@/components/ui/FileBrowser";
 import { DeployRequirementBanner } from "@/components/deploy/DeployRequirementBanner";
-import type { ServerInfo } from "@/types";
+import type { DeployStatus, ServerInfo } from "@/types";
 
 interface DeployResult {
   id: string;
   detectedStack: string;
-  status: string;
-}
-
-interface PreflightResult {
-  ready: boolean;
-  checks: Array<{ id: string; label: string; status: "pass" | "warn" | "fail"; detail: string }>;
-  nextSteps: string[];
+  status: DeployStatus;
 }
 
 /* ── Tooltip wrapper ── */
@@ -34,7 +29,7 @@ function Tip({ text }: { text: string }) {
   );
 }
 
-export function DeployForm() {
+export function DeployForm({ onBusyChange }: { onBusyChange?: (busy: boolean) => void } = {}) {
   const { safeMode } = useSafeMode();
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
@@ -48,8 +43,7 @@ export function DeployForm() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DeployResult | null>(null);
   const [showBrowser, setShowBrowser] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const { checking, preflight, preflightError, runPreflight: checkInputs, invalidate, readyRef, busyRef } = useDeployPreflight();
 
   // Fetch servers for remote deployment selector
   useEffect(() => {
@@ -61,40 +55,18 @@ export function DeployForm() {
       .catch(() => {});
   }, []);
 
-  const runPreflight = async () => {
-    setChecking(true);
-    setError(null);
-    setPreflight(null);
-
-    try {
-      const res = await fetch("/api/deploy/preflight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repoUrl,
-          branch: branch || "main",
-          domain: domain || undefined,
-          customPath: customPath || undefined,
-          serverId: deployTarget === "remote" ? selectedServerId : undefined,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || "Pre-flight check failed");
-      setPreflight(json.data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Pre-flight check failed");
-    } finally {
-      setChecking(false);
-    }
-  };
+  const runPreflight = () => checkInputs({ type: "git", repoUrl, branch: branch || "main", domain: domain || undefined, customPath: customPath || undefined, serverId: selectedServerId, envVars: envVars || undefined });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (loading || (deployTarget === "remote" && (safeMode || !selectedServerId))) return;
+    if (busyRef.current || loading || (deployTarget === "remote" && (!readyRef.current || safeMode || !selectedServerId || !customPath))) return;
     if (deployTarget === "remote") {
       const server = servers.find((item) => item.id === selectedServerId);
       if (!window.confirm(`Deploy ${repoUrl} (${branch || "main"}) to ${server?.name || selectedServerId} (${server?.host || selectedServerId}) at ${customPath || "the deploy path"}? This writes project files and creates or updates containers and published ports.`)) return;
     }
+    busyRef.current = true;
+    onBusyChange?.(true);
+    invalidate();
     setLoading(true);
     setError(null);
     setResult(null);
@@ -106,10 +78,10 @@ export function DeployForm() {
         branch: branch || "main",
       };
 
-      if (domain) body.domain = domain;
-      if (customPath) body.customPath = customPath;
-      if (envVars) body.envVars = envVars;
       if (deployTarget === "remote" && selectedServerId) {
+        if (domain) body.domain = domain;
+        if (customPath) body.customPath = customPath;
+        if (envVars) body.envVars = envVars;
         body.serverId = selectedServerId;
       }
 
@@ -120,12 +92,13 @@ export function DeployForm() {
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Deployment failed");
-
-      setResult(json.data);
+      if (json.data) setResult(json.data);
+      if (!res.ok || !json.success) throw new Error(json.error || (deployTarget === "local" ? "Repository analysis failed" : "Deployment failed"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
+      busyRef.current = false;
+      onBusyChange?.(false);
       setLoading(false);
     }
   };
@@ -133,13 +106,13 @@ export function DeployForm() {
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
-        <h3 className="mb-3 text-sm font-semibold text-white">Guided Deploy Wizard</h3>
-        <div className="grid gap-2 sm:grid-cols-4">
+        <h3 className="mb-3 text-sm font-semibold text-white">{deployTarget === "local" ? "Repository analysis" : "Guided Deploy Wizard"}</h3>
+        <div className={`grid gap-2 ${deployTarget === "local" ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
           {[
             { label: "1. Source", done: Boolean(repoUrl), text: "Paste GitHub URL" },
             { label: "2. Destination", done: deployTarget === "local" || Boolean(selectedServerId), text: "Choose server" },
-            { label: "3. Pre-flight", done: Boolean(preflight?.ready), text: "Check safety first" },
-            { label: "4. Deploy", done: Boolean(result), text: "Watch logs and health" },
+            ...(deployTarget === "remote" ? [{ label: "3. Pre-flight", done: Boolean(preflight?.ready), text: "Check safety first" }] : []),
+            { label: deployTarget === "local" ? "3. Analyze" : "4. Deploy", done: result?.status === "ANALYZED" || result?.status === "RUNNING", text: deployTarget === "local" ? "Detect repository stack" : "Watch deployment logs" },
           ].map((step) => (
             <div key={step.label} className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
               <div className="mb-1 flex items-center gap-2 text-xs font-medium text-gray-200">
@@ -150,14 +123,16 @@ export function DeployForm() {
             </div>
           ))}
         </div>
+        {deployTarget === "local" && <p className="mt-3 text-xs text-gray-400">Clones a temporary copy to detect the stack, then removes it. This does not deploy an application or publish ports.</p>}
       </div>
 
       {(deployTarget === "local" || selectedServerId) && (
         <DeployRequirementBanner key={deployTarget === "local" ? "local" : selectedServerId} mode="git" serverId={deployTarget === "local" ? "local" : selectedServerId} />
       )}
-      {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Package installation is locked; requirement checks, pre-flight and local repository analysis remain available.</p>}
+      {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Package installation and remote deployment are locked; local repository analysis remains available.</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        <fieldset disabled={loading} className="space-y-4">
         {error && (
           <p className="rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-400">
             {error}
@@ -172,7 +147,7 @@ export function DeployForm() {
           <Input
             placeholder="https://github.com/user/repo"
             value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
+            onChange={(e) => { if (!busyRef.current) { invalidate(); setRepoUrl(e.target.value); } }}
             required
           />
         </div>
@@ -186,10 +161,10 @@ export function DeployForm() {
             <Input
               placeholder="main"
               value={branch}
-              onChange={(e) => setBranch(e.target.value)}
+              onChange={(e) => { if (!busyRef.current) { invalidate(); setBranch(e.target.value); } }}
             />
           </div>
-          <div>
+          {deployTarget === "remote" && <div>
             <label className="flex items-center text-sm font-medium text-gray-300 mb-1.5">
               Domain (optional)
               <Tip text="A custom domain to route web traffic to this app. The domain's DNS must already point to your server's IP address." />
@@ -197,21 +172,21 @@ export function DeployForm() {
             <Input
               placeholder="app.example.com"
               value={domain}
-              onChange={(e) => setDomain(e.target.value)}
+              onChange={(e) => { if (!busyRef.current) { invalidate(); setDomain(e.target.value); } }}
             />
-          </div>
+          </div>}
         </div>
 
         {/* Deploy Target Selector */}
         <div className="space-y-2">
           <label className="flex items-center text-sm font-medium text-gray-300">
-            Deploy Target
-            <Tip text="Choose where to deploy your application — on this server (Local) or on a connected remote server." />
+            Target
+            <Tip text="Local analyzes a temporary repository copy only. Remote deploys the application on a connected server." />
           </label>
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => setDeployTarget("local")}
+              onClick={() => { if (busyRef.current) return; setDeployTarget("local"); setResult(null); setError(null); invalidate(); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm transition-colors ${
                 deployTarget === "local"
                   ? "border-brand-500 bg-brand-500/10 text-white"
@@ -219,11 +194,11 @@ export function DeployForm() {
               }`}
             >
               <Monitor className="h-4 w-4" />
-              Local
+              Local analysis
             </button>
             <button
               type="button"
-              onClick={() => setDeployTarget("remote")}
+              onClick={() => { if (busyRef.current) return; setDeployTarget("remote"); setResult(null); setError(null); invalidate(); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm transition-colors ${
                 deployTarget === "remote"
                   ? "border-brand-500 bg-brand-500/10 text-white"
@@ -245,7 +220,7 @@ export function DeployForm() {
             </label>
             <select
               value={selectedServerId}
-              onChange={(e) => setSelectedServerId(e.target.value)}
+              onChange={(e) => { if (!busyRef.current) { invalidate(); setSelectedServerId(e.target.value); } }}
               required={deployTarget === "remote"}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
@@ -262,17 +237,19 @@ export function DeployForm() {
           </div>
         )}
 
+        {deployTarget === "remote" && <>
         {/* Custom Path with File Browser */}
         <div>
           <label className="flex items-center text-sm font-medium text-gray-300 mb-1.5">
-            Custom Path (optional)
-            <Tip text="The directory on the server where your app will be deployed. Leave empty to use the default location (/opt/apps/)." />
+            Custom Path (required)
+            <Tip text="The directory on the remote server where the repository and containers will be deployed." />
           </label>
           <div className="flex gap-2">
             <Input
               placeholder="/var/www/myapp"
+              required
               value={customPath}
-              onChange={(e) => setCustomPath(e.target.value)}
+              onChange={(e) => { if (!busyRef.current) { invalidate(); setCustomPath(e.target.value); } }}
               className="flex-1"
             />
             <button
@@ -291,10 +268,10 @@ export function DeployForm() {
           {showBrowser && (
             <div className="mt-2">
               <FileBrowser
-                serverId={deployTarget === "local" ? "local" : selectedServerId}
+                serverId={selectedServerId}
                 mode="pick-directory"
                 selectedPath={customPath}
-                onSelect={(path) => setCustomPath(path)}
+                onSelect={(path) => { if (!busyRef.current) { invalidate(); setCustomPath(path); } }}
                 initialPath="/opt"
               />
             </div>
@@ -310,7 +287,7 @@ export function DeployForm() {
           <textarea
             placeholder={"NODE_ENV=production\nDATABASE_URL=postgres://..."}
             value={envVars}
-            onChange={(e) => setEnvVars(e.target.value)}
+            onChange={(e) => { if (!busyRef.current) { invalidate(); setEnvVars(e.target.value); } }}
             rows={4}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
           />
@@ -323,9 +300,9 @@ export function DeployForm() {
             <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
               <ShieldCheck className="h-4 w-4 text-emerald-400" /> Safe Deployment Assistant
             </h3>
-            <p className="mt-1 text-xs text-gray-400">Final pre-flight after the form is complete: repository, target, disk, memory, Git, Docker, and rollback guidance.</p>
+            <p className="mt-1 text-xs text-gray-400">Final pre-flight: repository, target, disk, memory, Git and Docker. Automated rollback is unavailable.</p>
           </div>
-          <Button type="button" variant="secondary" loading={checking} onClick={runPreflight}>
+          <Button type="button" variant="secondary" loading={checking} disabled={loading || !selectedServerId || !customPath || !repoUrl} onClick={runPreflight}>
             Run pre-flight
           </Button>
         </div>
@@ -350,18 +327,22 @@ export function DeployForm() {
               <p className="mb-2 font-medium text-gray-300">After deploy</p>
               <ul className="list-disc space-y-1 pl-4">
                 {preflight.nextSteps.map((step) => <li key={step}>{step}</li>)}
-                <li>If health check fails, use Deployment History to inspect logs and rollback when available.</li>
+                <li>Inspect deployment logs after execution. Automated rollback is not supported.</li>
               </ul>
             </div>
           </div>
         )}
       </div>
+        </>}
 
+        </fieldset>
+        {preflightError && <p role="alert" className="text-sm text-red-400">{preflightError}</p>}
+        {deployTarget === "remote" && !preflight?.ready && <p role="status" className="text-sm text-gray-400">Run pre-flight for the current inputs to unlock deployment.</p>}
         {safeMode && deployTarget === "remote" && <p role="status" className="text-sm text-amber-400">Turn Safe Mode off to deploy on the selected remote server.</p>}
         <div className="flex justify-end">
-          <Button type="submit" loading={loading} disabled={loading || (deployTarget === "remote" && (safeMode || !selectedServerId))}>
-            <Rocket className="h-4 w-4" />
-            Deploy
+          <Button type="submit" loading={loading} disabled={loading || (deployTarget === "remote" && (!preflight?.ready || checking || safeMode || !selectedServerId || !customPath))}>
+            {deployTarget === "local" ? <FolderSearch className="h-4 w-4" /> : <Rocket className="h-4 w-4" />}
+            {deployTarget === "local" ? "Analyze repository" : "Deploy"}
           </Button>
         </div>
       </form>
@@ -369,14 +350,18 @@ export function DeployForm() {
       {result && (
         <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
           <h3 className="text-sm font-medium text-gray-300">
-            Deployment Created
+            {result.status === "ANALYZED" ? "Analysis complete" : result.status === "PREPARED" ? "Repository prepared — not deployed" : result.status === "UNVERIFIED" ? "Readiness unverified" : result.status === "RUNNING" ? "Remote services running and healthy" : "Deployment failed"}
           </h3>
+          {result.status === "ANALYZED" && <p className="mt-1 text-xs text-gray-400">Repository stack detected. Application not deployed.</p>}
+          {result.status === "PREPARED" && <p className="mt-1 text-xs text-gray-400">No Compose file found. Files remain on the remote server; manual setup required.</p>}
+          {result.status === "UNVERIFIED" && <p className="mt-1 text-xs text-gray-400">Remote files were written, but running state and health are not confirmed. Check deployment logs before relying on the app.</p>}
           <div className="mt-2 flex items-center gap-3">
-            <Badge variant="info">{result.status}</Badge>
+            <Badge variant={result.status === "FAILED" ? "danger" : result.status === "UNVERIFIED" ? "warning" : "info"}>{result.status}</Badge>
             <span className="text-sm text-gray-400">
               Stack: <strong className="text-white">{result.detectedStack}</strong>
             </span>
           </div>
+          <a className="mt-2 block text-sm underline text-gray-300" href={`/deploy#deployment-${result.id}`}>View log · {result.id}</a>
         </div>
       )}
     </div>

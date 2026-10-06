@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Zap,
   RefreshCw,
@@ -22,6 +22,8 @@ import {
   HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import type { OperationResult } from "@/lib/operation-result";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 
 /* ══════════════════════════════════════════════════════════
@@ -59,7 +61,7 @@ function friendlyErrorMessage(raw: string): string {
    Types
    ══════════════════════════════════════════════════════════ */
 interface ActionResult {
-  status: "idle" | "loading" | "success" | "error";
+  status: "idle" | "loading" | "success" | "error" | "warning";
   message?: string;
   timestamp?: number;
 }
@@ -107,6 +109,7 @@ const ACTIONS: ActionDef[] = [
   },
   {
     key: "sync-time",
+    risk: "danger",
     label: "Sync Time",
     description: "Synchronize system clock with NTP servers",
     icon: <Clock className="h-4 w-4" />,
@@ -144,18 +147,10 @@ const ACTIONS: ActionDef[] = [
   {
     key: "docker-prune",
     label: "Docker Prune",
-    description: "Remove unused images, containers, and volumes to free space",
+    description: "Remove unused containers, networks, images and build cache. Rollback images may be lost.",
     icon: <Trash2 className="h-4 w-4" />,
     category: "cleanup",
-    confirmMessage: "This will remove all unused Docker resources. Running containers are not affected. Continue?",
-    risk: "danger",
-  },
-  {
-    key: "clear-apt-cache",
-    label: "Clear Package Cache",
-    description: "Remove cached package files to free disk space",
-    icon: <Trash2 className="h-4 w-4" />,
-    category: "cleanup",
+    confirmMessage: "This advanced action can delete unused images needed for rollback and stopped containers. It is not guided safe cleanup. Continue?",
     risk: "danger",
   },
   {
@@ -266,13 +261,46 @@ const CATEGORY_ORDER = ["maintenance", "update", "diagnostics", "cleanup", "secu
 
 interface QuickActionsProps {
   serverId: string;
+  serverName?: string;
 }
 
-export function QuickActions({ serverId }: QuickActionsProps) {
+export function QuickActions({ serverId, serverName }: QuickActionsProps) {
+  const targetName = serverId === "local" ? "Local server" : serverName || serverId;
   const { safeMode, setSafeMode } = useSafeMode();
   const [results, setResults] = useState<Record<string, ActionResult>>({});
   const [confirming, setConfirming] = useState<string | null>(null);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const busy = useRef(false);
+  const [running, setRunning] = useState(false);
+  const [diskPreview, setDiskPreview] = useState<string | null>(null);
+  const [diskResult, setDiskResult] = useState<(OperationResult & { evidence?: { target: string; commandCompleted: boolean; before?: string; after?: string } }) | null>(null);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
+  const [diskBusy, setDiskBusy] = useState<string | null>(null);
+
+  async function runDisk(action: "check-disk" | "clear-apt-cache") {
+    if (busy.current || (action === "clear-apt-cache" && (safeMode || !diskPreview))) return;
+    busy.current = true;
+    setRunning(true);
+    setDiskBusy(action);
+    setConfirmCleanup(false);
+    setDiskResult(null);
+    setDiskPreview(null); // Every mutation consumes its preview; never offer a blind retry.
+    let submitted = false;
+    try {
+      if (!navigator.onLine) { setDiskResult({ message: "You are offline. No command submitted.", risk: "safe", verified: false, outcome: "failed" }); return; }
+      submitted = true;
+      const response = await fetch(`/api/servers/${encodeURIComponent(serverId)}/actions`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, safeModeOff: !safeMode }),
+      });
+      const json = await response.json();
+      if (json.data) setDiskResult(json.data);
+      else setDiskResult({ message: json.error || "Outcome unknown. Check disk before another cleanup.", risk: "danger", verified: false, outcome: response.status >= 500 ? "unverified" : "failed" });
+      if (action === "check-disk" && response.ok && json.success && json.data?.verified && json.data?.evidence?.before) setDiskPreview(json.data.evidence.before);
+    } catch {
+      setDiskResult({ message: action === "clear-apt-cache" && submitted ? "Outcome unknown — connection lost after submission. Cleanup may have run. Check disk; do not blindly retry." : "Disk check unavailable. No cleanup submitted.", risk: "danger", verified: false, outcome: "unverified" });
+    } finally { busy.current = false; setRunning(false); setDiskBusy(null); }
+  }
 
   const updateResult = useCallback(
     (key: string, result: ActionResult) => {
@@ -283,20 +311,12 @@ export function QuickActions({ serverId }: QuickActionsProps) {
 
   const executeAction = useCallback(
     async (actionKey: string, param?: string) => {
+      if (busy.current) return;
+      busy.current = true;
+      setRunning(true);
       updateResult(actionKey, { status: "loading" });
 
       try {
-        if (["os-update", "docker-prune", "restart-docker", "restart-server"].includes(actionKey)) {
-          const backup = await fetch("/api/backup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: `pre-${actionKey}`, serverId }),
-          });
-          const backupJson = await backup.json().catch(() => ({}));
-          if (!backup.ok || backupJson.success === false) {
-            throw new Error(backupJson.error || "Pre-action backup failed; action aborted.");
-          }
-        }
         const body: Record<string, string | boolean> = { action: actionKey, safeModeOff: !safeMode };
         if (param) body.param = param;
 
@@ -309,8 +329,8 @@ export function QuickActions({ serverId }: QuickActionsProps) {
 
         if (json.success) {
           updateResult(actionKey, {
-            status: "success",
-            message: json.data?.output || "Done",
+            status: json.data?.verified === true ? "success" : "warning",
+            message: [json.data?.message, json.data?.output].filter(Boolean).join("\n") || "Command response received; outcome unverified",
             timestamp: Date.now(),
           });
         } else {
@@ -320,13 +340,13 @@ export function QuickActions({ serverId }: QuickActionsProps) {
             timestamp: Date.now(),
           });
         }
-      } catch (err) {
+      } catch {
         updateResult(actionKey, {
           status: "error",
-          message: err instanceof Error ? friendlyErrorMessage(err.message) : "Network error — could not reach the server.",
+          message: "Outcome unknown — connection lost. Check server state before any new action; do not blindly retry.",
           timestamp: Date.now(),
         });
-      }
+      } finally { busy.current = false; setRunning(false); }
     },
     [safeMode, serverId, updateResult]
   );
@@ -337,7 +357,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
       setConfirming(action.key);
       return;
     }
-    if (action.confirmMessage) {
+    if (action.confirmMessage || action.risk === "danger") {
       setConfirming(action.key);
     } else {
       executeAction(action.key);
@@ -373,7 +393,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
           <div>
             <h3 className="text-sm font-semibold text-white">Safe Mode</h3>
             <p className="text-xs text-gray-400">
-              {safeMode ? "Dangerous actions are hidden. Turn off only when you know exactly what will change." : "Advanced actions are visible. Large actions create a database snapshot first."}
+              {safeMode ? "Dangerous actions are hidden. Turn off only when you know exactly what will change." : "Advanced actions are visible. Panel backups do not protect server files or containers."}
             </p>
           </div>
           <Button variant={safeMode ? "secondary" : "danger"} size="sm" onClick={() => setSafeMode(!safeMode)}>
@@ -381,6 +401,22 @@ export function QuickActions({ serverId }: QuickActionsProps) {
           </Button>
         </div>
       </div>
+      <section aria-label="Guided disk cleanup" className="space-y-3 border-b border-gray-700 pb-6">
+        <h3 className="text-sm font-semibold text-white">Guided disk cleanup · {targetName}</h3>
+        <p className="text-xs text-gray-400">Check disk first. Only downloaded package files in /var/cache/apt/archives can be cleared; packages stay installed.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" disabled={running} loading={diskBusy === "check-disk"} onClick={() => runDisk("check-disk")}>Check disk</Button>
+          <Button size="sm" variant="primary" disabled={running || safeMode || !diskPreview} loading={diskBusy === "clear-apt-cache"} onClick={() => setConfirmCleanup(true)}>Clear package cache</Button>
+        </div>
+        {safeMode && <p className="text-xs text-amber-300">Safe Mode allows checks only. Turn it off in the header to clear the package cache.</p>}
+        {diskPreview && <p className="text-xs text-gray-400">Preview: downloaded package cache only. Databases, apps, uploads, Docker volumes, images, backups and active assets are not targeted. No rollback: packages may need downloading again.</p>}
+        {diskResult && <div role="status" className={`space-y-2 text-sm ${diskResult.outcome === "failed" ? "text-red-300" : diskResult.verified ? "text-emerald-300" : "text-amber-300"}`}>
+          <p>{diskResult.message}</p>
+          {diskResult.evidence?.before && <details><summary className="cursor-pointer text-xs">{diskResult.evidence.after ? "Before / after disk evidence" : "Disk evidence"}</summary><pre className="mt-2 whitespace-pre-wrap break-all text-xs">{diskResult.evidence.before}{diskResult.evidence.after ? `\n\nAfter:\n${diskResult.evidence.after}` : ""}</pre></details>}
+        </div>}
+        <ConfirmDialog open={confirmCleanup} title={`Clear package cache · ${targetName}`} message="Remove downloaded package files from /var/cache/apt/archives only. Installed packages and application data are kept. This does not delete logs, temporary files, Docker resources, backups or rollback images. Downloads may be needed again; no rollback is offered." confirmLabel="Clear package cache once" variant="danger" onConfirm={() => runDisk("clear-apt-cache")} onCancel={() => setConfirmCleanup(false)} />
+      </section>
+      {!safeMode && <p className="text-xs text-amber-300">Advanced operations below are not guided cleanup. Review each impact separately.</p>}
       {grouped.map((group) => (
         <div key={group.category}>
           <h3 className="text-sm font-medium text-gray-400 mb-3">
@@ -392,6 +428,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
                 key={action.key}
                 action={action}
                 result={results[action.key] || { status: "idle" }}
+                disabled={running}
                 confirming={confirming === action.key}
                 inputValue={inputValues[action.key] || ""}
                 onInputChange={(v) => setInputValues((prev) => ({ ...prev, [action.key]: v }))}
@@ -413,6 +450,7 @@ export function QuickActions({ serverId }: QuickActionsProps) {
 function ActionCard({
   action,
   result,
+  disabled,
   confirming,
   inputValue,
   onInputChange,
@@ -422,6 +460,7 @@ function ActionCard({
 }: {
   action: ActionDef;
   result: ActionResult;
+  disabled: boolean;
   confirming: boolean;
   inputValue: string;
   onInputChange: (v: string) => void;
@@ -437,6 +476,7 @@ function ActionCard({
     loading: <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-400" />,
     success: <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />,
     error: <XCircle className="h-3.5 w-3.5 text-red-400" />,
+    warning: <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />,
   };
 
   const borderColor = {
@@ -444,6 +484,7 @@ function ActionCard({
     loading: "border-brand-500/40",
     success: "border-emerald-500/30",
     error: "border-red-500/30",
+    warning: "border-amber-500/30",
   };
 
   return (
@@ -495,7 +536,7 @@ function ActionCard({
             </div>
           )}
           <div className="flex gap-2 mt-2">
-            <Button variant="danger" size="sm" onClick={onConfirm}>
+            <Button variant="danger" size="sm" disabled={disabled} onClick={onConfirm}>
               Yes, proceed
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -506,10 +547,10 @@ function ActionCard({
       )}
 
       {/* Result area */}
-      {result.status === "success" && result.message && (
+      {(result.status === "success" || result.status === "warning") && result.message && (
         <div className="mb-3">
           <div
-            className="text-xs text-emerald-300/80 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 font-mono leading-relaxed cursor-pointer"
+            className={`text-xs ${result.status === "warning" ? "text-amber-300 border-amber-500/20" : "text-emerald-300 border-emerald-500/20"} border rounded-lg p-2.5 font-mono leading-relaxed cursor-pointer`}
             onClick={() => setExpanded(!expanded)}
           >
             <pre className={`whitespace-pre-wrap break-all ${expanded ? "" : "max-h-20 overflow-hidden"}`}>
@@ -546,7 +587,7 @@ function ActionCard({
           variant="secondary"
           size="sm"
           className="w-full"
-          disabled={isLoading}
+          disabled={disabled || isLoading}
           loading={isLoading}
           onClick={onRun}
         >

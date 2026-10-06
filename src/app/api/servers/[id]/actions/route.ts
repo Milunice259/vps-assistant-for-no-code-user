@@ -7,6 +7,8 @@ import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
 import { requireSafeModeOff } from "@/lib/operation-safety";
 import type { ApiResponse } from "@/types";
+import type { OperationResult } from "@/lib/operation-result";
+import { safeErrorMessage } from "@/lib/safe-error";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +71,7 @@ function isValidIP(ip: string): boolean {
 export async function POST(
   request: NextRequest,
   context: RouteContext,
-): Promise<NextResponse<ApiResponse<{ output: string }>>> {
+): Promise<NextResponse<ApiResponse<OperationResult>>> {
   let ssh: Awaited<
     ReturnType<typeof import("@/lib/ssh").createSSHConnection>
   > | null = null;
@@ -118,13 +120,16 @@ export async function POST(
     // Local server — execute directly
     if (isLocalServer(id)) {
       const result = localQuickAction(action, param);
+      if (result.operation) {
+        await auditLog({ action: "quick_action", userId: session.sub, username: session.username, target: id, details: JSON.stringify({ action, ...result.operation }), ip: getClientIp(request) });
+        return NextResponse.json({ success: result.success, data: result.operation, ...(!result.success ? { error: result.output } : {}) }, { status: result.success ? 200 : 500 });
+      }
       if (!result.success) {
         return NextResponse.json(
           { success: false, error: result.output },
           { status: 500 },
         );
       }
-      const session = await getSession();
       await auditLog({
         action: "quick_action",
         userId: session?.sub as string | undefined,
@@ -135,7 +140,7 @@ export async function POST(
       });
       return NextResponse.json({
         success: true,
-        data: { output: result.output },
+        data: { output: result.output, message: "Command response received", risk: "caution", verified: false, outcome: "unverified" },
       });
     }
 
@@ -145,6 +150,10 @@ export async function POST(
     ssh = result.ssh;
 
     const actionResult = await quickAction(ssh, action, param);
+    if (actionResult.operation) {
+      await auditLog({ action: "quick_action", userId: session.sub, username: session.username, target: id, details: JSON.stringify({ action, ...actionResult.operation }), ip: getClientIp(request) });
+      return NextResponse.json({ success: actionResult.success, data: actionResult.operation, ...(!actionResult.success ? { error: actionResult.output } : {}) }, { status: actionResult.success ? 200 : 500 });
+    }
 
     if (!actionResult.success) {
       return NextResponse.json(
@@ -163,7 +172,7 @@ export async function POST(
     });
     return NextResponse.json({
       success: true,
-      data: { output: actionResult.output },
+      data: { output: actionResult.output, message: "Command response received", risk: "caution", verified: false, outcome: "unverified" },
     });
   } catch (error) {
     if (isDisconnectedError(error)) {
@@ -179,7 +188,7 @@ export async function POST(
 
     const err = error as Error & { statusCode?: number };
     const status = err.statusCode || 500;
-    const message = err.message || "Failed to run action";
+    const message = safeErrorMessage(error, "Failed to run action");
     return NextResponse.json({ success: false, error: message }, { status });
   } finally {
     await closeSSH(ssh);

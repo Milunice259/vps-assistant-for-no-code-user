@@ -13,21 +13,23 @@ import { NETWORK_PALETTE, containerStatusColor, parsePortString, formatPortsBadg
 
 /* ── Internet Card ── */
 
-export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; onMouseDown?: (e: React.MouseEvent) => void; onAction?: (e: React.MouseEvent) => void }) {
+export function InternetCard({ card, onPointerDown, onAction }: { card: CardRect; onPointerDown?: (e: React.PointerEvent) => void; onAction?: (e: React.MouseEvent) => void }) {
   return (
     <div
       className="group absolute flex items-center justify-center gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-sm cursor-default select-none transition-colors hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(e); }}
     >
       <Globe className="h-5 w-5 text-amber-400" />
       <span className="text-sm font-semibold text-amber-200">Internet</span>
       <button
         type="button"
-        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(e); }}
-        className="absolute -right-2 -top-2 rounded-full border border-amber-400/40 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-amber-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+        className="absolute -right-2 -top-2 rounded-full border border-amber-400/40 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-amber-200 shadow-lg min-h-11 min-w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+        aria-label="Internet actions"
+        aria-haspopup="dialog"
         title="Internet options (right-click also works)"
       >
         Actions
@@ -38,12 +40,12 @@ export function InternetCard({ card, onMouseDown, onAction }: { card: CardRect; 
 
 /* ── Server Card ── */
 
-export function ServerCard({ card, hostname, onMouseDown }: { card: CardRect; hostname?: string; onMouseDown?: (e: React.MouseEvent) => void }) {
+export function ServerCard({ card, hostname, onPointerDown }: { card: CardRect; hostname?: string; onPointerDown?: (e: React.PointerEvent) => void }) {
   return (
     <div
       className="absolute flex items-center gap-3 rounded-2xl border-2 border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-sm px-4 cursor-default select-none transition-colors hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/10"
       style={{ left: card.x, top: card.y, width: card.w, height: card.h }}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
     >
       <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
         <Server className="h-5 w-5 text-blue-400" />
@@ -62,12 +64,12 @@ export function NetworkCard({
   card,
   net,
   colorIdx,
-  onMouseDown,
+  onPointerDown,
 }: {
   card: CardRect;
   net: DockerNetworkInfo;
   colorIdx: number;
-  onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
 }) {
   const palette = NETWORK_PALETTE[colorIdx % NETWORK_PALETTE.length];
 
@@ -82,7 +84,7 @@ export function NetworkCard({
         backgroundColor: palette.bgFade,
         borderColor: palette.border,
       }}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
     >
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
@@ -106,12 +108,12 @@ export function NetworkCard({
 export function ContainerCard({
   card,
   container,
-  onMouseDown,
+  onPointerDown,
   onAction,
 }: {
   card: CardRect;
   container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string };
-  onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   onAction?: (container: { name: string; image?: string; state?: string; ipv4: string; ports?: string; id: string }, e: React.MouseEvent) => void;
 }) {
   const status = containerStatusColor(container.state);
@@ -130,7 +132,7 @@ export function ContainerCard({
         borderColor: status.border,
       }}
       title={fullInfo}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onAction?.(container, e); }}
     >
       {/* Status bar left */}
@@ -179,9 +181,11 @@ export function ContainerCard({
       </div>
       <button
         type="button"
-        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onAction?.(container, e); }}
-        className="absolute -right-2 -top-2 rounded-full border border-gray-600 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-gray-200 shadow-lg sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+        className="absolute -right-2 -top-2 rounded-full border border-gray-600 bg-gray-950 px-2.5 py-1 text-[10px] font-semibold text-gray-200 shadow-lg min-h-11 min-w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-400"
+        aria-label={`${container.name} actions`}
+        aria-haspopup="dialog"
         title="App actions (right-click also works)"
       >
         Actions

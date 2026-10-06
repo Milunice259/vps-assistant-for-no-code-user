@@ -1,6 +1,6 @@
 /**
  * API: /api/deploy/rollback
- * Re-deploy a previous successful deployment.
+ * Rollback execution is unavailable; retain authorization checks.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +9,6 @@ import { can } from "@/lib/permissions";
 import { canAccessServer } from "@/lib/server-access";
 import { requireSafeModeOff } from "@/lib/operation-safety";
 import { prisma } from "@/lib/db";
-import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 
 export async function POST(request: NextRequest) {
@@ -46,49 +45,10 @@ export async function POST(request: NextRequest) {
     const safetyBlock = requireSafeModeOff("deploy_git", body);
     if (safetyBlock) return safetyBlock;
 
-    if (deployment.status !== "RUNNING") {
-      return NextResponse.json(
-        { success: false, error: "Can only rollback to successful deployments" },
-        { status: 400 }
-      );
-    }
-
-    // Create a new deployment log entry for the rollback
-    const rollback = await prisma.deploymentLog.create({
-      data: {
-        repoUrl: deployment.repoUrl,
-        branch: deployment.branch,
-        detectedStack: deployment.detectedStack,
-        status: "PENDING",
-        logs: `Rollback to deployment ${deployment.id} (commit: ${deployment.commitHash || "unknown"})`,
-        domain: deployment.domain,
-        serverId: deployment.serverId,
-        commitHash: deployment.commitHash,
-        customPath: deployment.customPath,
-        encryptedEnv: deployment.encryptedEnv,
-      },
-    });
-
-    const ip = getClientIp(request);
-    await auditLog({
-      action: "deployment_rollback",
-      userId: session.sub,
-      username: session.username,
-      target: deployment.repoUrl,
-      details: `Rollback to deployment ${deployment.id}`,
-      ip,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        rollbackId: rollback.id,
-        originalDeploymentId: deployment.id,
-        repoUrl: deployment.repoUrl,
-        branch: deployment.branch,
-      },
-      message: `Rollback initiated to deployment ${deployment.id}`,
-    });
+    return NextResponse.json(
+      { success: false, code: "ROLLBACK_UNAVAILABLE", error: "Rollback is not supported. No deployment was started." },
+      { status: 503 }
+    );
   } catch (error) {
     const msg = safeErrorMessage(error, "Rollback failed");
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

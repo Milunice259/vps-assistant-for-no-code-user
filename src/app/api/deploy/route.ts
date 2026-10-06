@@ -7,8 +7,9 @@ import {
   pruneOldDeployments,
 } from "@/lib/deployer";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
-import { remoteDeployViaSSH, closeSSH } from "@/lib/ssh";
-import { validateRepoUrl, validateBranch, validatePath } from "@/lib/validation";
+import { resourcePreflight, checked } from "@/lib/deploy-preflight";
+import { remoteDeployViaSSH, closeSSH, executeCommand } from "@/lib/ssh";
+import { validateRepoUrl, validateBranch, validatePath, validateDomain } from "@/lib/validation";
 import { sanitizeLogs } from "@/lib/sanitize";
 import type { ApiResponse, DeploymentInfo, DeployInput } from "@/types";
 
@@ -74,10 +75,10 @@ export async function GET(): Promise<
 }
 
 /**
- * POST /api/deploy - Start a new deployment.
+ * POST /api/deploy - Analyze locally or deploy to a remote server.
  *
  * When serverId is provided: Deploys to the remote server via SSH (git clone + docker compose).
- * When serverId is omitted:  Clones locally for stack detection (original behavior).
+ * When serverId is omitted/local: Clones for stack detection only; no build or deployment.
  */
 export async function POST(
   request: NextRequest
@@ -89,7 +90,9 @@ export async function POST(
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     if (!can(session.role as string, "OPERATOR")) return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
-    const body = (await request.json()) as DeployInput & { safeModeOff?: boolean };
+    let body: DeployInput & { safeModeOff?: boolean };
+    try { body = await request.json(); } catch { return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 }); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ success: false, error: "Body must be an object" }, { status: 400 });
     const targetId = body.serverId ?? "local";
     if (typeof targetId !== "string" || !targetId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
     if (!(await canAccessServer(session.sub as string, session.role as string, targetId))) {
@@ -131,8 +134,8 @@ export async function POST(
       }
     }
 
-    // Encrypt env vars if provided
-    const encryptedEnv = envVars ? encrypt(envVars) : null;
+    // Analysis never stores or encrypts unused environment values.
+    let encryptedEnv: string | null = null;
 
     // ─── Remote Deployment (SSH) ───
     if (serverId) {
@@ -150,6 +153,16 @@ export async function POST(
           { status: 400 }
         );
       }
+
+      const domainCheck = validateDomain(domain);
+      if (!domainCheck.valid || (envVars !== undefined && (typeof envVars !== "string" || envVars.includes("\0")))) return NextResponse.json({ success: false, error: "Invalid domain or environment options" }, { status: 400 });
+      encryptedEnv = envVars ? encrypt(envVars) : null;
+      const conn = await connectToServer(serverId);
+      const ssh = conn.ssh;
+      try {
+        const run = (command: string, timeout?: number) => executeCommand(ssh, command, timeout);
+        await checked(run, "git --version >/dev/null");
+        await resourcePreflight(run, true);
 
       // Create initial log record
       const logRecord = await prisma.deploymentLog.create({
@@ -169,10 +182,6 @@ export async function POST(
       });
       logId = logRecord.id;
 
-      let ssh = null;
-      try {
-        const conn = await connectToServer(serverId);
-        ssh = conn.ssh;
 
         // Decrypt env vars for the remote .env file
         const envVarsDecrypted = encryptedEnv ? decrypt(encryptedEnv) : undefined;
@@ -185,7 +194,7 @@ export async function POST(
           envVarsDecrypted
         );
 
-        const finalStatus = result.success ? "RUNNING" : "FAILED";
+        const finalStatus = result.status;
         const updated = await prisma.deploymentLog.update({
           where: { id: logId },
           data: {
@@ -219,7 +228,7 @@ export async function POST(
           if (logId) {
             await prisma.deploymentLog.update({
               where: { id: logId },
-              data: { status: "FAILED", logs: sanitizeLogs(logRecord.logs + "\nServer is offline or unreachable.") },
+              data: { status: "FAILED", logs: sanitizeLogs("Server is offline or unreachable.") },
             }).catch(() => {});
           }
           return NextResponse.json(
@@ -233,16 +242,16 @@ export async function POST(
       }
     }
 
-    // ─── Local Deployment (stack detection) ───
+    // ─── Local Repository Analysis (no build or deployment) ───
     const logRecord = await prisma.deploymentLog.create({
       data: {
         repoUrl,
         branch,
         detectedStack: "unknown",
         status: "CLONING",
-        logs: `Starting deployment of ${repoUrl} (branch: ${branch})...\n` +
-          `Target: Local\n`,
-        domain: domain ?? null,
+        logs: `Starting repository analysis of ${repoUrl} (branch: ${branch})...\n` +
+          `Target: Local analysis only\n`,
+        domain: null,
         serverId: null,
         customPath: null,
         encryptedEnv,
@@ -259,12 +268,13 @@ export async function POST(
       where: { id: logId },
       data: {
         detectedStack: result.detectedStack,
-        status: "BUILDING",
+        status: "ANALYZED",
         logs: sanitizeLogs(
           logRecord.logs +
           `Cloned to ${result.projectDir}\n` +
           `Detected stack: ${result.detectedStack}\n` +
-          `Default port: ${result.port}\n`),
+          `Suggested port: ${result.port} (not published)\n` +
+          `Repository analysis complete. Application not deployed; no build, containers or ports were created.\n`),
       },
     });
 

@@ -167,15 +167,15 @@ The current priority is reliable, understandable operation for non-technical use
 | Lane | Status | Acceptance target |
 | --- | --- | --- |
 | **SEC-01 — Safety and permissions** | Released and verified | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
-| **TRUST-01 — Truthful capabilities** | Verified release candidate | Local Git is analysis only; rollback is locked; command completion, state and readiness are distinct. |
-| **DATA-01 — Recoverable panel backups** | Verified release candidate | Concurrent-write SQLite snapshots and integrity checks pass; web restore stays locked; disposable maintenance recovery passes. Panel database only. |
-| **UX-01 — Simpler screens** | Verified release candidate | Current-state onboarding, single responsive route tree, current-input preflight and target-bound touch/keyboard canvas. |
-| **FLOW-01 — Guided operations** | Verified release candidate | Canonical app restart; package-cache-only cleanup; fresh Image/Compose deployment; uncertain submissions require explicit read-only inspection, never automatic retry. |
-| **QA-01 — Release gates** | Required per lane | Regression checks, lint/type/build, independent review, authenticated desktop/mobile interaction and post-deploy readback. Missing verification remains blocked. |
+| **TRUST-01 — Truthful capabilities** | Released and verified | Local Git is analysis only; rollback is locked; command completion, state and readiness are distinct. |
+| **DATA-01 — Recoverable panel backups** | Released and verified | Concurrent-write SQLite snapshots and integrity checks pass; web restore stays locked; disposable maintenance recovery passes. Panel database only. |
+| **UX-01 — Simpler screens** | Released and verified | Current-state onboarding, single responsive route tree, current-input preflight and target-bound touch/keyboard canvas. |
+| **FLOW-01 — Guided operations** | Released and verified | Canonical app restart; package-cache-only cleanup; fresh Image/Compose deployment; uncertain submissions require explicit read-only inspection, never automatic retry. |
+| **QA-01 — Release gates** | Passed for this release | 21 offline/native regression scripts, lint/type/build, bounded independent safety review, authenticated isolated desktop/mobile interactions and production readback. Dangerous cases use mocks/disposable resources, not production restore/firewall/cleanup. |
 
 UI/UX review starts before implementation and repeats at every release. Dashboard owns fleet health and next steps; server/app pages own target-specific operations; Network owns inspection and network controls; Settings owns configuration; Docs owns longer help. Reuse one action flow across entry points, disclose advanced detail only when needed, and always distinguish Local from Remote.
 
-Network wires are visual paths, not traffic switches. Some existing network controls change the real firewall; their effective reachability checks and authenticated canvas/mobile acceptance remain part of the roadmap. The stack stays unchanged; broad redesigns, AI automation and a full VPS backup engine are outside this reliability pass.
+Network wires are visual paths, not traffic switches. Firewall results verify rule evidence, not effective external reachability. Restore and automatic deployment rollback remain deliberately unavailable; package-cache cleanup is not full disk cleanup. The stack stays unchanged; broad redesigns, AI automation and a full VPS backup engine are outside this reliability pass.
 
 ## License
 

@@ -35,6 +35,12 @@ Use it to answer simple questions quickly:
 - Did someone change something?
 - Do I have a backup before I touch anything?
 
+## Current release — whole-app phases 1–5
+
+The verified safety, inventory, configuration, deployment and monitoring workspace phases are now deployed. Monitoring runs in a separate bounded worker, persists replacement-stable resource history, and reports Docker, HTTP and TLS readiness independently. Alert delivery supports durable retry and recovery; unavailable observations never imply recovery.
+
+Release checks: 55 offline regressions, native isolated Docker/SSH/HTTP/TLS and delivery-receiver checks, production-data clone startup, and live database integrity/readback. The existing SQLite volume, encryption/session keys and user data are preserved. Live authenticated browser verification remains pending because the browser vault could not attach to the current login tab; this is not claimed as passed. Backup/restore and further operations phases remain separate work.
+
 ## Highlights
 
 | Area | What you get |

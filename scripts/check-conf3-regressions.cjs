@@ -18,10 +18,16 @@ const checks = [
   'check-firewall-safety', 'check-firewall-truth', 'check-fleet-read-scope', 'check-guided-deploy',
   'check-guided-operations', 'check-local-deploy-fk', 'check-onboarding-ux', 'check-panel-backup',
   'check-remote-env-upload', 'check-remote-git-truth', 'check-safe-dependencies', 'check-safe04-permissions',
+  'check-mon5-alerts', 'check-mon5-integration', 'check-mon5-metrics',
+  'check-mon5-observations', 'check-mon5-readiness', 'check-mon5-ui',
   'safe-env-recreate-regression', 'safe03-log-stream-check', 'safe12-recovery-route-check',
   'safe12-remote-check', 'sec01-cron-terminal-backup-check', 'test-advanced-safety',
 ].map(name => name + '.cjs');
 const excluded = {
+  'check-mon5-readiness-runtime.cjs': 'Privileged nested Engine and actual HTTP/container mutations; explicit isolated runtime authorization required',
+  'check-mon5-runtime.cjs': 'Privileged nested Engine, SSH/HTTP receiver, worker and SQLite runtime mutations; parent-owned',
+  'check-mon5-scheduler.cjs': 'Real supervised worker/child processes and 120-second hard-kill lifecycle; outside offline mock scope',
+  'monitoring-worker.cjs': 'Production collector supervisor; never execute directly from the offline runner',
   'check-conf-settings-browser.cjs': 'Durable browser HTTP server and bundle writes',
   'check-conf34-browser.cjs': 'Durable browser HTTP server and bundle writes',
   'check-data-ui-browser.cjs': 'Durable browser HTTP server and bundle writes',

@@ -52,7 +52,7 @@ function load(file, mocks, extras = {}) {
   const metadata = load("src/app/layout.tsx", { "./globals.css": {}, "@/lib/notification-scheduler": {}, "@/lib/general-settings": restarted, "react/jsx-runtime": {} });
   assert.equal((await metadata.generateMetadata()).title, chosen.applicationName);
   let sent;
-  const notifications = load('src/lib/notifications.ts', { '@/lib/db': { prisma: { notificationChannel: { findUnique: async () => ({ type: 'discord', enabled: true, webhookUrl: 'https://fixture.invalid' }) } } }, './general-settings': restarted }, { fetch: async (_, args) => { sent = JSON.parse(args.body); return { ok: true }; }, AbortSignal });
+  const notifications = load('src/lib/notifications.ts', { 'node:crypto': require('node:crypto'), '@/lib/db': { prisma: { notificationChannel: { findUnique: async () => ({ type: 'discord', enabled: true, webhookUrl: 'https://fixture.invalid' }) } } }, './general-settings': restarted }, { fetch: async (_, args) => { sent = JSON.parse(args.body); return { ok: true }; }, AbortSignal });
   assert.equal(await notifications.sendNotification('fixture', { title: 'Test', message: 'Test', severity: 'info' }), true);
   assert.equal(sent.username, 'Fixture Panel');
   row = { value: '{malformed' };

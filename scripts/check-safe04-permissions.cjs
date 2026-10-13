@@ -11,6 +11,8 @@ const stats = { cpu: { usagePercent: 1 }, memory: { usagePercent: 2 }, disk: { u
 const record = (kind, data) => calls.push([kind, data]);
 const prisma = {
   $executeRaw: async () => record('sqlite-write-lock'),
+  $queryRawUnsafe: async query => { assert.equal(query, 'PRAGMA database_list'); record('backup-db-read'); return [{ name: 'main', file: '/fixture/panel.db' }]; },
+  deploymentLog: { findMany: async q => { record('deployment-read', q); return []; } },
   user: {
     findUnique: async q => { if (q.select?.serverAccessMode && !q.include) return { serverAccessMode: mode }; record('user-read', q); return structuredClone(target); },
     findFirst: async () => null,
@@ -50,11 +52,13 @@ const mocks = {
   '@/lib/safe-error': { safeErrorMessage: (_e, fallback) => fallback },
   './lib/operation-safety': { requiresAdvancedAuthorization: () => false },
   '@/lib/notifications': { sendNotification: async () => { record('delivery'); return true; }, evaluateAlertRules: async (...args) => record('evaluate', args) },
-  '@/lib/local-server': { getLocalServerInfo: () => { record('local-info'); return { id: 'local', name: 'Local' }; }, isLocalServer: id => id === 'local', getLocalContainers: () => { record('local-exec'); return []; }, getLocalServices: () => ({ services: [] }) },
+  '@/lib/deployment-state': { readDeploymentDefinition: async () => { throw Error('No deployment fixture expected'); } },
+  '@/lib/local-server': { execLocal: command => { record('local-exec', command); assert(command.includes('MON5_DOCKER_OK')); return 'MON5_DOCKER_OK'; }, getLocalServerInfo: () => { record('local-info'); return { id: 'local', name: 'Local' }; }, isLocalServer: id => id === 'local', getLocalContainers: () => { record('local-exec'); return []; }, getLocalServices: () => ({ services: [] }) },
   '@/lib/stats': { getHostStats: () => stats },
   '@/lib/server-ssh': { connectToServer: async id => { record('ssh', id); if (remoteOffline) throw Error('synthetic offline'); return { ssh: id }; } },
-  '@/lib/ssh': { getRemoteStats: async () => stats, getRemoteContainers: async () => [], getRemoteServices: async () => [], closeSSH: async () => {}, executeCommandSafe: async () => { throw Error('SSL execution not expected'); } },
-  fs: { existsSync: () => { record('backup-read'); return false; } }, path: require('node:path'),
+  '@/lib/ssh': { executeCommand: async (id, command) => { record('remote-exec', id); assert(command.includes('MON5_DOCKER_OK')); return 'MON5_DOCKER_OK'; }, getRemoteStats: async () => stats, getRemoteContainers: async () => [], getRemoteServices: async () => [], closeSSH: async () => {}, executeCommandSafe: async () => { throw Error('SSL execution not expected'); } },
+  'node:fs': { lstatSync: () => { record('backup-read'); throw Error('No fixture backup'); }, readdirSync: () => { throw Error('Unexpected backup listing'); }, realpathSync: () => { throw Error('Unexpected backup resolution'); } },
+  'node:path': require('node:path'),
 };
 const cache = new Map();
 function load(file) {
@@ -234,6 +238,9 @@ async function main() {
     const data = (await (await checks.POST()).json()).data;
     assert.deepEqual(data.results.map(r => r.serverId).sort(), [...scope].sort());
     assert.deepEqual(calls.filter(([kind]) => kind === 'ssh').map(([, id]) => id), scope.includes('server-a') ? ['server-a'] : []);
+    assert.equal(calls.filter(([kind]) => kind === 'local-exec').length, scope.includes('local') ? 1 : 0, 'authorized Local uses canonical inventory executor');
+    assert.equal(calls.filter(([kind]) => kind === 'remote-exec').length, scope.includes('server-a') && !offline ? 1 : 0, 'authorized online Remote uses canonical inventory executor');
+    assert(calls.filter(([kind]) => kind === 'deployment-read').every(([, q]) => q.where.serverId === null ? scope.includes('local') : scope.includes(q.where.serverId)), 'retention reads remain scoped');
     assert(!calls.some(([kind]) => kind === 'evaluate' || kind === 'delivery'), 'Manager checks must never run global rules or cooldown/delivery mutations');
     assert(!calls.some(([kind]) => kind.startsWith('local-')) || scope.includes('local'));
     assert.deepEqual(calls.find(([kind]) => kind === 'server-read')[1].where, { id: { in: scope.filter(id => id !== 'local') } });

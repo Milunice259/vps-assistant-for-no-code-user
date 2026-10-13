@@ -32,6 +32,12 @@ const blocked = () => { calls.push(['EXECUTOR']); throw Error('Executor must not
 const mocks = {
   'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
   '@/lib/db': { prisma },
+  // Service boundaries only; real persistence/collection is checked by check-mon5-metrics.cjs.
+  '@/lib/monitoring-metrics': {
+    MONITORING_RANGES: { '1h': 1, '6h': 6, '24h': 24, '7d': 168, '30d': 720 },
+    readMonitoringHistory: async (id, range) => { calls.push(['metrics', id, range]); return { points: [], intervalMs: 60_000 }; },
+  },
+  '@/lib/app-routing': { inspectedRouting: () => ({ owned: false }) },
   '@/lib/auth': { getSession: async () => session, verifySessionToken: async () => session },
   '@/lib/server-access': {
     canAccessServer: async (_user, _role, id) => allowed.has(id),
@@ -258,6 +264,15 @@ async function main() {
   session = { sub: 'viewer', role: 'VIEWER' }; calls = [];
   res = await metrics.GET(request('GET'), ctx('app-a'));
   assert.equal(res.status, 200, 'scoped viewer retains ordinary read access');
+  assert.deepEqual(calls.filter(([type]) => type === 'metrics'), [['metrics', 'app-a', '1h']], 'authorized reader reaches canonical history service once');
+  assert.equal(res.headers.get('cache-control'), 'private, no-store');
+  assert.equal(res.headers.get('vary'), 'Cookie');
+  calls = [];
+  assert.equal((await metrics.GET(request('GET', {}, '?range=__proto__'), ctx('app-a'))).status, 400);
+  assert(!calls.some(([type]) => type === 'metrics'), 'invalid ranges do not reach history service');
+  calls = [];
+  assert.equal((await metrics.GET(request('GET'), ctx('app-b'))).status, 403);
+  assert(!calls.some(([type]) => type === 'metrics'), 'scoped Viewer cannot read foreign history');
   session = { sub: 'selected-user', role: 'MANAGER' }; calls = [];
   allowed.clear();
   res = await list.GET(request('GET', {}, '?liveRemote=true'));
@@ -331,15 +346,15 @@ async function main() {
   app.healthCheck = 'rm -rf /app/data';
   let dockerHealth = 'none';
   let containerState = 'running';
-  const inspectOnly = (command) => {
-    calls.push(['mock-exec', command]);
-    if (command.startsWith('docker inspect ') && command.includes('.State.Status')) return containerState;
-    if (command.startsWith('docker inspect ') && command.includes('.State.Health')) return dockerHealth;
-    throw Error('Health GET must only inspect Docker');
+  // Keep real canonical readiness; mock only its already-inspected native target.
+  // Native HTTP/TLS/Engine behavior is covered separately by MON5 readiness checks.
+  const profileTarget = profileService.envTarget;
+  profileService.envTarget = async id => {
+    calls.push(['readiness-inspect', id]);
+    return { appId: id, serverId: app.serverId, app: { ...app },
+      inspect: { State: { Status: containerState, Running: containerState === 'running', ...(dockerHealth === 'none' ? {} : { Health: { Status: dockerHealth } }) } },
+      api: { close: async () => calls.push(['readiness-close', id]) } };
   };
-  localExecutor = inspectOnly;
-  mocks['@/lib/ssh'].createSSHConnection = async () => { calls.push(['ssh-connect']); return {}; };
-  mocks['@/lib/ssh'].executeCommand = async (_ssh, command) => inspectOnly(command);
   for (const id of ['app-a', 'app-remote', 'local::abc123']) {
     app.serverId = id === 'app-remote' ? 'server-a' : 'local';
     for (const [state, nativeHealth, expected] of [
@@ -350,7 +365,7 @@ async function main() {
       containerState = state; dockerHealth = nativeHealth; calls = [];
       res = await health.GET(request('GET'), ctx(id));
       assert.equal(res.status, 200, `${id}: health read succeeds`);
-      assert(!calls.some(([type, command]) => type === 'mock-exec' && !command.startsWith('docker inspect ')), `${id}: no custom docker exec`);
+      assert.deepEqual(calls.filter(([type]) => type !== 'app'), [['readiness-inspect', id], ['readiness-close', id]], `${id}: inspect/close only, no custom checks or executors`);
       assert(!calls.some(([type]) => type === 'app-update'), `${id}: no DB writes`);
       assert.equal((await res.json()).data.status, expected, `${id}: ${state}/${nativeHealth}`);
     }
@@ -360,11 +375,10 @@ async function main() {
   calls = [];
   res = await health.GET(request('GET'), ctx('app-a'));
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { success: false, error: 'Health check failed' });
+  assert.deepEqual(await res.json(), { success: false, error: 'Health check failed; readiness is unverified' });
   assert.equal(calls.length, 0);
   mocks['@/lib/auth'].getSession = getSession;
-  delete mocks['@/lib/ssh'].createSSHConnection;
-  delete mocks['@/lib/ssh'].executeCommand;
+  profileService.envTarget = profileTarget;
   app.serverId = 'server-a'; delete app.healthCheck;
   session = { sub: 'selected-user', role: 'MANAGER' };
   // Runtime/file endpoint: mask all output and recover unchanged values before writing.

@@ -56,7 +56,12 @@ const denied = fixture({}, true); assert.equal(denied.value().preferenceError, t
 denied.value().setLocale('vi'); denied.value().setTimeZone('UTC'); denied.render(); assert.equal(denied.value().locale, 'vi'); assert.equal(denied.value().preferenceError, true);
 function files(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(path.join(dir, entry.name)) : [path.join(dir, entry.name)]); }
 for (const file of files(path.join(root, 'src')).filter(file => file.endsWith('.tsx'))) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /\.toLocale(?:String|TimeString|DateString)\(/, `timestamp bypass: ${file}`);
-assert.match(fs.readFileSync(path.join(root, 'src/components/apps/AppResourceChart.tsx'), 'utf8'), /history\.map[\s\S]*formatDate\(point\.time/, 'cached chart labels rerender with timezone');
+const chart = fs.readFileSync(path.join(root, 'src/components/apps/AppResourceChart.tsx'), 'utf8');
+assert.match(chart, /const \{ formatDate \} = useTranslation\(\)/, 'chart subscribes to viewer timezone');
+assert.match(chart, /tickFormatter=\{v => formatDate\(new Date\(v\)\.toISOString\(\)/, 'numeric history axis formats at render time');
+assert.match(chart, /labelFormatter=\{v => formatDate\(new Date\(Number\(v\)\)\.toISOString\(\)/, 'history tooltip formats at render time');
+assert.match(chart, /formatDate\(latest\.time/, 'last saved reading follows viewer timezone');
+assert.doesNotMatch(chart, /time:\s*formatDate\(/, 'persisted history does not cache timezone-specific labels');
 const profile = fs.readFileSync(path.join(root, 'src/app/(panel)/profile/page.tsx'), 'utf8');
 assert.match(profile, /value=\{locale\}[\s\S]*setLocale\(e\.target\.value/, 'real profile language control uses provider');
 assert.match(profile, /value=\{timeZone\}[\s\S]*setTimeZone\(e\.target\.value/, 'real profile timezone control uses provider');

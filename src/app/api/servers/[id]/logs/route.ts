@@ -42,11 +42,7 @@ function journalSince(value: string) {
   return `${Number.parseInt(value, 10)} days ago`;
 }
 
-function redact(text: string) {
-  return text
-    .replace(/(password|passwd|pwd|token|secret|api[_-]?key|authorization|bearer)(\s*[:=]\s*)([^\s'"`]+)/gi, "$1$2[REDACTED]")
-    .replace(/(https?:\/\/[^\s:]+:)([^@\s]+)(@)/gi, "$1[REDACTED]$3");
-}
+import { redactLogs as redact } from "@/lib/log-redaction";
 
 function buildCommand(source: LogSource, lines: number, name: string | null, since: string) {
   if (source === "system") return `journalctl --since '${journalSince(since)}' -n ${lines} --no-pager --output=short-iso 2>&1`;
@@ -91,7 +87,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
       return NextResponse.json({ success: false, error: "Server is offline or unreachable", code: "DISCONNECTED" }, { status: 503 });
     }
     const message = error instanceof Error ? error.message : "Failed to read logs";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: redact(message) }, { status: 500 });
   } finally {
     await closeSSH(ssh);
   }

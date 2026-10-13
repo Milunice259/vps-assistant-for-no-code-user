@@ -82,8 +82,10 @@ export function requiresAdvancedAuthorization(pathname: string, method: string, 
   if (method === "GET") return false;
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return false;
   if (pathname === "/api/backup") return method === "DELETE" || (method === "POST" && body?.action === "restore");
-  if (pathname === "/api/deploy") return method === "POST" && (!body || Boolean(body.serverId && body.serverId !== "local")); // local Git analysis does not deploy
+  if (pathname === "/api/deploy") return method === "POST" && !(body?.action === "analyze" || (body?.action === undefined && (!body?.serverId || body.serverId === "local")));
+  if (method === "POST" && /^\/api\/deploy\/(?:[a-z0-9]{20,32}|rollback)$/.test(pathname) && body?.mode === "preview") return false;
   if (pathname.startsWith("/api/deploy/")) return !["/api/deploy/preflight", "/api/deploy/requirements"].includes(pathname);
+  if (method === "POST" && /^\/api\/apps\/[^/]+\/configuration$/.test(pathname) && body?.mode === "preview") return false;
   if (pathname === "/api/apps" || pathname.startsWith("/api/apps/")) return true;
   if (packages) return true;
   if (/^\/api\/servers\/[^/]+\/actions$/.test(pathname)) return typeof body?.action !== "string" || !READ_ONLY_ACTIONS.has(body.action);

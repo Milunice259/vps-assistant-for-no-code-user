@@ -3,23 +3,21 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
+import { useTranslation } from "@/lib/i18n";
 
-type ThemeMode = "dark" | "light" | "system";
-
-function applyTheme(mode: ThemeMode) {
-  localStorage.setItem("theme", mode);
-  document.documentElement.dataset.theme = mode;
-}
+import { useTheme, type ThemeMode } from "@/hooks/useTheme";
 
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
+  const { locale, setLocale, availableLocales, timeZone, setTimeZone, preferencesReady, preferenceError, t, formatDate } = useTranslation();
+  const zones = preferencesReady ? Array.from(new Set(["UTC", "Asia/Ho_Chi_Minh", timeZone, ...Intl.supportedValuesOf("timeZone")])) : ["UTC"];
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passcode, setPasscode] = useState("");
   const [passcodeOpen, setPasscodeOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const { theme, changeTheme, themeError } = useTheme();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -30,12 +28,6 @@ export default function ProfilePage() {
     setEmail(user.email || "");
     setPasscodeOpen(Boolean(user.passcodeEnabled));
   }, [user]);
-
-  useEffect(() => {
-    const saved = (localStorage.getItem("theme") as ThemeMode | null) || "dark";
-    setTheme(saved);
-    applyTheme(saved);
-  }, []);
 
   async function saveProfile(passwordOnly = false) {
     setSaving(true); setError(""); setMessage("");
@@ -144,10 +136,12 @@ export default function ProfilePage() {
               type="button"
               role="switch"
               aria-checked={passcodeOpen}
+              aria-label="Quick unlock passcode"
+              disabled={saving}
               onClick={() => user.passcodeEnabled ? savePasscode(false) : setPasscodeOpen((value) => !value)}
-              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${passcodeOpen ? "bg-brand-600" : "bg-gray-700"}`}
+              className="relative flex h-11 w-12 shrink-0 items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50"
             >
-              <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition-transform ${passcodeOpen ? "translate-x-5" : "translate-x-0"}`} />
+              <span className={`relative h-7 w-12 rounded-full transition-colors ${passcodeOpen ? "bg-brand-600" : "bg-gray-700"}`}><span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition-transform ${passcodeOpen ? "translate-x-5" : "translate-x-0"}`} /></span>
             </button>
           </div>
           <div className="mt-3 flex items-center gap-2 text-sm">
@@ -173,11 +167,31 @@ export default function ProfilePage() {
         <p className="mt-1 text-sm text-gray-400">Lưu lựa chọn giao diện cho trình duyệt hiện tại.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {(["dark", "light", "system"] as ThemeMode[]).map((mode) => (
-            <Button key={mode} variant={theme === mode ? "primary" : "secondary"} onClick={() => { setTheme(mode); applyTheme(mode); }}>
+            <Button key={mode} className="min-h-11" variant={theme === mode ? "primary" : "secondary"} aria-pressed={theme === mode} onClick={() => changeTheme(mode)}>
               {mode[0].toUpperCase() + mode.slice(1)}
             </Button>
           ))}
         </div>
+        {themeError && <p role="alert" className="mt-2 text-sm text-amber-300">Theme could not be saved in this browser. Applied for this session only; reselect to retry.</p>}
+      </section>
+      <section className="rounded-xl border border-gray-800 bg-gray-900 p-5 shadow-lg shadow-black/10">
+        <h2 className="text-lg font-semibold text-white">{t("preferences.title")}</h2>
+        <p className="mt-1 text-sm text-gray-400">{t("preferences.description")}</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm font-medium text-gray-300">{t("preferences.language")}
+            <select disabled={!preferencesReady} value={locale} onChange={(e) => setLocale(e.target.value as typeof locale)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white">
+              {availableLocales.map(({ code, label }) => <option key={code} value={code}>{label}</option>)}
+            </select>
+          </label>
+          <label className="text-sm font-medium text-gray-300">{t("preferences.timezone")}
+            <select disabled={!preferencesReady} value={timeZone} onChange={(e) => setTimeZone(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white">
+              {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="mt-3 text-sm text-gray-400">{t("preferences.preview")}: {formatDate("2026-01-01T00:00:00Z")} ({timeZone})</p>
+        <p className="mt-2 text-xs text-gray-500">{t("preferences.coverage")}</p>
+        {preferenceError && <p role="alert" className="mt-2 text-sm text-amber-300">{t("preferences.storageError")}</p>}
       </section>
     </div>
   );

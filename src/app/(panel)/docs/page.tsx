@@ -36,6 +36,7 @@ const sections = [
       "Many servers are summarized; open server groups in Alert Center instead of scanning a very long table.",
       "Use trend and severity, not one-second spikes. A short CPU spike is normal; repeated critical alerts need action.",
       "Start here every day: score, offline servers, disk alerts, then app/service alerts.",
+      "Monitoring scheduler shows background worker availability and cycle timestamps. Collection continues without a browser open; this status is not application readiness.",
     ],
   },
   {
@@ -58,6 +59,8 @@ const sections = [
     summary: "See Docker containers and important systemd services in one place.",
     bullets: [
       "Docker apps show container state, ports, domains, logs, health checks, and environment tools.",
+      "Open Overview and Check now to read Docker health, published HTTP backend and TLS certificate separately. Healthy Docker does not prove HTTP or TLS; unsupported/unavailable means no verified evidence.",
+      "Open Resources for saved collector history and choose a range. Readings are retained for 30 days; gaps are missing observations, never zero usage. Network charts show cumulative bytes, which may reset after replacement. Refresh reads history without collecting duplicate samples.",
       "System services such as nginx, traefik, n8n, hermes, or hermes-gateway appear as service apps.",
       "Restart only the app/service you understand. If unsure, inspect logs first.",
       "Remote live discovery can be slower; the panel keeps default app loading fast by avoiding unnecessary SSH scans.",

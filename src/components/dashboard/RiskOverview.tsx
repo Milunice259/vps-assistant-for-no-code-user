@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, AlertTriangle, Bell, CheckCircle2, HardDrive, HelpCircle, Loader2, MemoryStick, RefreshCw, ServerCrash, Sparkles } from "lucide-react";
@@ -91,6 +93,7 @@ function alertTooltip(alert: RiskAlert) {
 }
 
 export function RiskOverview() {
+  const { formatDate } = useTranslation();
   const router = useRouter();
   const [risk, setRisk] = useState<RiskSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -238,6 +241,14 @@ export function RiskOverview() {
 
   if (!risk) return null;
 
+  if (risk.servers.length === 0) {
+    return (
+      <section className="rounded-2xl border border-gray-700 bg-gray-800 p-5 text-sm text-gray-400">
+        No servers in scope. Add a remote server to view fleet health.
+      </section>
+    );
+  }
+
   const healthy = risk.alerts.length === 0;
   const color = scoreColor(risk.score);
   const criticalCount = risk.alerts.filter((alert) => alert.severity === "critical").length;
@@ -294,7 +305,7 @@ export function RiskOverview() {
         </div>
 
         <p className="mt-4 text-sm text-gray-400">
-          {refreshing ? "Refreshing risk score..." : lastChecked ? `Last checked ${lastChecked.toLocaleTimeString()}` : "Compact fleet summary."}
+          {refreshing ? "Refreshing risk score..." : lastChecked ? `Last checked ${formatDate(lastChecked, { timeStyle: "medium" })}` : "Compact fleet summary."}
         </p>
         {refreshMessage && <p className="mt-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">{refreshMessage}</p>}
 

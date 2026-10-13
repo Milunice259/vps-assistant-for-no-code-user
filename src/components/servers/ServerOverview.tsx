@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useEffect, useCallback } from "react";
 import {
   RefreshCw,
@@ -606,6 +608,7 @@ function InfoPanel({
   result: ActionResult;
   onRefresh: () => void;
 }) {
+  const { formatDate } = useTranslation();
   const isLoading = result.status === "loading";
 
   return (
@@ -650,7 +653,7 @@ function InfoPanel({
       {/* Timestamp */}
       {result.timestamp && (
         <p className="text-[10px] text-gray-600 mt-2 text-right">
-          {new Date(result.timestamp).toLocaleTimeString()}
+          {formatDate(result.timestamp, { timeStyle: "medium" })}
         </p>
       )}
     </div>

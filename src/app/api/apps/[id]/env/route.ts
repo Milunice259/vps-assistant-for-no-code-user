@@ -1,5 +1,6 @@
 import { decodeProfileVars, redactEnvVars, mergeEnvVars, REDACTED } from "@/lib/env-profile";
 import { authorizeApp } from "@/lib/app-access";
+import { envTarget, listTargetProfiles } from "@/lib/container-recreate";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
@@ -47,8 +48,14 @@ async function resolveExec(id: string): Promise<{
     };
   }
 
-  // DB-backed app
-  const app = await prisma.app.findUnique({
+  const parts = id.split("::");
+  const discovered = parts[0] === "discovered";
+  if (discovered && (parts.length !== 3 || !/^[a-zA-Z0-9_.-]+$/.test(parts[2]))) throw Object.assign(new Error("Invalid application ID"), {statusCode:400});
+  // Remote discovery IDs have no App row; retain the same file operations over SSH.
+  const app = discovered ? {
+    containerId: parts[2], serverId: parts[1],
+    server: await prisma.server.findUnique({where:{id:parts[1]}}),
+  } : await prisma.app.findUnique({
     where: { id },
     include: { server: true },
   });
@@ -72,6 +79,7 @@ async function resolveExec(id: string): Promise<{
   const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
 
   const ssh = await createSSHConnection({
+    serverId: app.serverId,
     host: server.host,
     port: server.port,
     username: server.username,
@@ -160,10 +168,9 @@ export async function GET(
     let profiles: ProfileInfo[] = [];
     let activeProfile: ProfileInfo | null = null;
     try {
-      const dbProfiles = await prisma.envProfile.findMany({
-        where: { appId: id },
-        orderBy: { createdAt: "desc" },
-      });
+      const profileTarget = await envTarget(id);
+      let dbProfiles;
+      try { dbProfiles = await listTargetProfiles(profileTarget); } finally { await profileTarget.api.close(); }
       profiles = dbProfiles.map((p) => ({
         id: p.id,
         name: p.name,

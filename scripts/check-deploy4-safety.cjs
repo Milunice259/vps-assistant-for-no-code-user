@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict');
+const {load}=require('./safe-env-recreate-regression.cjs');
+const {requiresAdvancedAuthorization:guard}=load('src/lib/operation-safety.ts', {'./permissions':{},'./auth':{},'./db':{},'next/server':{NextResponse:{}}});
+assert.equal(guard('/api/deploy','POST',{serverId:'local',action:'deploy'}),true);
+assert.equal(guard('/api/deploy','POST',{serverId:'local',action:'unknown'}),true);
+assert.equal(guard('/api/deploy','POST',{serverId:'remote',action:'analyze'}),false);
+assert.equal(guard('/api/deploy','POST',{serverId:'local'}),false);
+assert.equal(guard('/api/deploy/rollback','POST',{mode:'preview'}),false);
+assert.equal(guard('/api/deploy/rollback','POST',{mode:'apply'}),true);
+assert.equal(guard('/api/deploy/docker','POST',{mode:'preview'}),true);
+assert.equal(guard('/api/deploy/cabcdefghijklmnopqrstuvwx','POST',{mode:'preview'}),false);
+assert.equal(guard('/api/deploy/cabcdefghijklmnopqrstuvwx','POST',{mode:'apply'}),true);
+console.log('PASS deployment Advanced classification: Local Git execution guarded; exact read-only previews');

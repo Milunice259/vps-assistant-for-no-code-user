@@ -48,7 +48,7 @@ export interface DashboardSummary {
     total: number;
     running: number;
     stopped: number;
-  };
+  } | null;
   apps: {
     total: number;
     running: number;
@@ -61,9 +61,9 @@ export interface DashboardSummary {
     inactive: number;
   };
   network: {
-    listeningPorts: number;
-    dockerNetworks: number;
-  };
+    listeningPorts: number | null;
+    dockerNetworks: number | null;
+  } | null;
   deployments: {
     total: number;
     running: number;
@@ -74,7 +74,7 @@ export interface DashboardSummary {
     distro: string;
     kernel: string;
     arch: string;
-  };
+  } | null;
 }
 
 // ─── Server (VPS Connection) ───

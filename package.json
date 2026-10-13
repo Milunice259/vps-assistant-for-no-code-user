@@ -26,6 +26,13 @@
     "recharts": "^2.15.0",
     "ssh2-promise": "^1.0.3"
   },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.27",
+    "source-map-js": "1.2.2",
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
+  },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.0",
     "@types/js-yaml": "^4.0.9",

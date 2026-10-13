@@ -9,14 +9,13 @@
 import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { connectToServer } from "@/lib/server-ssh";
+import { closeSSH } from "@/lib/ssh";
 import { execOnHost } from "@/lib/local-server";
 import { validateTerminalCommand } from "@/lib/validation";
 import { auditLog, getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { requireSafeModeOff } from "@/lib/operation-safety";
-import SSH2Promise from "ssh2-promise";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -102,36 +101,11 @@ export async function POST(
       if (serverId === "local") {
         output = await execOnHost(command, 30_000);
       } else {
-        const server = await prisma.server.findUnique({
-          where: { id: serverId },
-        });
-
-        if (!server) {
-          return NextResponse.json(
-            { success: false, error: "Server not found" },
-            { status: 404 }
-          );
-        }
-
-        const sshConfig: Record<string, unknown> = {
-          host: server.host,
-          port: server.port,
-          username: server.username,
-          readyTimeout: 10_000,
-        };
-
-        if (server.encryptedKey) {
-          sshConfig.privateKey = decrypt(server.encryptedKey);
-        } else if (server.encryptedPass) {
-          sshConfig.password = decrypt(server.encryptedPass);
-        }
-
-        const ssh = new SSH2Promise(sshConfig);
+        const { ssh } = await connectToServer(serverId);
         try {
-          await ssh.connect();
           output = await ssh.exec(command);
         } finally {
-          ssh.close();
+          await closeSSH(ssh);
         }
       }
     } catch (execError) {

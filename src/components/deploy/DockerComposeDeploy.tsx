@@ -28,6 +28,18 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
   const [projectPath, setProjectPath] = useState("");
   const [projectName, setProjectName] = useState("");
   const [composeContent, setComposeContent] = useState(DEFAULT_COMPOSE);
+  const [composeMode, setComposeMode] = useState<"create" | "update">("create");
+  const [deploymentId, setDeploymentId] = useState("");
+  const [filesText, setFilesText] = useState("{}");
+  const [directoryConsent, setDirectoryConsent] = useState(false);
+  const [reviewed, setReviewed] = useState(false);
+  const [layerConsent, setLayerConsent] = useState(false);
+  const [plan, setPlan] = useState<{ revision: string; services: string[]; risks: { directory: string; builds: string[]; foreignBinds: string[]; externalVolumes: string[]; externalNetworks: string[]; recreate: boolean } } | null>(null);
+  const [dataCompatibility, setDataCompatibility] = useState("");
+  const [schemaCompatibility, setSchemaCompatibility] = useState("");
+  const previewSequence = useRef(0);
+  const [previewing, setPreviewing] = useState(false);
+  const previewInFlight = useRef(false);
   const [deploying, setDeploying] = useState(false);
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const [inspecting, setInspecting] = useState(false);
@@ -35,7 +47,7 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
   const submittedAt = useRef(0);
   const [inspection, setInspection] = useState<{ logs: DeploymentInfo[]; containers: ContainerInfo[] } | null>(null);
   const [result, setResult] = useState<{ success: boolean; message: string; id?: string } | null>(null);
-  const { checking, preflight, preflightError, runPreflight, invalidate, readyRef, busyRef } = useDeployPreflight();
+  const { checking, preflight, preflightError, runPreflight, invalidate: invalidatePreflight, readyRef, busyRef } = useDeployPreflight();
   const [showBrowser, setShowBrowser] = useState(false);
   const [deployTarget, setDeployTarget] = useState<"local" | "remote">("local");
 
@@ -54,6 +66,24 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
   }, [fetchServers]);
 
   const selectedServer = servers.find((s) => s.id === serverId);
+  function invalidate() { previewSequence.current++; setPlan(null); setReviewed(false); setLayerConsent(false); setPreviewing(false); invalidatePreflight(); }
+  function composeInput() {
+    const composeFiles: unknown = JSON.parse(filesText);
+    if (!composeFiles || typeof composeFiles !== "object" || Array.isArray(composeFiles) || Object.values(composeFiles).some(v => typeof v !== "string")) throw new Error();
+    return { type: "compose", serverId, composeContent: composeContent.trim(), projectPath: projectPath.trim(), projectName: projectName.trim() || undefined, composeMode, composeDeploymentId: composeMode === "update" ? deploymentId : undefined, composeFiles, dataCompatibility: dataCompatibility || undefined, schemaCompatibility: schemaCompatibility || undefined, composeConsent: { directory: directoryConsent ? projectPath.trim() : undefined, ...(reviewed && plan ? { builds: plan.risks.builds, foreignBinds: plan.risks.foreignBinds, externalVolumes: plan.risks.externalVolumes, externalNetworks: plan.risks.externalNetworks, recreate: plan.risks.recreate, writableLayerLoss: layerConsent } : {}) } };
+  }
+  async function reviewCompose() {
+    if (busyRef.current || previewInFlight.current) return;
+    previewInFlight.current = true;
+    invalidate(); const current = previewSequence.current; setPreviewing(true);
+    try {
+      const response = await fetch("/api/deploy/docker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...composeInput(), mode: "preview" }) });
+      const json = await response.json(); const p = json.data;
+      if (!response.ok || json.success !== true || typeof p?.revision !== "string" || !Array.isArray(p.services) || typeof p.risks?.directory !== "string" || typeof p.risks?.recreate !== "boolean" || ["builds", "foreignBinds", "externalVolumes", "externalNetworks"].some(k => !Array.isArray(p.risks[k]) || p.risks[k].some((v: unknown) => typeof v !== "string"))) throw new Error();
+      if (current === previewSequence.current) setPlan({ revision: p.revision, services: p.services, risks: p.risks });
+    } catch { if (current === previewSequence.current) setResult({ success: false, message: "Reviewed preview unavailable. Check asset JSON, target ownership and directory consent. No deployment was attempted." }); }
+    finally { previewInFlight.current = false; if (current === previewSequence.current) setPreviewing(false); }
+  }
 
   async function inspectOutcome() {
     if (!busyRef.current || inspectionRef.current || deploying) return;
@@ -68,7 +98,10 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
       const logs = history.data.filter(log => log && typeof log.id === "string" && (log.serverId || "local") === serverId && log.repoUrl === `compose://${projectPath.trim()}` && Date.parse(log.createdAt) >= submittedAt.current);
       setInspection({ logs, containers: target.data });
       // Empty inventory is not proof of absence: existing container readers can swallow host errors.
-      if (!logs.length || logs.some(log => !["RUNNING", "FAILED", "UNVERIFIED"].includes(log.status))) throw new Error("No terminal history evidence");
+      if (logs.length !== 1 || logs.some(log => !["RUNNING", "FAILED", "UNVERIFIED"].includes(log.status))) throw new Error("No terminal history evidence");
+      const detailResponse = await fetch(`/api/deploy/${encodeURIComponent(logs[0].id)}`, { cache: "no-store" });
+      const detail = await detailResponse.json();
+      if (!detailResponse.ok || detail.success !== true || detail.data?.serverId !== serverId || detail.data?.pending !== false || detail.data?.uncertain === true || detail.data?.drift === true || !Array.isArray(detail.data?.containerIds) || !detail.data.containerIds.length || !detail.data.containerIds.every((id: string) => target.data!.some(container => container.id === id))) throw new Error("Exact target evidence unavailable");
       invalidate();
       setOutcomeUnknown(false);
       busyRef.current = false;
@@ -80,9 +113,10 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
   }
 
   async function handleDeploy() {
-    if (busyRef.current || !readyRef.current || safeMode || deploying || !serverId || !composeContent.trim() || !projectPath.trim()) return;
+    if (busyRef.current || !plan || !reviewed || (plan.risks.recreate && !layerConsent) || !readyRef.current || safeMode || deploying || !serverId || !composeContent.trim() || !projectPath.trim()) return;
     const targetLabel = serverId === "local" ? "Local server" : `${selectedServer?.name || serverId} (${selectedServer?.host || serverId})`;
-    if (!window.confirm(`Deploy Compose stack to ${targetLabel} at ${projectPath.trim()}? This writes docker-compose.yml and creates a new stack and publishes ports. Partial files/containers remain on failure; automatic rollback is unavailable.`)) return;
+    if (!window.confirm(`${composeMode === "update" ? "Update managed" : "Create"} Compose stack on ${targetLabel} at ${projectPath.trim()}? Reviewed builds, bind mounts, external resources and published ports will be used. Database/schema/external data are not restored by rollback.`)) return;
+    const input = composeInput(); const revision = plan.revision;
     busyRef.current = true;
     onBusyChange?.(true);
     invalidate();
@@ -97,20 +131,20 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "compose",
-          serverId,
+          ...input,
+          mode: "apply",
+          composeRevision: revision,
           safeModeOff: !safeMode,
-          composeContent: composeContent.trim(),
-          projectPath: projectPath.trim(),
-          projectName: projectName.trim() || undefined,
         }),
       });
 
       const json = await res.json();
-      if (!json || typeof json.success !== "boolean" || typeof json.data?.id !== "string" || !json.data.id || !["RUNNING", "FAILED", "UNVERIFIED"].includes(json.data.status) || json.success !== (json.data.status === "RUNNING") || (!res.ok && json.data.status !== "FAILED")) throw new Error("Ambiguous response");
+      if (!json || typeof json.success !== "boolean" || typeof json.data?.id !== "string" || !json.data.id || !["RUNNING", "FAILED", "UNVERIFIED"].includes(json.data.status) || (json.success && json.data.status !== "RUNNING") || (!res.ok && json.data.status === "RUNNING" && json.uncertain !== true)) throw new Error("Ambiguous response");
+      unknown = json.pending !== false || json.uncertain === true;
+      setOutcomeUnknown(unknown);
       setResult({
-        success: json.success,
-        message: json.data?.status === "RUNNING" ? "Running and healthy" : `${json.data?.status || "FAILED"}: ${json.error || "Readiness unverified"}`,
+        success: json.success && !unknown,
+        message: unknown ? "Outcome uncertain or pending. Controls stay locked; inspect history and the original target (read-only)." : json.data.status === "RUNNING" ? `Container running and healthy. Routing: ${json.routing?.activeProxy === "verified" ? "verified" : "not verified"}; TLS: ${json.routing?.tls === "verified" ? "verified" : "not verified"}.` : `${json.data.status}: ${json.error || "Readiness unverified"}`,
         id: json.data?.id,
       });
     } catch {
@@ -257,7 +291,12 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
         )}
       </div>
 
-      <p className="text-xs text-gray-400">Fresh image-based stacks only. Existing directories/projects, builds, bind mounts and external volumes/networks are not supported. A Docker health check is required to confirm readiness.</p>
+      <p className="text-xs text-gray-400">Create a new managed stack or update its exact saved deployment. Review build assets, bind paths and external resources before applying. Rollback restores configuration/images, not database, schema or external data.</p>
+      <label className="block text-sm">Compose operation<select aria-label="Compose operation" value={composeMode} onChange={e => { if (!busyRef.current) { invalidate(); setComposeMode(e.target.value as "create" | "update"); } }} className="ml-2 rounded bg-gray-900 p-2"><option value="create">Create managed stack</option><option value="update">Update managed stack</option></select></label>
+      {composeMode === "update" && <label className="block text-sm">Managed deployment ID<input aria-label="Managed deployment ID" value={deploymentId} onChange={e => { if (!busyRef.current) { invalidate(); setDeploymentId(e.target.value); } }} className="block w-full rounded bg-gray-900 p-2" /></label>}
+      <label className="block text-sm"><input type="checkbox" checked={directoryConsent} onChange={e => { if (!busyRef.current) { invalidate(); setDirectoryConsent(e.target.checked); } }} /> I reviewed this exact destination directory (creation requires a new or empty directory).</label>
+      <label className="block text-sm">Build assets JSON (relative file path → text content)<textarea aria-label="Compose build assets" autoComplete="off" spellCheck={false} value={filesText} onChange={e => { if (!busyRef.current) { invalidate(); setFilesText(e.target.value); } }} rows={5} className="block w-full rounded bg-gray-900 p-2 font-mono" /></label>
+      {composeMode === "update" && [["External data compatibility", dataCompatibility, setDataCompatibility], ["Database/schema compatibility", schemaCompatibility, setSchemaCompatibility]].map(([label, value, setter]) => <label key={String(label)} className="block text-sm">{String(label)}<select aria-label={String(label)} value={String(value)} onChange={e => { if (!busyRef.current) { invalidate(); (setter as (value: string) => void)(e.target.value); } }} className="ml-2 rounded bg-gray-900 p-2"><option value="">Choose explicitly</option><option value="unchanged">Unchanged</option><option value="operator-confirmed">Reviewed and compatible</option></select></label>)}
       <Field label="docker-compose.yml" required tooltip="The YAML configuration that defines your multi-container application. Edit the template below or paste your own compose file.">
         <textarea
           value={composeContent}
@@ -269,13 +308,21 @@ export function DockerComposeDeploy({ onBusyChange }: { onBusyChange?: (busy: bo
       </Field>
 
       </fieldset>
-      <Button variant="secondary" loading={checking} disabled={deploying || outcomeUnknown || !serverId || !projectPath.trim()} onClick={() => runPreflight({ type: "compose", serverId, composeContent: composeContent.trim(), projectPath: projectPath.trim(), projectName: projectName.trim() || undefined })}>Run pre-flight</Button>
-      <p role="status" className="text-sm text-gray-400">{preflightError || (preflight?.ready ? "Current inputs checked. Deploy creates a new directory and stack; partial assets remain on failure." : preflight ? preflight.checks.map(c => c.detail).join(" ") : "Use a new destination and project. Run pre-flight before deploying.")}</p>
+      <Button variant="secondary" loading={previewing} disabled={deploying || outcomeUnknown || previewing || !serverId || !projectPath.trim()} onClick={reviewCompose}>Review Compose preview (read-only)</Button>
+      {plan && <fieldset disabled={deploying || outcomeUnknown} className="space-y-2 rounded border border-gray-700 p-3 text-sm">
+        <p>Services: {plan.services.join(", ")}</p>
+        <p>Directory: {plan.risks.directory || "New destination"} · Recreate: {plan.risks.recreate ? "yes" : "no"}</p>
+        {(["builds", "foreignBinds", "externalVolumes", "externalNetworks"] as const).map(key => <p key={key}>{key}: {plan.risks[key].join(", ") || "none"}</p>)}
+        {plan.risks.recreate && <label className="block"><input type="checkbox" checked={layerConsent} onChange={e => { if (!busyRef.current) setLayerConsent(e.target.checked); }} /> I accept writable-layer loss on replacement; rollback does not restore writable layers.</label>}
+        <label><input type="checkbox" checked={reviewed} onChange={e => { if (!busyRef.current) { invalidatePreflight(); setReviewed(e.target.checked); } }} /> I consent to these exact build services, bind paths, external volumes/networks and recreation.</label>
+      </fieldset>}
+      <Button variant="secondary" loading={checking} disabled={deploying || outcomeUnknown || !plan || !reviewed || (composeMode === "update" && (!dataCompatibility || !schemaCompatibility))} onClick={() => { try { void runPreflight({ ...composeInput(), composeRevision: plan?.revision }); } catch { invalidate(); setResult({ success: false, message: "Build assets must be a JSON object of relative paths and text content." }); } }}>Run pre-flight</Button>
+      <p role="status" className="text-sm text-gray-400">{preflightError || (preflight?.ready ? "Current reviewed inputs checked. Partial assets may remain on failure." : preflight ? preflight.checks.map(c => c.detail).join(" ") : "Review this exact Compose plan, acknowledge resources, then run pre-flight.")}</p>
       {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Turn it off to deploy containers on the selected server. Requirement checks remain available.</p>}
       <Button
         variant="primary"
         loading={deploying}
-        disabled={!preflight?.ready || checking || safeMode || deploying || outcomeUnknown || !serverId || !composeContent.trim() || !projectPath.trim()}
+        disabled={!plan || !reviewed || (plan.risks.recreate && !layerConsent) || !preflight?.ready || checking || safeMode || deploying || outcomeUnknown || !serverId || !composeContent.trim() || !projectPath.trim()}
         onClick={handleDeploy}
       >
         <Play className="h-4 w-4 mr-1" /> Deploy Compose Stack

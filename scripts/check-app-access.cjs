@@ -32,7 +32,7 @@ const blocked = () => { calls.push(['EXECUTOR']); throw Error('Executor must not
 const mocks = {
   'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
   '@/lib/db': { prisma },
-  '@/lib/auth': { getSession: async () => session },
+  '@/lib/auth': { getSession: async () => session, verifySessionToken: async () => session },
   '@/lib/server-access': {
     canAccessServer: async (_user, _role, id) => allowed.has(id),
     scopedServerWhere: async () => ({ id: { in: [...allowed].filter((id) => id !== 'local') } }),
@@ -44,6 +44,45 @@ const mocks = {
   '@/lib/validation': { validateTerminalCommand: () => ({ valid: true }), validateContainerId: () => ({ valid: true }) },
   'ssh2-promise': {},
 };
+// ponytail: route/auth/crypto fixture only; native Engine/CAS/recovery coverage lives in
+// safe12-db-check.cjs and safe-env-recreate-regression.cjs, not this legacy fixture.
+let appliedVars;
+const profileService = {
+  envTarget: async (appId) => { calls.push(['profile-target', appId]); return { appId, api: { close: async () => {} } }; },
+  listTargetProfiles: async ({ appId }) => { calls.push(['profile-read', appId]); return profiles.filter(p => p.appId === appId).map(p => ({ ...p })); },
+  withEnvTarget: async (appId, callback) => {
+    const target = await profileService.envTarget(appId);
+    try { return await callback(target); } finally { await target.api.close(); }
+  },
+  saveProfiles: async ({ appId }, next) => {
+    assert(next.every(p => !p.appId || p.appId === appId), 'profile write must stay bound to target');
+    for (const p of next) {
+      const existing = profiles.find(old => old.id === p.id && old.appId === appId);
+      if (existing) await prisma.envProfile.update({ where: { id: p.id, appId }, data: p });
+      else await prisma.envProfile.create({ data: { ...p, appId } });
+    }
+    for (const p of profiles.filter(p => p.appId === appId && !next.some(n => n.id === p.id))) {
+      await prisma.envProfile.delete({ where: { id: p.id, appId } });
+    }
+    profiles = profiles.filter(p => p.appId !== appId || next.some(n => n.id === p.id));
+  },
+  changeProfile: async (appId, profileId, remove = false) => profileService.withEnvTarget(appId, async target => {
+    calls.push(['profile-change', appId, profileId, remove]);
+    const scoped = await profileService.listTargetProfiles(target);
+    const profile = profileId === null ? null : scoped.find(p => p.id === profileId);
+    if (profileId !== null && !profile) throw Object.assign(Error('Profile not found'), { statusCode: 404 });
+    const recreate = !remove || profile.isActive;
+    if (recreate) {
+      appliedVars = profile && !remove ? load(path.join(root, 'src/lib/env-profile.ts')).decodeProfileVars(profile.vars) : {};
+      calls.push(['mock-recreate', appId, appliedVars]);
+      await prisma.envProfile.updateMany({ where: { appId }, data: { isActive: false } });
+    }
+    if (remove) await prisma.envProfile.delete({ where: { id: profileId, appId } });
+    return { applied: true, reverted: remove && recreate, newContainerId: 'new-container' };
+  }),
+};
+profileService.updateTargetProfiles = profileService.saveProfiles;
+mocks['@/lib/container-recreate'] = profileService;
 const cache = new Map();
 function load(file) {
   file = path.resolve(file);
@@ -67,6 +106,7 @@ const ctx = (id, profileId = 'profile-b') => ({ params: Promise.resolve({ id, pr
 function request(method, body = {}, query = '', acknowledged = true) {
   const req = new Request('http://check.invalid/api/apps' + query, { method, ...(method === 'GET' ? {} : { body: JSON.stringify(acknowledged ? { ...body, safeModeOff: true } : body), headers: { 'Content-Type': 'application/json', ...(method === 'DELETE' && acknowledged ? { 'X-Safe-Mode-Off': 'true' } : {}) } }) });
   req.nextUrl = new URL(req.url);
+  req.cookies = { get: () => session ? { value: "fixture-token" } : undefined };
   return req;
 }
 async function main() {
@@ -75,8 +115,11 @@ async function main() {
   let res = await metrics.GET(request('GET'), ctx('app-b'));
   assert.equal(res.status, 403, 'cross-server metrics must be denied before reading metrics');
   assert(!calls.some(([type]) => type === 'metrics'));
+  const appRoutes = routes(path.join(root, 'src/app/api/apps'));
+  const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+  const exportedEntrypoints = appRoutes.flatMap(file => Object.keys(load(file)).filter(method => httpMethods.includes(method)).map(method => `${path.relative(root, file)}:${method}`));
   let checked = 0;
-  for (const file of routes(path.join(root, 'src/app/api/apps'))) {
+  for (const file of appRoutes) {
     const route = load(file);
     for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
       if (!route[method]) continue;
@@ -101,10 +144,13 @@ async function main() {
       checked++;
     }
   }
+  assert.equal(checked, exportedEntrypoints.length, 'every exported app HTTP entrypoint must be checked');
   session = { sub: 'selected-user', role: 'MANAGER' }; calls = [];
   const mutations = [
     ['route.ts', 'POST', { name: 'Test', serverId: 'server-a' }],
     ['[id]/route.ts', 'PATCH', { name: 'Renamed' }], ['[id]/route.ts', 'DELETE', {}],
+    ['[id]/configuration/route.ts', 'POST', { mode: 'apply' }],
+    ['[id]/env/recovery/route.ts', 'POST', { action: 'reconcile' }],
     ['[id]/actions/route.ts', 'POST', { action: 'restart' }],
     ['[id]/terminal/route.ts', 'POST', { command: 'pwd' }],
     ['[id]/env/route.ts', 'PUT', { vars: { PORT: '3000' } }],
@@ -113,9 +159,9 @@ async function main() {
     ['[id]/env/profiles/[profileId]/route.ts', 'PUT', { name: 'Test' }],
     ['[id]/env/profiles/[profileId]/route.ts', 'DELETE', {}],
   ];
-  const exportedMutations = routes(path.join(root, 'src/app/api/apps')).flatMap(file => Object.keys(load(file)).filter(method => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)).map(method => [path.relative(path.join(root, 'src/app/api/apps'), file), method].join(':'))).sort();
+  const exportedMutations = appRoutes.flatMap(file => Object.keys(load(file)).filter(method => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)).map(method => [path.relative(path.join(root, 'src/app/api/apps'), file), method].join(':'))).sort();
   assert.deepEqual(mutations.map(([file, method]) => `${file}:${method}`).sort(), exportedMutations, 'every app mutation must be exercised');
-  assert.equal(new Set(mutations.map(([file]) => file)).size, 8);
+  assert.equal(new Set(mutations.map(([file]) => file)).size, 10);
   const safety = load(path.join(root, 'src/lib/operation-safety.ts'));
   process.env.JWT_SECRET = 'offline-test-key-not-a-live-credential';
   session = { ...session, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, jti: 'offline-login', forceLogoutVersion: 0 };
@@ -164,9 +210,28 @@ async function main() {
     ['[id]/route.ts', 'PATCH', { name: 'Renamed' }, 'app-update'],
     ['[id]/route.ts', 'DELETE', {}, 'app-delete'],
   ]) {
+    // Legacy PATCH success is display-name-only for a manual, non-container tracking record.
+    const containerId = app.containerId;
+    if (method === 'PATCH') app.containerId = null;
     calls = []; res = await load(path.join(root, 'src/app/api/apps', file))[method](request(method, body), ctx('app-a'));
     assert.equal(res.status, method === 'POST' ? 201 : 200, `${file}: acknowledged flow`);
     assert(calls.some(([type]) => type === effect));
+    if (method === 'PATCH') assert.deepEqual(calls.find(([type]) => type === effect)[1].data, { name: 'Renamed' });
+    app.containerId = containerId;
+  }
+  for (const body of [
+    { name: 'Renamed' }, // Container display-name edits also require canonical preview/apply.
+    ...['domain', 'cpuLimit', 'memoryLimit', 'storageLimit', 'restartPolicy', 'healthCheck', 'ports', 'networks', 'logDriver', 'logMaxSize', 'logMaxFiles', 'maximumRetryCount', 'routing'].map(field => ({ name: 'Renamed', [field]: null })),
+  ]) {
+    const containerId = app.containerId;
+    if (Object.keys(body).length > 1) app.containerId = null; // Resource gate must not pass via container-name rejection.
+    calls = []; res = await detail.PATCH(request('PATCH', body), ctx('app-a'));
+    assert.equal(res.status, 409, 'acknowledged container/resource PATCH requires canonical configuration');
+    const error = (await res.json()).error;
+    assert.match(error, /configuration with mode=preview.*mode=apply/);
+    if (Object.keys(body).length > 1) assert.match(error, /^Metadata-only resource\/domain updates are not supported/);
+    assert(calls.every(([type]) => type === 'app'), 'canonical PATCH rejection precedes mutations/executors');
+    app.containerId = containerId;
   }
   // DELETE must use the agreed header, not a JSON flag or query-string substitute.
   calls = [];
@@ -185,8 +250,8 @@ async function main() {
   const list = load(path.join(root, 'src/app/api/apps/route.ts'));
   res = await list.GET(request('GET', {}, '?liveRemote=true'));
   assert.equal(res.status, 200);
-  assert.deepEqual(calls.find(([type]) => type === 'apps')[1].where, { serverId: { in: ['server-a'] } });
-  assert.deepEqual(calls.find(([type]) => type === 'servers')[1].where, { isActive: true, id: { in: ['server-a'] } });
+  assert.deepEqual(calls.find(([type]) => type === 'apps')[1].where, { OR: [{ serverId: { in: ['server-a'] } }] });
+  assert.deepEqual(calls.find(([type]) => type === 'servers')[1].where, { id: { in: ['server-a'] } });
   calls = [];
   res = await list.POST(request('POST', { name: 'Foreign', serverId: 'server-b' }));
   assert.equal(res.status, 403); assert.equal(calls.length, 0);
@@ -197,8 +262,8 @@ async function main() {
   allowed.clear();
   res = await list.GET(request('GET', {}, '?liveRemote=true'));
   assert.equal(res.status, 200);
-  assert.deepEqual(calls.find(([type]) => type === 'apps')[1].where, { serverId: { in: [] } });
-  assert.deepEqual(calls.find(([type]) => type === 'servers')[1].where, { isActive: true, id: { in: [] } });
+  assert.deepEqual(calls.find(([type]) => type === 'apps')[1].where, { OR: [{ serverId: { in: [] } }] });
+  assert.deepEqual(calls.find(([type]) => type === 'servers')[1].where, { id: { in: [] } });
   allowed.add('server-a');
   calls = [];
   const stream = load(path.join(root, 'src/app/api/apps/[id]/stream/route.ts'));
@@ -230,7 +295,7 @@ async function main() {
   for (const [route, method] of [[profileRoute, 'PUT'], [profileRoute, 'DELETE'], [apply, 'POST']]) {
     calls = []; res = await route[method](request(method, { vars: masked, profileId: 'profile-b' }), ctx('app-a'));
     assert.equal(res.status, 404, 'profile must belong to path app');
-    assert(!calls.some(([type]) => ['update', 'delete', 'EXECUTOR'].includes(type)));
+    assert(!calls.some(([type]) => ['update', 'create', 'delete', 'update-many', 'mock-recreate', 'EXECUTOR'].includes(type)), 'foreign profile denial precedes mutation/recreation');
   }
   profiles = [{ id: 'profile-a', appId: 'app-a', name: 'Test', vars: JSON.stringify(original), isActive: false, createdAt: new Date() }];
   calls = []; res = await profileRoute.PUT(request('PUT', { vars: { ...masked, PORT: '4000' } }), ctx('app-a', 'profile-a'));
@@ -255,7 +320,9 @@ async function main() {
   res = await profileList.POST(request('POST', { name: 'New', vars: original }), ctx('app-a'));
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).data.vars, masked);
-  assert.deepEqual(vars.decodeProfileVars(profiles[1].vars), original);
+  const createdProfile = profiles.find(p => p.name === 'New');
+  assert.equal(createdProfile.appId, 'app-a');
+  assert.deepEqual(vars.decodeProfileVars(createdProfile.vars), original);
   // Viewer health reads must only inspect Docker, never execute stored checks or update DB.
   const health = load(path.join(root, 'src/app/api/apps/[id]/health/route.ts'));
   session = { sub: 'viewer', role: 'VIEWER' };
@@ -455,28 +522,22 @@ async function main() {
   allowed.delete('local');
   profiles[0].vars = vars.encodeProfileVars(original);
   prisma.envProfile.updateMany = async () => { calls.push(['update-many']); };
-  prisma.$transaction = async (operations) => Promise.all(operations);
-  let appliedVars;
-  profileRoute.recreateContainer = async (_id, input) => { appliedVars = input; return { newContainerId: 'new-container' }; };
+  appliedVars = undefined;
   res = await apply.POST(request('POST', { profileId: 'profile-a' }), ctx('app-a'));
   assert.equal(res.status, 200); assert.deepEqual(appliedVars, original);
   appliedVars = undefined; calls = [];
   res = await apply.POST(request('POST', { profileId: null }), ctx('app-a'));
   assert.equal(res.status, 200); assert.deepEqual(appliedVars, {});
   assert(calls.some(([type]) => type === 'update-many'));
-  prisma.envProfile.delete = async () => { calls.push(['delete']); };
+  prisma.envProfile.delete = async ({ where }) => { calls.push(['delete', where]); assert.equal(where.appId, 'app-a'); assert.equal(where.id, 'profile-a'); };
   allowed.add('local'); app.serverId = 'local';
-  localExecutor = command => {
-    calls.push(['mock-exec', command]);
-    return command.startsWith('docker inspect ') ? JSON.stringify([{ Config: { Image: 'test-image' } }]) : 'new-container';
-  };
   for (const active of [false, true]) {
     profiles[0].isActive = active; appliedVars = undefined; calls = [];
     res = await profileRoute.DELETE(request('DELETE'), ctx('app-a', 'profile-a'));
     assert.equal(res.status, 200); assert(calls.some(([type]) => type === 'delete'));
     assert.equal((await res.json()).data.reverted, active);
-    assert(calls.some(([type, command]) => type === 'mock-exec' && command.startsWith('docker run ')) === active, 'active DELETE recreates only when acknowledged');
+    assert.equal(calls.some(([type]) => type === 'mock-recreate'), active, 'active DELETE recreates only when acknowledged');
   }
-  console.log(`PASS: ${checked} app API entrypoints; all 10 mutations require strict acknowledgment despite a valid signed grant, acknowledged positive flows and auth/scope/role denial, scoped discovery, profile binding, encryption, legacy reads, inspect-only Viewer health, health 500 redaction, and fail-closed masked/full-replacement env saves across local/DB-local/remote, including absent/empty files, confirmed read/backup/write markers, silent/partial failures, and write fallback (mocked only).`);
+  console.log(`PASS: ${checked} app API entrypoints; all ${exportedMutations.length} mutations across ${new Set(mutations.map(([file]) => file)).size} route files require strict acknowledgment despite a valid signed grant, acknowledged positive flows and auth/scope/role denial, scoped discovery, profile binding, encryption, legacy reads, inspect-only Viewer health, health 500 redaction, and fail-closed masked/full-replacement env saves across local/DB-local/remote, including absent/empty files, confirmed read/backup/write markers, silent/partial failures, and write fallback (mocked only).`);
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

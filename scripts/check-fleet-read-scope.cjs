@@ -24,8 +24,8 @@ const verifySessionToken = async (token) => {
   if (!requestContext) assert.deepEqual(calls, [], 'verification must precede local reads and aggregate queries');
   return active && logoutVersion === 0 && !expired ? session : null;
 };
-const servers = ['server-a', 'server-b'].map((id) => ({ id, name: id, host: id, port: 22, username: 'test', authMethod: 'KEY', isActive: true, createdAt: new Date(0) }));
-const apps = [{ serverId: 'server-a', status: 'RUNNING' }, { serverId: 'server-b', status: 'STOPPED' }];
+const servers = ['server-a', 'server-b'].map((id) => ({ id, name: id, host: id, port: 22, username: 'test', authMethod: 'KEY', isActive: true, createdAt: new Date(0), updatedAt: new Date(0) }));
+const apps = [{ serverId: 'server-a', status: 'RUNNING' }, { serverId: 'server-b', status: 'STOPPED' }].map((app) => ({ ...app, id: app.serverId + '-app', createdAt: new Date(0), server: { name: app.serverId } }));
 const deployments = [{ serverId: null, status: 'RUNNING' }, { serverId: 'server-a', status: 'FAILED' }, { serverId: 'server-b', status: 'FAILED' }];
 const events = [{ userId: 'me', action: 'test', target: 'same-server' }, { userId: 'other', action: 'test', target: 'same-server' }, { userId: null, action: 'test', target: 'me' }];
 function matches(row, where = {}) {
@@ -55,9 +55,8 @@ const prisma = {
   },
   server: {
     findMany: async (query) => { calls.push(['servers', query]); return servers.filter((row) => matches(row, query.where)); },
-    groupBy: async (query) => group('server-counts', servers, query),
   },
-  app: { groupBy: async (query) => group('app-counts', apps, query) },
+  app: { findMany: async (query) => { calls.push(['apps', query]); return apps.filter((row) => matches(row, query.where)); } },
   deploymentLog: {
     groupBy: async (query) => group('deployment-counts', deployments, query),
     count: async (query) => { calls.push(['recent', query]); return deployments.filter((row) => matches(row, query.where)).length; },
@@ -67,6 +66,10 @@ const prisma = {
     count: async (query) => { calls.push(['audit-total', query]); return events.filter((row) => matches(row, query.where)).length; },
   },
 };
+const mutations = [];
+for (const model of Object.values(prisma)) for (const method of ['create', 'update', 'upsert', 'delete', 'createMany', 'updateMany', 'deleteMany']) {
+  model[method] = async () => { mutations.push(method); throw Error('Unexpected target mutation'); };
+}
 const stats = { cpu: { usagePercent: 1 }, memory: { usagePercent: 2 }, disk: { usagePercent: 3 }, uptime: 4 };
 const localRead = () => { calls.push(['local-read']); return ''; };
 const mocks = {
@@ -80,7 +83,8 @@ const mocks = {
   '@/lib/auth': { getSession: async () => { assert(requestContext, 'getSession must not run from the polling timer'); return session; }, verifySessionToken },
   '@/lib/local-server': {
     getLocalServerInfo: () => { calls.push(['local-info']); return { id: 'local', name: 'Local', host: 'local' }; },
-    isLocalServer: (id) => id === 'local', execLocal: localRead, tryExecOnHost: localRead, readHostFile: localRead,
+    isLocalServer: (id) => id === 'local', execLocal: localRead, execOnHost: localRead, tryExecOnHost: localRead, readHostFile: localRead,
+    getLocalHostPorts: () => { calls.push(['local-ports']); return []; },
   },
   '@/lib/stats': { getHostStats: () => { calls.push(['local-stats']); return stats; } },
   '@/lib/server-ssh': { connectToServer: async (id) => { calls.push(['ssh', id]); return { ssh: id }; }, isDisconnectedError: () => false },
@@ -111,6 +115,21 @@ async function main() {
   const summary = load('src/app/api/dashboard/summary/route.ts');
   const stream = load('src/app/api/dashboard/stream/route.ts');
   const audit = load('src/app/api/audit/route.ts');
+  const localStats = load('src/app/api/stats/stream/route.ts');
+  const localRequest = { cookies: { get: () => ({ value: 'original-login' }) } };
+  function scopedSummary(data, ids, local) {
+    assert.deepEqual(data.servers, { total: ids.length + Number(local), active: ids.length + Number(local), remote: ids.length, inactive: 0 });
+    assert.deepEqual(data.apps, { total: ids.length, running: 0, stopped: 0 }, 'stored status is not a live observation');
+    assert.deepEqual(data.deployments, { total: ids.length + Number(local), running: Number(local), failed: ids.length, recent: ids.length + Number(local) });
+    assert.deepEqual(calls.find(([kind]) => kind === 'servers')[1].where, { id: { in: ids } });
+    assert.deepEqual(calls.find(([kind]) => kind === 'apps')[1].where, { OR: [{ serverId: { in: ids } }, ...(local ? [{ serverId: 'local' }] : [])] });
+    for (const kind of ['deployment-counts', 'recent']) assert.deepEqual(calls.find(([name]) => name === kind)[1].where.OR, [{ serverId: { in: ids } }, ...(local ? [{ serverId: 'local' }, { serverId: null }] : [])]);
+    assert(!calls.some(([kind]) => kind === 'ssh'), 'summary must not connect or mutate remote targets');
+    if (!local) {
+      for (const field of ['containers', 'network', 'os']) assert.equal(data[field], null);
+      assert(!calls.some(([kind]) => kind.startsWith('local-')), 'remote/empty scope must not read local data');
+    }
+  }
   const request = new Request('http://check.invalid/api/audit?action=test&target=same-server');
   for (const route of [risk, summary, stream, audit]) {
     session = null; calls = [];
@@ -123,11 +142,16 @@ async function main() {
   assert.deepEqual((await response.json()).data.servers.map((row) => row.serverId), ['server-a']);
   assert.deepEqual(calls.filter(([kind]) => kind === 'ssh'), [['ssh', 'server-a']]);
   assert(!calls.some(([kind]) => kind.startsWith('local-')), 'no local metadata/stats without grant');
-  for (const route of [summary, stream]) {
-    calls = [];
-    assert.equal((await route.GET()).status, 403, 'mixed local summary fails closed');
-    assert.deepEqual(calls, [], 'denied summary must not run local commands or aggregate queries');
-  }
+  calls = [];
+  response = await summary.GET();
+  assert.equal(response.status, 200, 'authorized remote-only summary does not require local access');
+  scopedSummary((await response.json()).data, ['server-a'], false);
+  calls = [];
+  assert.equal((await stream.GET()).status, 200);
+  scopedSummary(await fetchStream(), ['server-a'], false);
+  calls = [];
+  assert.equal((await localStats.GET(localRequest)).status, 403, 'local-only endpoint still denies remote-only scope');
+  assert.deepEqual(calls, [], 'local denial precedes host reads and queries');
   allowed = ['local', 'server-a']; calls = [];
   response = await risk.GET();
   assert.deepEqual((await response.json()).data.servers.map((row) => row.serverId), ['local', 'server-a']);
@@ -135,7 +159,7 @@ async function main() {
   assert.equal(response.status, 200);
   let data = (await response.json()).data;
   assert.deepEqual(data.servers, { total: 2, active: 2, remote: 1, inactive: 0 });
-  assert.deepEqual(data.apps, { total: 1, running: 1, stopped: 0 });
+  assert.deepEqual(data.apps, { total: 1, running: 0, stopped: 0 });
   assert.deepEqual(data.deployments, { total: 2, running: 1, failed: 1, recent: 2 });
   assert(calls.some(([kind]) => kind === 'local-read'));
   cookieReads = 0; verifiedTokens = [];
@@ -168,17 +192,21 @@ async function main() {
     session = { sub: 'me', role }; allowed = []; mode = 'SELECTED'; calls = [];
     await stream.GET();
     requestContext = false; session = { sub: 'me', role: 'VIEWER' }; calls = [];
-    await assert.rejects(() => fetchStream(), /Local server access/);
-    assert.deepEqual(calls, [], `${role} demotion without local grant rejects before reads`);
+    scopedSummary(await fetchStream(), [], false);
+    calls = [];
+    assert.equal((await localStats.GET(localRequest)).status, 403);
+    assert.deepEqual(calls, [], `${role} demotion without local grant denies local reads`);
     allowed = ['local', 'server-a']; calls = [];
     data = await fetchStream();
     assert.deepEqual(data.servers, { total: 2, active: 2, remote: 1, inactive: 0 }, `${role} demotion applies selected scope`);
-    assert.deepEqual(data.apps, { total: 1, running: 1, stopped: 0 });
+    assert.deepEqual(data.apps, { total: 1, running: 0, stopped: 0 });
     assert.deepEqual(data.deployments, { total: 2, running: 1, failed: 1, recent: 2 });
-    assert.deepEqual(calls.find(([kind]) => kind === 'server-counts')[1].where, { id: { in: ['server-a'] } });
+    assert.deepEqual(calls.find(([kind]) => kind === 'servers')[1].where, { id: { in: ['server-a'] } });
     allowed = ['server-a']; calls = [];
-    await assert.rejects(() => fetchStream(), /Local server access/);
-    assert.deepEqual(calls, [], 'revoked local grant prevents polling reads');
+    scopedSummary(await fetchStream(), ['server-a'], false);
+    calls = [];
+    assert.equal((await localStats.GET(localRequest)).status, 403);
+    assert.deepEqual(calls, [], 'revoked local grant prevents local-only reads');
     requestContext = true;
   }
   session = { sub: 'me', role: 'MANAGER' }; calls = [];
@@ -202,12 +230,19 @@ async function main() {
   response = await risk.GET();
   assert.equal(response.status, 403, 'no scope must not fabricate a healthy fleet');
   assert(!calls.some(([kind]) => ['ssh', 'local-info', 'local-stats'].includes(kind)));
+  calls = [];
+  response = await summary.GET();
+  assert.equal(response.status, 200, 'empty authorized dashboard scope returns zero counts, not local data');
+  scopedSummary((await response.json()).data, [], false);
+  calls = [];
+  assert.equal((await localStats.GET(localRequest)).status, 403);
+  assert.deepEqual(calls, []);
   allowed = ['local']; calls = [];
   data = (await (await summary.GET()).json()).data;
   assert.equal(data.servers.remote, 0);
   assert.equal(data.apps.total, 0);
   assert.equal(data.deployments.total, 1);
-  // Exercise the real SSE helper: rejected polls must emit neither snapshots nor deltas.
+  // Real SSE: invalid sessions emit no data; grant changes emit only fresh scoped deltas.
   mocks['@/lib/sse-stream'] = load('src/lib/sse-stream.ts');
   cache.delete('src/app/api/dashboard/stream/route.ts');
   const realStream = load('src/app/api/dashboard/stream/route.ts');
@@ -224,15 +259,32 @@ async function main() {
     requestContext = false; calls = [];
     active = reason !== 'disablement'; logoutVersion = reason === 'logoutVersion' ? 1 : 0; expired = reason === 'expiry';
     if (reason === 'demotion') session = { sub: 'me', role: 'VIEWER' };
-    if (['demotion', 'grant removal'].includes(reason)) allowed = ['server-a'];
+    if (reason === 'demotion') allowed = ['server-a'];
+    if (reason === 'grant removal') allowed = [];
     const next = reader.read();
     await poll();
-    assert.deepEqual(calls, [], `${reason} prevents sensitive reads in real SSE polling`);
-    await reader.cancel();
-    assert.equal((await next).done, true, `${reason} must not enqueue sensitive SSE data`);
+    if (['demotion', 'grant removal'].includes(reason)) {
+      assert(!calls.some(([kind]) => kind.startsWith('local-') || kind === 'ssh'), `${reason} prevents revoked target reads`);
+      const ids = reason === 'demotion' ? ['server-a'] : [];
+      assert.deepEqual(calls.find(([kind]) => kind === 'servers')[1].where, { id: { in: ids } });
+      const event = new TextDecoder().decode((await next).value);
+      assert(event.startsWith('event: delta\n'), 'scope changes emit only the newly authorized summary');
+      const delta = JSON.parse(event.split('\ndata: ')[1]);
+      assert.equal(delta.servers.total, ids.length);
+      assert.equal(delta.deployments.total, ids.length);
+      if (reason === 'grant removal') assert.equal(delta.apps.total, 0, 'revoked remote apps are cleared');
+      assert.equal(delta.containers, null, 'revoked local container counts are cleared');
+      assert.equal(delta.network, null, 'revoked local network counts are cleared');
+      await reader.cancel();
+    } else {
+      assert.deepEqual(calls, [], `${reason} prevents sensitive reads in real SSE polling`);
+      await reader.cancel();
+      assert.equal((await next).done, true, `${reason} must not enqueue sensitive SSE data`);
+    }
     assert.equal(timers.size, 0, 'cancel cleans up polling and heartbeat timers');
     active = true; logoutVersion = 0; expired = false; requestContext = true;
   }
-  console.log('fleet read scope: anonymous/selected/ALL roles, pre-read denial, scoped counts, original-token polling, disablement/logoutVersion/expiry rejection, demotion/grant revocation, no revoked SSE data emissions, actor-only audit passed');
+  assert.deepEqual(mutations, [], 'read routes never mutate targets');
+  console.log('fleet read scope: anonymous/selected/ALL roles, remote-only/empty summaries, local-only pre-read denial, scoped counts, original-token polling, session rejection, demotion/grant refresh without revoked target data, no target mutations, actor-only audit passed');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

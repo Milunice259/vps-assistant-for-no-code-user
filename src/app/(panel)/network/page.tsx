@@ -100,7 +100,7 @@ export default function NetworkPage() {
           Host Open Ports
         </h2>
         {selectedServerId ? (
-          <PortTable serverId={selectedServerId} />
+          <PortTable key={selectedServerId} serverId={selectedServerId} />
         ) : (
           <div className="rounded-xl border border-gray-700 bg-gray-800 p-8 text-center text-sm text-gray-400">
             Select a server above to view its open ports

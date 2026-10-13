@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -13,7 +15,6 @@ import {
   Play,
   Square,
   RotateCcw,
-  RefreshCw,
   Download,
   Trash2,
   Terminal,
@@ -27,6 +28,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { AppLogViewer } from "@/components/apps/AppLogViewer";
 import { AppEnvEditor } from "@/components/apps/AppEnvEditor";
 import { AppSettings } from "@/components/apps/AppSettings";
+import { AppHealthCheck } from "@/components/apps/AppHealthCheck";
 import { WebTerminal } from "@/components/apps/WebTerminal";
 import { useSSE } from "@/hooks/useSSE";
 import { useSafeMode } from "@/contexts/SafeModeContext";
@@ -145,7 +147,10 @@ interface AppStreamData {
 
 export default function AppDetailPage() {
   const params = useParams();
-  const appId = params.id as string;
+  // Next can expose the encoded route segment; canonical consumers encode once.
+  const segment = params.id as string;
+  let appId = segment;
+  try { appId = decodeURIComponent(segment); } catch { /* Invalid IDs fail authorization. */ }
   // Route identity owns all state, including confirmations, readbacks and SSE.
   return <AppDetail key={appId} appId={appId} />;
 }
@@ -173,7 +178,7 @@ function AppDetail({ appId }: { appId: string }) {
   );
 
   // Compute liveStats from SSE stream
-  const liveStats: ContainerStats | null = streamStats
+  const liveStats: ContainerStats | null = streamStats && [streamStats.cpuPercent, streamStats.memUsageMB, streamStats.memLimitMB, streamStats.netIn, streamStats.netOut].every(Number.isFinite)
     ? {
         cpuPercent: streamStats.cpuPercent,
         memUsageMB: streamStats.memUsageMB,
@@ -547,61 +552,8 @@ function StatCard({
   );
 }
 
-function InlineHealthCheck({ appId }: { appId: string }) {
-  const [result, setResult] = useState<{
-    status: "healthy" | "unhealthy" | "unknown";
-    output: string;
-    containerState: string;
-    checkedAt: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const runCheck = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/apps/${appId}/health`);
-      const json: ApiResponse<typeof result> = await res.json();
-      if (json.success && json.data) setResult(json.data);
-      else setError(json.error || "Health check failed");
-    } catch {
-      setError("Network error");
-    } finally {
-      setLoading(false);
-    }
-  }, [appId]);
-
-  useEffect(() => { runCheck(); }, [runCheck]);
-
-  const statusStyle = {
-    healthy: "text-emerald-400",
-    unhealthy: "text-red-400",
-    unknown: "text-gray-400",
-  };
-
-  return (
-    <div className="flex items-center gap-3 flex-wrap">
-      {loading && !result && (
-        <span className="text-xs text-gray-500">Checking…</span>
-      )}
-      {error && <span className="text-xs text-red-400">{error}</span>}
-      {result && (
-        <>
-          <span className={`text-sm font-semibold capitalize ${statusStyle[result.status]}`}>
-            {result.status}
-          </span>
-          <span className="text-xs text-gray-500">{result.output}</span>
-        </>
-      )}
-      <Button variant="ghost" size="sm" onClick={runCheck} loading={loading}>
-        <RefreshCw className="h-3 w-3 mr-1" /> Check Now
-      </Button>
-    </div>
-  );
-}
-
 function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
+  const { formatDate } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const copyId = () => {
@@ -663,18 +615,15 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
       label: app.appSource === "systemd" ? "Service State" : "Health Check",
       value: app.appSource === "systemd" ? (
         app.healthCheck || <span className="text-gray-600 italic">Unknown</span>
-      ) : app.containerId ? (
-        <InlineHealthCheck appId={appId} />
-      ) : (
-        <span className="text-gray-600 italic">No container</span>
-      ),
+      ) : <span className="text-gray-400">See readiness below</span>,
     },
-    { label: "Created", value: new Date(app.createdAt).toLocaleString() },
-    { label: "Updated", value: new Date(app.updatedAt).toLocaleString() },
+    { label: "Created", value: formatDate(app.createdAt) },
+    { label: "Updated", value: formatDate(app.updatedAt) },
   ];
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-4 min-w-0">
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <tbody className="divide-y divide-gray-800">
           {details.map((d) => (
@@ -687,6 +636,8 @@ function OverviewPanel({ app, appId }: { app: AppDetailInfo; appId: string }) {
           ))}
         </tbody>
       </table>
+      </div>
+      {app.appSource !== "systemd" && (app.containerId ? <AppHealthCheck appId={appId} /> : <p className="text-sm text-gray-400">No container available for readiness checks.</p>)}
     </div>
   );
 }

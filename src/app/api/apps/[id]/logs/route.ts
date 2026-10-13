@@ -1,4 +1,5 @@
 import { authorizeApp } from "@/lib/app-access";
+import { redactLogs } from "@/lib/log-redaction";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { connectToServer, isDisconnectedError } from "@/lib/server-ssh";
@@ -33,7 +34,8 @@ export async function GET(
     const denied = await authorizeApp(id, false);
     if (denied) return denied;
     const url = new URL(request.url);
-    const lines = parseInt(url.searchParams.get("lines") || "100", 10);
+    const requestedLines = Number(url.searchParams.get("lines") || 100);
+    const lines = Number.isFinite(requestedLines) ? Math.min(5000, Math.max(1, Math.floor(requestedLines))) : 100;
 
     let serverId: string;
     let containerRef: string;
@@ -81,10 +83,10 @@ export async function GET(
           `docker logs --tail ${lines} ${safeRef} 2>&1`,
           15_000
         );
-        return NextResponse.json({ success: true, data: { logs } });
+        return NextResponse.json({ success: true, data: { logs: redactLogs(logs) } });
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Failed to fetch logs";
-        return NextResponse.json({ success: true, data: { logs: msg } });
+        return NextResponse.json({ success: true, data: { logs: redactLogs(msg) } });
       }
     }
 
@@ -94,7 +96,7 @@ export async function GET(
 
     const logs = await getContainerLogs(ssh, containerRef, lines);
 
-    return NextResponse.json({ success: true, data: { logs } });
+    return NextResponse.json({ success: true, data: { logs: redactLogs(logs) } });
   } catch (error) {
     if (isDisconnectedError(error)) {
       return NextResponse.json(
@@ -106,7 +108,7 @@ export async function GET(
     const err = error as Error & { statusCode?: number };
     const status = err.statusCode || 500;
     const message = err.message || "Failed to fetch logs";
-    return NextResponse.json({ success: false, error: message }, { status });
+    return NextResponse.json({ success: false, error: redactLogs(message) }, { status });
   } finally {
     await closeSSH(ssh);
   }

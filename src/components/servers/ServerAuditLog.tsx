@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Search, Shield } from "lucide-react";
 
@@ -55,6 +57,7 @@ function matchesSearch(entry: AuditEntry, query: string) {
 }
 
 export function ServerAuditLog({ serverId }: { serverId: string }) {
+  const { formatDate } = useTranslation();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -232,7 +235,7 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <span className={`rounded px-2 py-0.5 font-mono text-xs ${ACTION_COLORS[entry.action] || "bg-gray-500/10 text-gray-400"}`}>{entry.action}</span>
-                <p className="mt-2 text-xs text-gray-500">{new Date(entry.createdAt).toLocaleString()}</p>
+                <p className="mt-2 text-xs text-gray-500">{formatDate(entry.createdAt)}</p>
               </div>
               <span className="shrink-0 text-xs capitalize text-gray-300">{severity(entry.action)}</span>
             </div>
@@ -273,7 +276,7 @@ export function ServerAuditLog({ serverId }: { serverId: string }) {
                     <td className="px-4 py-2">
                       <ChevronDown className={`h-3.5 w-3.5 text-gray-600 transition-transform ${expandedId === entry.id ? "rotate-180" : ""}`} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-400">{new Date(entry.createdAt).toLocaleString()}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-400">{formatDate(entry.createdAt)}</td>
                     <td className="px-4 py-2">
                       <span className={`rounded px-2 py-0.5 font-mono text-xs ${ACTION_COLORS[entry.action] || "bg-gray-500/10 text-gray-400"}`}>{entry.action}</span>
                     </td>

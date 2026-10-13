@@ -2,6 +2,7 @@
  * SSH Containers — Docker container listing and actions via SSH.
  */
 
+import { parseServiceInventory, serviceInventoryCommand } from "@/lib/service-inventory";
 import type SSH2Promise from "ssh2-promise";
 import { executeCommand, executeCommandSafe } from "./connection";
 
@@ -56,34 +57,17 @@ export interface RemoteServiceInfo {
   activeState: string;
   subState: string;
   description: string;
+  unitFileState: string;
 }
 
 /**
  * List systemd service units on a remote server.
- * Returns empty array if systemctl is unavailable.
+ * Throws when discovery is unavailable; a successful empty inventory returns [].
  */
 export async function getRemoteServices(
   ssh: SSH2Promise
 ): Promise<RemoteServiceInfo[]> {
-  const raw = await executeCommandSafe(
-    ssh,
-    "systemctl list-units --type=service --all --no-pager --plain --no-legend 2>/dev/null"
-  );
-
-  if (!raw) return [];
-
-  return raw
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.trim().split(/\s+/);
-      const name = (parts[0] || "").replace(".service", "");
-      const loadState = parts[1] || "";
-      const activeState = parts[2] || "";
-      const subState = parts[3] || "";
-      const description = parts.slice(4).join(" ");
-      return { name, loadState, activeState, subState, description };
-    });
+  return parseServiceInventory(await executeCommand(ssh, serviceInventoryCommand));
 }
 
 // ─── Container Actions ───

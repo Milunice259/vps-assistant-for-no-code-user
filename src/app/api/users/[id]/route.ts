@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword, getSession } from "@/lib/auth";
-import { auditLog, getClientIp } from "@/lib/audit";
+import { getClientIp } from "@/lib/audit";
 import { safeErrorMessage } from "@/lib/safe-error";
 import { passwordPolicyError } from "@/lib/password-policy";
 import { getSecuritySettings } from "@/lib/security-settings";
-import { adminRoles, canManageRole, hasActiveOwner, normalizeRole } from "@/lib/server-access";
+import { adminRoles, canManageRole, normalizeRole } from "@/lib/server-access";
 import type { ApiResponse } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -31,107 +31,118 @@ export async function PUT(
     const body = await request.json();
     const { role, password, displayName, email, isActive, serverAccessMode, serverIds } = body;
 
-    const user = await prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
-    }
-
-    const updateData: { role?: "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; email?: string | null; isActive?: boolean; serverAccessMode?: "ALL" | "SELECTED" } = {};
-    if (!canManageRole(session.role as string, user.role) && id !== (session.sub as string)) {
-      return NextResponse.json({ success: false, error: "You cannot manage this user" }, { status: 403 });
-    }
-
-    if (role) {
-      const validRoles = session.role === "OWNER" ? ["ADMIN", "MANAGER", "VIEWER"] : ["MANAGER", "VIEWER"];
-      if (!validRoles.includes(role)) {
-        return NextResponse.json({ success: false, error: "Invalid role for your account" }, { status: 400 });
+    return await prisma.$transaction(async (tx) => {
+      // Acquire SQLite's write lock BEFORE reads; busy/conflict errors fail closed.
+      await tx.$executeRaw`UPDATE users SET id = id WHERE id = ${id}`;
+      const user = await tx.user.findUnique({ where: { id }, include: { serverAccess: { select: { serverId: true } } } });
+      if (!user) {
+        return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
       }
-      if (user.role === "OWNER" && role !== "OWNER" && !(await hasActiveOwner(id))) {
-        return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
-      }
-      updateData.role = role;
-    }
 
-    if (typeof displayName === "string") updateData.displayName = displayName.trim() || null;
-
-    if (typeof email === "string") {
-      const cleanEmail = email.trim().toLowerCase() || null;
-      if (cleanEmail && !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-        return NextResponse.json(
-          { success: false, error: "Invalid email address" },
-          { status: 400 }
-        );
+      const updateData: { role?: "OWNER" | "ADMIN" | "MANAGER" | "OPERATOR" | "VIEWER"; passwordHash?: string; displayName?: string | null; email?: string | null; isActive?: boolean; serverAccessMode?: "ALL" | "SELECTED" } = {};
+      if (!canManageRole(session.role as string, user.role) && id !== (session.sub as string)) {
+        return NextResponse.json({ success: false, error: "You cannot manage this user" }, { status: 403 });
       }
-      if (cleanEmail) {
-        const existingEmail = await prisma.user.findFirst({ where: { email: cleanEmail, NOT: { id } } });
-        if (existingEmail) {
+
+      if (role !== undefined && role !== user.role) {
+        const validRoles = session.role === "OWNER" ? ["ADMIN", "MANAGER", "VIEWER"] : ["MANAGER", "VIEWER"];
+        if (!validRoles.includes(role)) {
+          return NextResponse.json({ success: false, error: "Invalid role for your account" }, { status: 400 });
+        }
+        if (user.role === "OWNER" && role !== "OWNER" && (await tx.user.count({ where: { role: "OWNER", isActive: true, NOT: { id } } })) === 0) {
+          return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
+        }
+        updateData.role = role;
+      }
+
+      if (typeof displayName === "string") updateData.displayName = displayName.trim() || null;
+
+      if (typeof email === "string") {
+        const cleanEmail = email.trim().toLowerCase() || null;
+        if (cleanEmail && !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
           return NextResponse.json(
-            { success: false, error: "Email already exists" },
-            { status: 409 }
+            { success: false, error: "Invalid email address" },
+            { status: 400 }
           );
         }
+        if (cleanEmail) {
+          const existingEmail = await tx.user.findFirst({ where: { email: cleanEmail, NOT: { id } } });
+          if (existingEmail) {
+            return NextResponse.json(
+              { success: false, error: "Email already exists" },
+              { status: 409 }
+            );
+          }
+        }
+        updateData.email = cleanEmail;
       }
-      updateData.email = cleanEmail;
-    }
 
-    if (typeof isActive === "boolean") {
-      if (id === (session.sub as string) && !isActive) {
-        return NextResponse.json(
-          { success: false, error: "You cannot disable your own account" },
-          { status: 400 }
-        );
+      if (typeof isActive === "boolean") {
+        if (id === (session.sub as string) && !isActive) {
+          return NextResponse.json(
+            { success: false, error: "You cannot disable your own account" },
+            { status: 400 }
+          );
+        }
+        if (user.role === "OWNER" && !isActive && (await tx.user.count({ where: { role: "OWNER", isActive: true, NOT: { id } } })) === 0) {
+          return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
+        }
+        updateData.isActive = isActive;
       }
-      if (user.role === "OWNER" && !isActive && !(await hasActiveOwner(id))) {
-        return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
+
+      if (serverAccessMode === "ALL" || serverAccessMode === "SELECTED") {
+        updateData.serverAccessMode = adminRoles.has(normalizeRole(updateData.role ?? user.role)) ? "ALL" : serverAccessMode;
       }
-      updateData.isActive = isActive;
-    }
 
-    if (serverAccessMode === "ALL" || serverAccessMode === "SELECTED") {
-      updateData.serverAccessMode = role === "ADMIN" || user.role === "ADMIN" ? "ALL" : serverAccessMode;
-    }
-
-    if (password) {
-      const passwordError = passwordPolicyError(password, await getSecuritySettings());
-      if (passwordError) {
-        return NextResponse.json(
-          { success: false, error: passwordError },
-          { status: 400 }
-        );
+      if (password) {
+        const passwordError = passwordPolicyError(password, await getSecuritySettings());
+        if (passwordError) {
+          return NextResponse.json(
+            { success: false, error: passwordError },
+            { status: 400 }
+          );
+        }
+        updateData.passwordHash = await hashPassword(password);
       }
-      updateData.passwordHash = await hashPassword(password);
-    }
 
-    const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((sid: unknown): sid is string => typeof sid === "string" ) : undefined;
+      const cleanServerIds = Array.isArray(serverIds) ? serverIds.filter((sid: unknown): sid is string => typeof sid === "string" ) : undefined;
 
-    if (Object.keys(updateData).length === 0 && cleanServerIds === undefined) {
-      return NextResponse.json({ success: false, error: "No updates provided" }, { status: 400 });
-    }
+      if (Object.keys(updateData).length === 0 && cleanServerIds === undefined) {
+        return NextResponse.json({ success: false, error: "No updates provided" }, { status: 400 });
+      }
 
-    const updated = await prisma.$transaction(async (tx) => {
       if (cleanServerIds !== undefined) {
         await tx.userServerAccess.deleteMany({ where: { userId: id } });
         if ((updateData.serverAccessMode ?? user.serverAccessMode) === "SELECTED") {
           await tx.userServerAccess.createMany({ data: [...new Set(cleanServerIds)].map((serverId) => ({ userId: id, serverId })) });
         }
       }
-      return tx.user.update({
+      const updated = await tx.user.update({
         where: { id },
         data: updateData,
         select: { id: true, username: true, email: true, displayName: true, role: true, serverAccessMode: true, isActive: true, createdAt: true, updatedAt: true, passcodeEnabled: true, serverAccess: { select: { serverId: true } } },
       });
-    });
+      const beforeIds = new Set(user.serverAccess.map((a) => a.serverId));
+      const afterIds = new Set(updated.serverAccess.map((a) => a.serverId));
+      // Access changes and their secret-free audit succeed or roll back together.
+      await tx.auditLog.create({ data: {
+        action: "user_updated",
+        userId: session.sub,
+        username: session.username,
+        target: id,
+        ip: getClientIp(request),
+        details: JSON.stringify({
+          before: { role: user.role, isActive: user.isActive, serverAccessMode: user.serverAccessMode },
+          after: { role: updated.role, isActive: updated.isActive, serverAccessMode: updated.serverAccessMode },
+          grantedServerIds: [...afterIds].filter((sid) => !beforeIds.has(sid)).sort(),
+          revokedServerIds: [...beforeIds].filter((sid) => !afterIds.has(sid)).sort(),
+          fields: Object.keys(updateData).filter((key) => key !== "passwordHash"),
+          passwordChanged: !!updateData.passwordHash,
+        }),
+      } });
 
-    const ip = getClientIp(request);
-    await auditLog({
-      action: "user_updated",
-      userId: session.sub as string,
-      username: session.username as string,
-      ip,
-      details: `Updated user: ${user.username} (${Object.keys(updateData).filter((key) => key !== "passwordHash").join(", ")}${updateData.passwordHash ? ", password" : ""})`,
+      return NextResponse.json({ success: true, data: { ...updated, serverIds: updated.serverAccess.map((a) => a.serverId), serverAccess: undefined } });
     });
-
-    return NextResponse.json({ success: true, data: { ...updated, serverIds: updated.serverAccess.map((a) => a.serverId), serverAccess: undefined } });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: safeErrorMessage(error, "Failed to update user") },
@@ -164,30 +175,34 @@ export async function DELETE(
       );
     }
 
-    const user = await prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
-    }
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`UPDATE users SET id = id WHERE id = ${id}`;
+      const user = await tx.user.findUnique({ where: { id } });
+      if (!user) {
+        return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+      }
 
-    if (!canManageRole(session.role as string, user.role)) {
-      return NextResponse.json({ success: false, error: "You cannot delete this user" }, { status: 403 });
-    }
-    if (user.role === "OWNER" && !(await hasActiveOwner(id))) {
-      return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
-    }
+      if (!canManageRole(session.role as string, user.role)) {
+        return NextResponse.json({ success: false, error: "You cannot delete this user" }, { status: 403 });
+      }
+      if (user.role === "OWNER" && (await tx.user.count({ where: { role: "OWNER", isActive: true, NOT: { id } } })) === 0) {
+        return NextResponse.json({ success: false, error: "At least one active owner is required" }, { status: 400 });
+      }
 
-    await prisma.user.delete({ where: { id } });
+      await tx.user.delete({ where: { id } });
 
-    const ip = getClientIp(request);
-    await auditLog({
-      action: "user_deleted",
-      userId: session.sub as string,
-      username: session.username as string,
-      ip,
-      details: `Deleted user: ${user.username}`,
+      const ip = getClientIp(request);
+      await tx.auditLog.create({ data: {
+        action: "user_deleted",
+        userId: session.sub as string,
+        username: session.username as string,
+        ip,
+        target: id,
+        details: `Deleted user: ${user.username}`,
+      } });
+
+      return NextResponse.json({ success: true, data: { deleted: user.username } });
     });
-
-    return NextResponse.json({ success: true, data: { deleted: user.username } });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: safeErrorMessage(error, "Failed to delete user") },

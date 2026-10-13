@@ -4,28 +4,22 @@ import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createSSHConnection, getRemoteContainers, closeSSH, executeCommandSafe } from "@/lib/ssh";
-import { execLocal, tryExecOnHost } from "@/lib/local-server";
+import { createSSHConnection, closeSSH, executeCommand } from "@/lib/ssh";
+import { execLocal, execOnHost } from "@/lib/local-server";
+import { projectAppConfiguration } from "@/lib/app-configuration-projection";
 import type {
   ApiResponse,
   AppInfo,
-  AppStatusType,
   CreateAppInput,
 } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Map Docker container state string to AppStatus.
- */
-function mapContainerState(state: string): AppStatusType {
-  const s = state.toLowerCase();
-  if (s === "running") return "RUNNING";
-  if (s === "exited" || s === "dead" || s === "created") return "STOPPED";
-  if (s === "restarting") return "RESTARTING";
-  if (s === "unhealthy" || s === "paused") return "UNHEALTHY";
-  return "UNKNOWN";
-}
+import {
+  cachedInventory, cacheInventory, mergeInventory, parseInventory,
+  DOCKER_INVENTORY_COMMAND, SERVICE_INVENTORY_COMMAND,
+  type InventoryApp, type InventorySnapshot,
+} from "@/lib/apps-inventory";
 
 function extractDomainFromLabels(labels: string): string | null {
   const traefikRules = labels
@@ -44,8 +38,8 @@ function extractDomainFromLabels(labels: string): string | null {
 }
 
 function getLocalContainerDomain(containerId: string): string | null {
-  const safeId = containerId.replace(/[^a-zA-Z0-9_.-]/g, "");
-  if (!safeId) return null;
+  if (!/^[a-f0-9]{12,64}$/i.test(containerId)) return null;
+  const safeId = containerId;
 
   try {
     const labels = execLocal(
@@ -58,255 +52,114 @@ function getLocalContainerDomain(containerId: string): string | null {
   }
 }
 
-/**
- * Discover Docker containers on the local machine via `docker ps`.
- * Returns empty array if Docker is not available.
- */
-function discoverLocalContainers(): AppInfo[] {
-  try {
-    // Use double-quoted format string for cross-platform compatibility
-    // (single quotes fail on Windows PowerShell; 2>/dev/null fails on Windows)
-    const fmt = "{{.ID}}\\t{{.Names}}\\t{{.Image}}\\t{{.State}}\\t{{.Ports}}";
-    const raw = execLocal(`docker ps -a --format "${fmt}"`, 10_000);
-
-    if (!raw.trim()) return [];
-
-    return raw
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .flatMap((line): AppInfo[] => {
-        const [id, name, image, state] = line.split("\t");
-        if (!id) return [];
-        return [
-          {
-            id: `local::${id}`,
-            name: name || image || id,
-            appSource: "docker",
-            containerId: id,
-            containerName: name || null,
-            image: image || null,
-            serverId: "local",
-            serverName: "This Server",
-            status: mapContainerState(state || ""),
-            domain: getLocalContainerDomain(id),
-            createdAt: new Date().toISOString(),
-          },
-        ];
-      });
-  } catch (err) {
-    console.warn(
-      "[apps] Local Docker discovery failed:",
-      err instanceof Error ? err.message : err,
-    );
-    return [];
-  }
+function mergeObservedInventory(stored: InventoryApp[], observed: InventoryApp[]): InventoryApp[] {
+  const merged = mergeInventory(stored, observed);
+  const sameRuntime = (a: InventoryApp, b: InventoryApp) => a.serverId === b.serverId && !!a.containerId && !!b.containerId && /^[a-f0-9]{12,64}$/.test(a.containerId) && /^[a-f0-9]{64}$/.test(b.containerId) && b.containerId.startsWith(a.containerId);
+  return merged.map(app => {
+    const matches = observed.filter(candidate => sameRuntime(app, candidate));
+    const live = matches.length === 1 ? matches[0] : null;
+    // Carry the full observed identity through legacy-prefix tracking; ambiguity stays unprojected.
+    return live && merged.filter(candidate => sameRuntime(candidate, live)).length === 1
+      ? { ...app, containerId: live.containerId, containerName: live.containerName } : app;
+  });
 }
 
-const SYSTEM_APP_PATTERN = /(hermes|9router|n8n|gooffi|leed|chat|node|pm2|uvicorn|gunicorn|traefik|nginx)/i;
-const CORE_SERVICE_PATTERN = /^(systemd-|dbus|cron|ssh|docker|containerd|network|polkit|rsyslog|udev|apparmor|snapd)/i;
-
-function discoverLocalSystemServices(): AppInfo[] {
-  try {
-    const raw = tryExecOnHost(
-      "systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'",
-      10_000,
-    );
-    return raw
-      .trim()
-      .split("\n")
-      .map((unit) => unit.trim())
-      .filter(Boolean)
-      .filter((unit) => SYSTEM_APP_PATTERN.test(unit) && !CORE_SERVICE_PATTERN.test(unit))
-      .map((unit) => ({
-        id: `local-service::${unit}`,
-        name: unit.replace(/\.service$/, ""),
-        appSource: "systemd" as const,
-        containerId: null,
-        containerName: null,
-        image: unit,
-        serverId: "local",
-        serverName: "This Server",
-        status: "RUNNING" as AppStatusType,
-        domain: null,
-        createdAt: new Date().toISOString(),
-      }));
-  } catch (err) {
-    console.warn("[apps] Local systemd discovery failed:", err instanceof Error ? err.message : err);
-    return [];
-  }
-}
-
-async function discoverRemoteSystemServices(ssh: Awaited<ReturnType<typeof createSSHConnection>>, serverId: string, serverName: string): Promise<AppInfo[]> {
-  const raw = await executeCommandSafe(
-    ssh,
-    "systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'",
-    10_000,
-  );
-
-  return raw
-    .trim()
-    .split("\n")
-    .map((unit) => unit.trim())
-    .filter(Boolean)
-    .filter((unit) => SYSTEM_APP_PATTERN.test(unit) && !CORE_SERVICE_PATTERN.test(unit))
-    .map((unit) => ({
-      id: `service::${serverId}::${unit}`,
-      name: unit.replace(/\.service$/, ""),
-      appSource: "systemd" as const,
-      containerId: null,
-      containerName: null,
-      image: unit,
-      serverId,
-      serverName,
-      status: "RUNNING" as AppStatusType,
-      domain: null,
-      createdAt: new Date().toISOString(),
-    }));
-}
-
-/**
- * GET /api/apps - List all applications across all managed servers.
- *
- * This aggregates data from three sources:
- * 1. DB App records (manually tracked)
- * 2. Local Docker containers on the host machine
- * 3. Live Docker containers from each active server (discovered via SSH)
- *
- * DB records are merged with live data when container IDs match.
- * Containers not in the DB are included as "discovered" apps.
- */
+/** Fast cached inventory by default; remote execution requires literal liveRemote=true. */
 export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<AppInfo[]>>> {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const serverWhere = await scopedServerWhere(session.sub, session.role);
-    const appWhere = "id" in serverWhere ? { serverId: serverWhere.id } : {};
-    const canAccessLocal = await canAccessServer(session.sub, session.role, "local");
-    const includeRemoteLive = request.nextUrl.searchParams.get("liveRemote") === "true";
-
-    // Fetch DB apps immediately; remote SSH discovery is opt-in because offline
-    // servers can add several seconds to the Apps page initial load.
+    const requestedServer = request.nextUrl.searchParams.get("serverId");
+    if (requestedServer && !await canAccessServer(session.sub, session.role, requestedServer)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+    const canAccessLocal = (!requestedServer || requestedServer === "local") && await canAccessServer(session.sub, session.role, "local");
+    const appWhere = requestedServer ? { serverId: requestedServer } : "id" in serverWhere
+      ? { OR: [{ serverId: serverWhere.id }, ...(canAccessLocal ? [{ serverId: "local" }] : [])] } : {};
+    const live = request.nextUrl.searchParams.get("liveRemote") === "true";
     const [dbApps, servers] = await Promise.all([
       prisma.app.findMany({ where: appWhere, include: { server: { select: { name: true } } } }),
-      includeRemoteLive ? prisma.server.findMany({ where: { isActive: true, ...serverWhere } }) : Promise.resolve([]),
+      prisma.server.findMany({ where: requestedServer ? { AND: [serverWhere, { id: requestedServer }] } : serverWhere }),
     ]);
-
-    const allApps: AppInfo[] = [];
-    const discoveredContainerIds = new Set<string>();
-
-    // Add DB-tracked apps first
-    for (const app of dbApps) {
-      allApps.push({
-        id: app.id,
-        name: app.name,
-        appSource: app.containerId ? "docker" : "manual",
-        containerId: app.containerId,
-        containerName: app.containerName,
-        image: app.image,
-        serverId: app.serverId,
-        serverName: app.server.name,
-        status: app.status as AppStatusType,
-        domain: app.domain,
-        createdAt: app.createdAt.toISOString(),
-      });
-      if (app.containerId) discoveredContainerIds.add(`${app.serverId}::${app.containerId}`);
-    }
-
-    // ── Discover LOCAL Docker containers (host machine) ──
-    const localContainers = canAccessLocal ? discoverLocalContainers() : [];
-    for (const lc of localContainers) {
-      if (!lc.containerId) continue;
-
-      const existing = allApps.find((app) => app.serverId === "local" && app.containerId === lc.containerId);
-      if (existing) {
-        existing.status = lc.status;
-        existing.domain = existing.domain || lc.domain;
-        continue;
+    let allApps: InventoryApp[] = dbApps.map((app) => ({
+      id: app.id, name: app.name, appSource: app.containerId ? "docker" : "manual",
+      containerId: app.containerId, containerName: app.containerName, image: app.image,
+      serverId: app.serverId, serverName: app.server.name, status: "UNKNOWN",
+      domain: app.domain, createdAt: app.createdAt.toISOString(), inventorySource: "stored", observedAt: null,
+    }));
+    const inventory: Array<{
+      serverId: string; enabled: boolean; reachable: boolean | null;
+      source: "live" | "cached" | "stored"; observedAt: string | null;
+      docker: "available" | "unavailable"; systemd: "available" | "unavailable";
+    }> = [];
+    if (canAccessLocal) {
+      const observedAt = new Date().toISOString();
+      const local: InventorySnapshot = { apps: [], observedAt, reachable: null, docker: "unavailable", systemd: "unavailable" };
+      for (const kind of ["docker", "systemd"] as const) {
+        try {
+          const raw = kind === "docker" ? execLocal(DOCKER_INVENTORY_COMMAND, 10_000) : execOnHost(SERVICE_INVENTORY_COMMAND, 10_000);
+          const apps = parseInventory(raw, kind, "local", "This Server", observedAt);
+          if (kind === "docker") for (const app of apps) app.domain = getLocalContainerDomain(app.containerId!);
+          local.apps.push(...apps);
+          local[kind] = "available";
+        } catch { /* unavailable is not an empty successful observation */ }
       }
-
-      allApps.push(lc);
-      discoveredContainerIds.add(`local::${lc.containerId}`);
+      allApps = mergeObservedInventory(allApps, local.apps);
+      inventory.push({ serverId: "local", enabled: true, reachable: null, source: "live", observedAt,
+        docker: local.docker, systemd: local.systemd });
     }
-
-    const localSystemServices = canAccessLocal ? discoverLocalSystemServices() : [];
-    for (const serviceApp of localSystemServices) {
-      const existing = allApps.find((app) => app.id === serviceApp.id || (app.serverId === "local" && app.name === serviceApp.name));
-      if (!existing) allApps.push(serviceApp);
-    }
-
-    // Discover live containers from each remote server
+    // Sequential servers preserve the shared SSH connection policy and bound channel load.
     for (const server of servers) {
-      let ssh = null;
-      try {
-        const password = server.encryptedPass
-          ? decrypt(server.encryptedPass)
-          : undefined;
-        const privateKey = server.encryptedKey
-          ? decrypt(server.encryptedKey)
-          : undefined;
-
-        ssh = await createSSHConnection({
-          host: server.host,
-          port: server.port,
-          username: server.username,
-          password,
-          privateKey,
-        });
-
-        const containers = await getRemoteContainers(ssh);
-
-        for (const c of containers) {
-          // Skip containers already tracked in DB
-          if (discoveredContainerIds.has(`${server.id}::${c.id}`)) {
-            // Update status for existing DB app
-            const existing = allApps.find((a) => a.serverId === server.id && a.containerId === c.id);
-            if (existing) {
-              existing.status = mapContainerState(c.state);
-            }
-            continue;
+      if (server.id === "local") continue;
+      const revision = server.updatedAt.toISOString();
+      let snapshot = cachedInventory(server.id, revision);
+      let source: "live" | "cached" | "stored" = snapshot ? "cached" : "stored";
+      if (live && server.isActive) {
+        let ssh = null;
+        const observedAt = new Date().toISOString();
+        const fresh: InventorySnapshot = { apps: [], observedAt, reachable: false, docker: "unavailable", systemd: "unavailable" };
+        try {
+          ssh = await createSSHConnection({ serverId: server.id, host: server.host, port: server.port,
+            username: server.username, password: server.encryptedPass ? decrypt(server.encryptedPass) : undefined,
+            privateKey: server.encryptedKey ? decrypt(server.encryptedKey) : undefined });
+          fresh.reachable = true;
+          // A command completion marker distinguishes silent nonzero exits from successful empty lists.
+          for (const kind of ["docker", "systemd"] as const) {
+            try {
+              const command = kind === "docker" ? DOCKER_INVENTORY_COMMAND : SERVICE_INVENTORY_COMMAND;
+              const output = await executeCommand(ssh, `${command} && printf '\\n__APPS_INVENTORY_OK__\\n'`, 10_000);
+              const marker = "__APPS_INVENTORY_OK__";
+              if (!(output === marker || output.endsWith(`\n${marker}`))) continue;
+              fresh.reachable = true;
+              fresh.apps.push(...parseInventory(output.slice(0, -marker.length).trim(), kind, server.id, server.name, observedAt));
+              fresh[kind] = "available";
+            } catch { /* preserve other independently successful sources */ }
           }
-
-          allApps.push({
-            id: `discovered::${server.id}::${c.id}`,
-            name: c.name || c.image,
-            appSource: "docker",
-            containerId: c.id,
-            containerName: c.name,
-            image: c.image,
-            serverId: server.id,
-            serverName: server.name,
-            status: mapContainerState(c.state),
-            domain: null,
-            createdAt: new Date().toISOString(),
-          });
+        } catch { /* cached identities remain visible, but never as current running observations */ }
+        finally { try { await closeSSH(ssh); } catch { /* cleanup cannot discard successful readback */ } }
+        if (snapshot) {
+          const retained = snapshot.apps.filter((app) => fresh[app.appSource === "systemd" ? "systemd" : "docker"] === "unavailable")
+            .map((app): InventoryApp => ({ ...app, status: "UNKNOWN", inventorySource: "cached" }));
+          fresh.apps = mergeInventory(fresh.apps, retained);
         }
-
-        const serviceApps = await discoverRemoteSystemServices(ssh, server.id, server.name);
-        for (const serviceApp of serviceApps) {
-          const existing = allApps.find((app) => app.id === serviceApp.id || (app.serverId === serviceApp.serverId && app.name === serviceApp.name));
-          if (!existing) allApps.push(serviceApp);
-        }
-      } catch {
-        // Server is offline — mark its DB apps as UNKNOWN
-        for (const app of allApps) {
-          if (app.serverId === server.id && app.status !== "STOPPED") {
-            app.status = "UNKNOWN";
-          }
-        }
-      } finally {
-        await closeSSH(ssh);
+        snapshot = fresh;
+        cacheInventory(server.id, revision, fresh);
+        source = "live";
       }
+      if (snapshot && server.isActive) allApps = mergeObservedInventory(allApps, snapshot.apps.map((app): InventoryApp => ({
+        ...app, serverName: server.name, inventorySource: source === "cached" ? "cached" : app.inventorySource,
+        // A cached observation is historical, not evidence that an app is currently running/stopped.
+        status: source === "cached" ? "UNKNOWN" : app.status,
+      })));
+      inventory.push({ serverId: server.id, enabled: server.isActive,
+        reachable: source === "live" ? snapshot!.reachable : null, source,
+        observedAt: snapshot?.observedAt ?? null, docker: snapshot?.docker ?? "unavailable", systemd: snapshot?.systemd ?? "unavailable" });
     }
-
-    return NextResponse.json({ success: true, data: allApps });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to list applications";
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 },
-    );
+    allApps = await projectAppConfiguration(allApps);
+    return NextResponse.json({ success: true, data: allApps, inventory }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch {
+    return NextResponse.json({ success: false, error: "Failed to list applications" }, { status: 500 });
   }
 }
 
@@ -369,7 +222,7 @@ export async function POST(
       image: app.image,
       serverId: app.serverId,
       serverName: app.server.name,
-      status: app.status as AppStatusType,
+      status: app.status as AppInfo["status"],
       domain: app.domain,
       createdAt: app.createdAt.toISOString(),
     };

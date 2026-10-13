@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, Plus, Trash2, Send, AlertTriangle,
@@ -10,6 +11,9 @@ import {
 import { Button } from "@/components/ui/Button";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 import { PermissionGate } from "@/components/ui/PermissionGate";
+import { useAuth } from "@/hooks/useAuth";
+import { can } from "@/lib/permissions";
+import type { GeneralSettings } from "@/lib/general-settings";
 
 interface Channel {
   id: string;
@@ -87,6 +91,9 @@ function ruleLabel(rule: AlertRule) {
 
 export default function SettingsPage() {
   const { safeMode } = useSafeMode();
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const isAdmin = can(user?.role, "ADMIN");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddChannel, setShowAddChannel] = useState(false);
@@ -96,6 +103,9 @@ export default function SettingsPage() {
   const [checkResult, setCheckResult] = useState<string | null>(null);
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const [savingSecurity, setSavingSecurity] = useState(false);
+  const [general, setGeneral] = useState<GeneralSettings | null>(null);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [generalMessage, setGeneralMessage] = useState("");
 
   // Add channel form
   const [newName, setNewName] = useState("");
@@ -125,9 +135,33 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!isAdmin) { setChannels([]); setSecuritySettings(null); setLoading(false); return; }
     fetchChannels();
     fetchSecuritySettings();
-  }, [fetchChannels, fetchSecuritySettings]);
+    fetch("/api/settings/general").then(res => res.json()).then(json => {
+      if (!json.success) throw new Error("Settings unavailable");
+      setGeneral(json.data);
+    }).catch(() => setGeneralMessage("General settings could not be loaded. Reload to retry."));
+  }, [authLoading, isAdmin, fetchChannels, fetchSecuritySettings]);
+
+  async function saveGeneral() {
+    if (!general || savingGeneral) return;
+    setSavingGeneral(true);
+    setGeneralMessage("");
+    try {
+      const res = await fetch("/api/settings/general", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(general) });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Save failed");
+      const readback = await fetch("/api/settings/general", { cache: "no-store" });
+      const current = await readback.json();
+      if (!readback.ok || !current.success || Object.keys(general).some(key => general[key as keyof GeneralSettings] !== current.data[key])) throw new Error("Readback failed or settings changed. Reload before retrying.");
+      setGeneral(current.data);
+      router.refresh();
+      setGeneralMessage("Settings saved and verified. Schedules remain inactive.");
+    } catch (error) { setGeneralMessage(error instanceof Error ? error.message : "Save failed. Reload before retrying."); }
+    finally { setSavingGeneral(false); }
+  }
 
   async function saveSecuritySettings(next = securitySettings) {
     if (!next) return;
@@ -252,7 +286,24 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) {
+  const smartCheck = (
+        <div className="mb-4 rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Smart notification check</h3>
+              <p className="text-xs text-gray-400">Runs real health checks now. Docker checks run every 15 minutes automatically when rules and channels exist.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={runSmartCheck} loading={checkingAlerts}>Run Check Now</Button>
+          </div>
+          {checkResult && <p className="mt-2 text-xs text-gray-400">{checkResult}</p>}
+        </div>
+  );
+
+  if (!authLoading && !isAdmin) {
+    return <PermissionGate minimum="MANAGER"><div className="max-w-4xl">{smartCheck}<p className="text-sm text-gray-400">Checks cover your assigned servers only and do not send global channel alerts.</p></div></PermissionGate>;
+  }
+
+  if (loading || authLoading) {
     return <div className="text-gray-400 text-sm py-4">Loading settings...</div>;
   }
 
@@ -279,16 +330,7 @@ export default function SettingsPage() {
           Keep this page for setup only. Delivery concepts and recommended alert rules are in <Link href="/docs#notifications" className="text-brand-400 hover:text-brand-300">Notification docs</Link>.
         </div>
 
-        <div className="mb-4 rounded-xl border border-brand-500/20 bg-brand-500/5 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Smart notification check</h3>
-              <p className="text-xs text-gray-400">Runs real health checks now. Docker checks run every 15 minutes automatically when rules and channels exist.</p>
-            </div>
-            <Button variant="secondary" size="sm" onClick={runSmartCheck} loading={checkingAlerts}>Run Check Now</Button>
-          </div>
-          {checkResult && <p className="mt-2 text-xs text-gray-400">{checkResult}</p>}
-        </div>
+        {smartCheck}
 
         {/* Add Channel Form */}
         {showAddChannel && (
@@ -458,6 +500,7 @@ export default function SettingsPage() {
         )}
       </section>
 
+      <div role="status" aria-live="polite" className="text-sm text-gray-400">{generalMessage}</div>
       {/* ── Docker Defaults ── */}
       <section>
         <div className="flex items-center gap-2 mb-1">
@@ -465,25 +508,25 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold text-white">Docker Defaults</h2>
         </div>
         <p className="text-sm text-gray-400 mb-4">
-          Default settings applied to newly deployed containers. These can be overridden per-app in App Settings.
+          Applied to new image deployments when no explicit option is supplied. Compose definitions and existing containers are unchanged.
         </p>
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
           <SettingsField
             label="Default Restart Policy"
             hint="What should happen when a container crashes or the server reboots? 'unless-stopped' is recommended for most cases."
           >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+            <select aria-label="Default restart policy" disabled={!general || savingGeneral} value={general?.dockerRestartPolicy ?? "unless-stopped"} onChange={e => general && setGeneral({ ...general, dockerRestartPolicy: e.target.value })} className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
               <option value="unless-stopped">Unless stopped (recommended)</option>
               <option value="always">Always</option>
               <option value="on-failure">On failure</option>
-              <option value="">None</option>
+              <option value="no">None</option>
             </select>
           </SettingsField>
           <SettingsField
             label="Auto-Cleanup Schedule"
-            hint="Docker accumulates unused images and containers over time. This setting automatically cleans them up to free disk space."
+            hint="Saved preference only — inactive until OPS-01 adds a bounded worker preserving active data and rollback assets."
           >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+            <select aria-label="Cleanup schedule preference (inactive)" disabled={!general || savingGeneral} value={general?.cleanupSchedule ?? "never"} onChange={e => general && setGeneral({ ...general, cleanupSchedule: e.target.value })} className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
               <option value="weekly">Weekly (recommended)</option>
               <option value="daily">Daily</option>
               <option value="monthly">Monthly</option>
@@ -497,7 +540,11 @@ export default function SettingsPage() {
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                defaultValue={0}
+                aria-label="Default memory limit MB"
+                disabled={!general || savingGeneral}
+                value={general?.dockerMemoryLimitMB ?? 0}
+                onChange={e => general && setGeneral({ ...general, dockerMemoryLimitMB: Number(e.target.value) })}
+                max={65536}
                 min={0}
                 placeholder="0"
                 className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600"
@@ -640,32 +687,19 @@ export default function SettingsPage() {
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
           <SettingsField
             label="Application Name"
-            hint="The name displayed in the browser tab and login page. Useful if you manage multiple servers."
+            hint="Name displayed in the browser tab, login page and Discord notification sender."
           >
             <input
               type="text"
-              defaultValue="VPS Control"
+              aria-label="Application name"
+              maxLength={80}
+              disabled={!general || savingGeneral}
+              value={general?.applicationName ?? ""}
+              onChange={e => general && setGeneral({ ...general, applicationName: e.target.value })}
               className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
             />
           </SettingsField>
-          <SettingsField
-            label="Language"
-            hint="The language used for the admin interface. Currently only English is supported."
-          >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
-              <option value="en">English</option>
-            </select>
-          </SettingsField>
-          <SettingsField
-            label="Theme"
-            hint="Choose between dark and light mode for the admin panel."
-          >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
-              <option value="dark">Dark (default)</option>
-              <option value="light">Light</option>
-              <option value="system">Use system preference</option>
-            </select>
-          </SettingsField>
+          <p className="text-sm text-gray-400">Theme, language and timezone are personal preferences. <Link href="/profile" className="text-brand-400 underline">Open My Profile</Link></p>
         </div>
       </section>
 
@@ -676,14 +710,14 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold text-white">Backup</h2>
         </div>
         <p className="text-sm text-gray-400 mb-4">
-          Configure automatic backups of your app settings, database, and configuration files.
+          Panel database schedule preferences only. No VPS, app, volume, configuration-file or key backups.
         </p>
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
           <SettingsField
             label="Auto-Backup Schedule"
-            hint="How often the system automatically saves a backup of your settings and database."
+            hint="Saved preference only — inactive until REC-01 adds an independent integrity-checked backup worker."
           >
-            <select className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+            <select aria-label="Backup schedule preference (inactive)" disabled={!general || savingGeneral} value={general?.backupSchedule ?? "never"} onChange={e => general && setGeneral({ ...general, backupSchedule: e.target.value })} className="w-full sm:w-64 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
               <option value="daily">Daily (recommended)</option>
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
@@ -692,12 +726,16 @@ export default function SettingsPage() {
           </SettingsField>
           <SettingsField
             label="Retention Period"
-            hint="How long to keep old backups before they are automatically deleted to save disk space."
+            hint="Saved retention preference. No automatic backup deletion occurs until REC-01 supplies safe retention."
           >
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                defaultValue={30}
+                aria-label="Backup retention days"
+                disabled={!general || savingGeneral}
+                value={general?.backupRetentionDays ?? 30}
+                onChange={e => general && setGeneral({ ...general, backupRetentionDays: Number(e.target.value) })}
+                max={3650}
                 min={1}
                 className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
               />
@@ -707,6 +745,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <Button disabled={!general} loading={savingGeneral} onClick={saveGeneral}>Save general settings</Button>
       {/* ── About ── */}
       <section className="text-center py-4">
         <p className="text-xs text-gray-600">

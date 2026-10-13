@@ -75,6 +75,9 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
 }
 
 function requiredRole(pathname: string, method: string): Role {
+  if (pathname === "/api/notifications/check") return "MANAGER";
+  if (pathname === "/api/notifications" || pathname.startsWith("/api/notifications/") || (pathname === "/api/settings/security" && MUTABLE_METHODS.has(method))) return "ADMIN";
+  if (/^\/api\/users(?:\/[^/]+)?$/.test(pathname)) return "ADMIN";
   if (!MUTABLE_METHODS.has(method)) return "VIEWER";
   if (pathname.startsWith("/api/auth/") || pathname === "/api/profile") return "VIEWER";
   if (pathname.startsWith("/api/users/") && pathname.endsWith("/passcode")) return "VIEWER";
@@ -178,7 +181,7 @@ export async function middleware(request: NextRequest) {
         return withSecurityHeaders(NextResponse.json({ success: false, error: "Local server access denied" }, { status: 403 }));
       }
       let body: Record<string, unknown> | null = null;
-      if (MUTABLE_METHODS.has(request.method) && (pathname === "/api/deploy" || pathname === "/api/backup" || /\/actions$|\/network\/firewall$/.test(pathname))) {
+      if (MUTABLE_METHODS.has(request.method) && (pathname === "/api/deploy" || pathname === "/api/backup" || /\/actions$|\/network\/firewall$|^\/api\/apps\/[^/]+\/configuration$/.test(pathname))) {
         const json: unknown = await request.clone().json().catch(() => null);
         if (json && typeof json === "object" && !Array.isArray(json)) body = json as Record<string, unknown>;
       }

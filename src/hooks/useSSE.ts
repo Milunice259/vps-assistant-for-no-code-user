@@ -7,6 +7,8 @@ interface UseSSEOptions {
   fallbackPollMs?: number | null;
   /** Whether the SSE connection is enabled. Default: true */
   enabled?: boolean;
+  /** Override when the snapshot endpoint isn't the stream's parent. */
+  pollUrl?: string;
 }
 
 interface UseSSEResult<T> {
@@ -65,7 +67,7 @@ function deepMerge<T>(base: T, delta: Partial<T>): T {
  * ```
  */
 export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T> {
-  const { fallbackPollMs = null, enabled = true } = options ?? {};
+  const { fallbackPollMs = null, enabled = true, pollUrl = url.replace(/\/stream$/, "") } = options ?? {};
 
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,8 +78,12 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
   const eventSource = useRef<EventSource | null>(null);
   const fallbackTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectRef = useRef<() => void>(() => {});
+  const generation = useRef(0);
+  const pollRead = useRef(0);
+  const target = useRef<string | null>(null);
 
   const cleanup = useCallback(() => {
+    generation.current++;
     if (eventSource.current) {
       eventSource.current.close();
       eventSource.current = null;
@@ -97,23 +103,28 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
     if (!fallbackPollMs || fallbackTimer.current) return;
 
     const poll = async () => {
+      const readGeneration = generation.current;
+      const read = ++pollRead.current;
       try {
-        // Use the non-stream endpoint (strip /stream suffix)
-        const pollUrl = url.replace(/\/stream$/, "");
-        const res = await fetch(pollUrl);
+        const res = await fetch(pollUrl, { cache: "no-store" });
         const json = await res.json();
-        if (json.success && json.data) {
+        if (readGeneration !== generation.current || read !== pollRead.current) return;
+        if (res.ok && json.success && json.data) {
           setData(json.data as T);
           setError(null);
+        } else {
+          setError(json.error || "Failed to refresh data");
         }
       } catch {
-        // Silent fail
+        if (readGeneration === generation.current && read === pollRead.current) {
+          setError("Unable to refresh data");
+        }
       }
     };
 
     poll(); // Immediate first poll
     fallbackTimer.current = setInterval(poll, fallbackPollMs);
-  }, [url, fallbackPollMs]);
+  }, [pollUrl, fallbackPollMs]);
 
   const connect = useCallback(() => {
     if (!enabled) return;
@@ -124,6 +135,8 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
     eventSource.current = es;
 
     es.addEventListener("snapshot", (e: MessageEvent) => {
+      if (eventSource.current !== es) return;
+      pollRead.current++;
       try {
         const parsed = JSON.parse(e.data) as T;
         setData(parsed);
@@ -142,6 +155,7 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
     });
 
     es.addEventListener("delta", (e: MessageEvent) => {
+      if (eventSource.current !== es) return;
       try {
         const delta = JSON.parse(e.data) as Partial<T>;
         setData((prev) => (prev ? deepMerge(prev, delta) : prev));
@@ -155,6 +169,7 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
     });
 
     es.addEventListener("error", (e: MessageEvent) => {
+      if (eventSource.current !== es) return;
       try {
         const parsed = JSON.parse(e.data);
         setError(parsed.message || "Stream error");
@@ -164,6 +179,8 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
     });
 
     es.onerror = () => {
+      if (eventSource.current !== es) return;
+      generation.current++;
       setConnected(false);
       es.close();
       eventSource.current = null;
@@ -187,9 +204,16 @@ export function useSSE<T>(url: string, options?: UseSSEOptions): UseSSEResult<T>
   }, [connect]);
 
   useEffect(() => {
+    target.current = url;
+    setData(null);
+    setError(null);
+    setConnected(false);
+    retryCount.current = 0;
     connect();
     return cleanup;
-  }, [connect, cleanup]);
+  }, [url, connect, cleanup]);
 
-  return { data, error, connected };
+  return target.current === url && enabled
+    ? { data, error, connected }
+    : { data: null, error: null, connected: false };
 }

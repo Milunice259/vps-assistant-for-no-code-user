@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Crown, Check, Edit2, Eye, Plus, Shield, Trash2, UserRound, Users, Wrench, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -36,6 +38,7 @@ const ROLES: Record<Role, { label: string; desc: string; icon: React.ReactNode; 
 const blank = { username: "", email: "", displayName: "", password: "", role: "VIEWER" as Role, serverAccessMode: "ALL" as ServerAccessMode, serverIds: [] as string[] };
 
 export default function UsersPage() {
+  const { formatDate } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [servers, setServers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,7 +216,7 @@ export default function UsersPage() {
                       <Badge variant={user.isActive ? "success" : "default"}>{user.isActive ? "Active" : "Disabled"}</Badge>
                       <Badge variant={ROLES[user.role].tone}>{ROLES[user.role].label}</Badge>
                     </div>
-                    <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · {user.serverAccessMode === "SELECTED" ? `${user.serverIds.length} servers` : "all servers"} · updated {new Date(user.updatedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">@{user.username}{user.email ? ` · ${user.email}` : ""} · {user.serverAccessMode === "SELECTED" ? `${user.serverIds.length} servers` : "all servers"} · updated {formatDate(user.updatedAt, { dateStyle: "medium" })}</p>
                   </div>
                 </div>
 

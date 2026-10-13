@@ -1,113 +1,68 @@
-/**
- * SSE stream for system stats — uses the shared SSE protocol.
- * Sends full snapshot on connect, then delta changes every 2s.
- *
- * The CPU sampler is subscribed/unsubscribed per-connection
- * so it only runs while at least one client is listening.
- */
-
-import { NextRequest } from "next/server";
+/** Local stats SSE: retain the opening login and check current local access. */
+import { NextRequest, NextResponse } from "next/server";
+import { verifySessionToken } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 import { getHostStats, subscribeStats } from "@/lib/stats";
 import type { SystemStats } from "@/lib/stats";
 import { computeDelta } from "@/lib/sse-stream";
 
 export const dynamic = "force-dynamic";
-
 const INTERVAL_MS = 2_000;
 const HEARTBEAT_MS = 30_000;
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | null = null;
-
-  const stream = new ReadableStream({
+  const token = request.cookies.get("vps-session")?.value;
+  const session = token ? await verifySessionToken(token) : null;
+  if (!token || !session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!(await canAccessServer(session.sub, session.role, "local"))) return NextResponse.json({ success: false, error: "Local server access denied" }, { status: 403 });
+  let cleanup = () => {};
+  const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      // Subscribe to the CPU sampler
-      unsubscribe = subscribeStats();
-
+      const encoder = new TextEncoder();
+      const unsubscribe = subscribeStats();
+      let closed = false;
+      let busy = false;
       let prev: SystemStats | null = null;
-      let lastSendTime = Date.now();
-
-      function send(event: string, data: unknown) {
+      let lastSend = Date.now();
+      const interval = setInterval(() => { void tick(); }, INTERVAL_MS);
+      interval.unref?.();
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(interval);
+        request.signal.removeEventListener("abort", cleanup);
+        unsubscribe();
+        try { controller.close(); } catch { /* Already cancelled. */ }
+      };
+      request.signal.addEventListener("abort", cleanup, { once: true });
+      if (request.signal.aborted) { cleanup(); return; }
+      async function tick() {
+        if (closed || busy) return;
+        busy = true;
         try {
-          const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-          controller.enqueue(encoder.encode(payload));
-          lastSendTime = Date.now();
-        } catch {
-          // Controller closed
-        }
-      }
-
-      // Send initial snapshot
-      try {
-        const initial = getHostStats();
-        send("snapshot", initial);
-        prev = initial;
-      } catch {
-        send("snapshot", getHostStats());
-      }
-
-      // Periodic delta updates
-      const dataInterval = setInterval(() => {
-        try {
-          const next = getHostStats();
-          if (!prev) {
-            send("snapshot", next);
-          } else {
-            const delta = computeDelta(prev, next);
-            if (delta) {
-              send("delta", delta);
-            }
+          const current = await verifySessionToken(token!);
+          if (!current || current.sub !== session!.sub || !(await canAccessServer(current.sub, current.role, "local"))) { cleanup(); return; }
+          if (closed || (controller.desiredSize || 0) <= 0) return;
+          let next: SystemStats;
+          try { next = getHostStats(); } catch { return; }
+          const delta = prev ? computeDelta(prev, next) : next;
+          const event = !prev ? "snapshot" : delta ? "delta" : Date.now() - lastSend >= HEARTBEAT_MS ? "heartbeat" : null;
+          if (event) {
+            controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(delta || {})}\n\n`));
+            lastSend = Date.now();
           }
           prev = next;
-        } catch {
-          // Stats collection failed — skip this tick
-        }
-      }, INTERVAL_MS);
-
-      // Heartbeat keepalive
-      const heartbeatInterval = setInterval(() => {
-        if (Date.now() - lastSendTime >= HEARTBEAT_MS) {
-          send("heartbeat", {});
-        }
-      }, HEARTBEAT_MS);
-
-      // Prevent timers from keeping process alive
-      if (dataInterval && typeof dataInterval === "object" && "unref" in dataInterval) {
-        dataInterval.unref();
+        } catch { cleanup(); }
+        finally { busy = false; }
       }
-      if (heartbeatInterval && typeof heartbeatInterval === "object" && "unref" in heartbeatInterval) {
-        heartbeatInterval.unref();
-      }
-
-      // Clean up on disconnect
-      request.signal.addEventListener("abort", () => {
-        clearInterval(dataInterval);
-        clearInterval(heartbeatInterval);
-        if (unsubscribe) {
-          unsubscribe();
-          unsubscribe = null;
-        }
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
-      });
+      void tick();
     },
-    cancel() {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+    cancel() { cleanup(); },
+  }, { highWaterMark: 1 });
+  return new Response(stream, { headers: {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "private, no-store, no-transform",
+    Vary: "Cookie",
+    Connection: "keep-alive",
+  } });
 }

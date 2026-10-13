@@ -22,6 +22,7 @@ export function Tabs({ tabs, activeTab, onChange }: TabsProps) {
         {tabs.map((tab) => (
           <button
             key={tab.key}
+            aria-label={tab.label}
             onClick={() => onChange(tab.key)}
             className={clsx(
               "flex items-center gap-1.5 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px sm:gap-2 sm:px-4",

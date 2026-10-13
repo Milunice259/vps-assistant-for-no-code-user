@@ -25,6 +25,7 @@ function fixture(overrides = {}) {
   const profile = { id: 'profile', name: 'Production', vars: { API_TOKEN: '[REDACTED]', OMITTED_SECRET: '[REDACTED]' }, isActive: false };
   const context = {
     safeMode: false, actionStep: 'idle', actionLoading: null, needsReadback: false, impacts: { restart: 'Restart once' }, setPendingAction() {}, appId: 'test', appName: 'Test app on Test server',
+    mutationInFlight: { current: false }, outcomeUnknown: false, setOutcomeUnknown() {},
     app: { name: 'Test app', serverName: 'Test server' }, deriveAppName: app => app.name,
     profiles: [profile], editingProfile: profile, activeProfile: profile, editDirty: true,
     newProfileName: '  Production  ', editEntries: [{ key: ' API_TOKEN ', value: '[REDACTED]' }, { key: 'MODE', value: 'test' }],
@@ -38,6 +39,7 @@ function fixture(overrides = {}) {
     setNewProfileName() {}, setShowCreateForm() {}, setEditingProfile() {}, setEditEntries() {}, setEditDirty() {},
     router: { push: route => effects.push(route) }, setTimeout() {}, ...overrides,
   };
+  context.mutationBusy = context.actionStep === 'working' || context.outcomeUnknown;
   return { requests, prompts, effects, context };
 }
 async function invoke(key, name, args, f) {
@@ -79,6 +81,7 @@ function appPageFixture() {
       if (name === 'next/navigation') return { useParams: () => ({ id: routeId }), useRouter: () => ({ push() {} }) };
       if (name === 'next/dynamic') return () => 'Chart';
       if (name === '@/contexts/SafeModeContext') return { useSafeMode: () => ({ safeMode: false }) };
+      if (name === '@/lib/i18n') return { useTranslation: () => ({ formatDate: value => Number.isNaN(new Date(value).getTime()) ? '—' : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(value)) }) };
       if (name === '@/hooks/useSSE') return { useSSE: url => { const [data, setData] = react.useState(null); streams.set(url, setData); return { data }; } };
       return new Proxy({}, { get: (_, key) => String(key) });
     },
@@ -252,12 +255,15 @@ test('changed components transpile and retain disabled Safe Mode controls', () =
     assert.deepEqual((result.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), []);
   }
   assert.match(source.page, /disabled=\{safeMode \|\| !!actionLoading/);
-  assert.match(source.env, /<fieldset disabled=\{safeMode \|\| actionStep === "working"\}/);
+  assert.match(source.env, /const mutationBusy = actionStep === "working" \|\| outcomeUnknown/);
+  assert.match(source.env, /<fieldset disabled=\{safeMode \|\| mutationBusy\}/);
   assert.match(source.env, /onClick=\{\(\) => handleSaveProfile\(\)\}/, 'Click event must not become the confirmation-bypass argument');
 });
 test('Safe Mode and busy guards prevent every mutation and confirmation', async () => {
   for (const [key, name, args] of mutations) {
-    for (const guard of [{ safeMode: true }, { actionStep: 'working', actionLoading: 'restart' }]) {
+    const guards = [{ safeMode: true }, { actionStep: 'working', actionLoading: 'restart' }];
+    if (key === 'env') guards.push({ outcomeUnknown: true }, { mutationInFlight: { current: true } });
+    for (const guard of guards) {
       const f = fixture(guard);
       await invoke(key, name, args, f);
       assert.equal(f.requests.length, 0, name);

@@ -32,7 +32,13 @@ export async function GET(
 
     // Local server — use local systemctl
     if (isLocalServer(id)) {
-      const { services, hostAccess } = getLocalServices();
+      const { services, hostAccess, available } = getLocalServices();
+      if (!available) return NextResponse.json({
+        success: false,
+        error: hostAccess
+          ? "Service inventory unavailable; systemd service discovery did not complete."
+          : "Host access unavailable — system services require Docker pid:host mode.",
+      }, { status: 503 });
       const data: ServiceInfo[] = services.map((s) => ({
         name: s.name,
         loadState: s.loadState,
@@ -44,9 +50,6 @@ export async function GET(
       return NextResponse.json({
         success: true,
         data,
-        ...(!hostAccess && {
-          warning: "Host access unavailable — system services require Docker pid:host mode. This feature works when deployed on a Linux VPS.",
-        }),
       });
     }
 
@@ -60,6 +63,7 @@ export async function GET(
       loadState: s.loadState,
       activeState: s.activeState,
       subState: s.subState,
+      unitFileState: s.unitFileState,
       description: s.description,
     }));
 

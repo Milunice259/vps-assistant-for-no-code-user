@@ -57,5 +57,13 @@
   "onboarding.title": "Welcome! Let's get you set up",
   "onboarding.step1": "Add Your First Server",
   "onboarding.step2": "Set Up Notifications",
-  "onboarding.step3": "Create Team Members"
+  "onboarding.step3": "Create Team Members",
+  "preferences.title": "Language and time zone",
+  "preferences.description": "Applies immediately and is saved in this browser.",
+  "preferences.language": "Language",
+  "preferences.timezone": "Time zone",
+  "preferences.preview": "Example timestamp",
+  "preferences.coverage": "Navigation and these preferences are translated. Other screens may still contain English or Vietnamese text. Time zone changes display only, not server schedules.",
+  "preferences.storageError": "Browser storage is unavailable. Changes work now but may not survive a reload.",
+  "nav.docs": "Help"
 }

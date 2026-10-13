@@ -7,8 +7,12 @@ import { getSession } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { requireSafeModeOff } from "@/lib/operation-safety";
 import { canAccessServer } from "@/lib/server-access";
-import { checked, dockerPreflight, projectName, quote, readiness, validateDockerDeploy, type DeployRunner, type DockerInput } from "@/lib/deploy-preflight";
+import { dockerPreflight, validateDockerDeploy, type DeployRunner, type DockerInput } from "@/lib/deploy-preflight";
+import { composePreflight, deployCompose } from "@/lib/compose-deployment";
 import type { DeploymentInfo } from "@/types";
+import { deployImage, validateImageInput, type ImageInput } from "@/lib/image-deployment";
+import { ADVANCED_COOKIE, verifyAdvancedToken } from "@/lib/operation-safety";
+import { readDeploymentDefinition } from "@/lib/deployment-state";
 
 export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
@@ -23,23 +27,40 @@ export async function POST(request: NextRequest) {
     const serverId = body.serverId === undefined ? "local" : body.serverId;
     if (typeof serverId !== "string" || !serverId.trim()) return NextResponse.json({ success: false, error: "Invalid serverId" }, { status: 400 });
     if (!(await canAccessServer(session.sub as string, session.role as string, serverId))) return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
-    const block = requireSafeModeOff("deploy_docker", body);
-    if (block) return block;
-    const invalid = validateDockerDeploy(body);
+    if (body.mode !== undefined && !["preview", "apply"].includes(body.mode)) return NextResponse.json({success:false,error:"Invalid deployment mode"},{status:400});
+    if (body.type === "compose" && body.composeMode === "update" && !can(session.role as string,"ADMIN")) return NextResponse.json({success:false,error:"Insufficient permissions"},{status:403});
+    const preview = body.type === "compose" && body.mode === "preview";
+    if (!preview) {
+      const block = requireSafeModeOff("deploy_docker", body);
+      if (block) return block;
+      if (body.safeModeOff !== true || !await verifyAdvancedToken(request.cookies.get(ADVANCED_COOKIE)?.value,session)) return NextResponse.json({success:false,error:"Signed Advanced access and literal Safe Mode acknowledgment are required"},{status:423});
+    }
+    const invalid = validateDockerDeploy(body.type === "image" ? {...body,image:"validated:latest"} : body);
     if (invalid) return NextResponse.json({ success: false, error: invalid }, { status: 400 });
+    if (body.type === "image") {
+      try { validateImageInput(body); }
+      catch { return NextResponse.json({ success: false, error: "Invalid image deployment input" }, { status: 400 }); }
+    }
+    if (body.type === "compose") {
+      // Request gates are not definition inputs: preview/apply must hash the same reviewed content.
+      delete body.mode;
+      delete body.safeModeOff;
+      if (!preview && (typeof body.composeRevision !== "string" || !/^[a-f0-9]{64}$/.test(body.composeRevision))) return NextResponse.json({success:false,error:"An exact reviewed Compose preview is required"},{status:400});
+    }
     let run: DeployRunner;
-    if (isLocalServer(serverId)) run = async (command, timeout) => (body.type === "compose" || /df -P|MemTotal|ss -[ltu]/.test(command) ? execOnHost : execLocal)(command, timeout);
+    if (isLocalServer(serverId)) run = async (command, timeout) => (body.type === "compose" || /df -P|MemTotal|ss -[ltu]|readlink -f/.test(command) ? execOnHost : execLocal)(command, timeout);
     else { const connection = await connectToServer(serverId); ssh = connection.ssh; run = (command, timeout) => executeCommand(connection.ssh, command, timeout); }
     let plan;
-    try { plan = await dockerPreflight(run, body); }
+    try { plan = body.type === "compose" ? await composePreflight(run, body, serverId) : await dockerPreflight(run, body); }
     catch { return NextResponse.json({ success: false, error: "Final pre-flight failed. Check resources, ports and existing assets, then run pre-flight again." }, { status: 400 }); }
-    return await deploy(run, body, serverId, plan.services);
+    if (preview) return NextResponse.json({success:true,data:plan});
+    return await deploy(run, body, serverId);
   } catch {
     return NextResponse.json({ success: false, error: "Deployment could not be completed. Check the target connection and deployment history." }, { status: 500 });
   } finally { await closeSSH(ssh); }
 }
 
-async function deploy(run: DeployRunner, body: DockerInput, serverId: string, expectedServices: string[]) {
+async function deploy(run: DeployRunner, body: DockerInput, serverId: string) {
   const image = body.type === "image";
   const record = await prisma.deploymentLog.create({ data: {
     repoUrl: image ? `docker://${body.image}` : `compose://${body.projectPath}`, branch: image ? "latest" : "compose",
@@ -48,54 +69,36 @@ async function deploy(run: DeployRunner, body: DockerInput, serverId: string, ex
   } });
   let logs = record.logs || "";
   let status: "RUNNING" | "FAILED" | "UNVERIFIED" = "UNVERIFIED";
-  let completed = false;
+  let uncertain = false;
+  let pending: boolean | null = false;
+  let routing: Awaited<ReturnType<typeof deployImage>>["routing"] = null;
   try {
     if (image) {
-      await checked(run, `docker pull ${quote(body.image!)}`, 120_000);
-      logs += "Image pull completed.\n";
-      const parts = ["docker run -d", `--label ${quote(`vps-panel.deployment=${record.id}`)}`];
-      if (body.name) parts.push(`--name ${quote(body.name)}`);
-      if (body.cpuLimit !== undefined) parts.push(`--cpus=${body.cpuLimit}`);
-      if (body.memoryLimit !== undefined) parts.push(`--memory=${body.memoryLimit}m`);
-      if (body.restartPolicy) parts.push(`--restart=${body.restartPolicy}`);
-      for (const port of body.ports || []) parts.push(`-p ${quote(port)}`);
-      for (const [key, value] of Object.entries(body.env || {})) parts.push(`-e ${quote(`${key}=${value}`)}`);
-      parts.push(quote(body.image!));
-      const containerId = await checked(run, parts.join(" "), 60_000);
-      if (!/^[a-f0-9]{64}$/.test(containerId)) throw new Error("Container ID could not be verified");
-      completed = true;
-      logs += `Container created: ${containerId}\n`;
-      const inspected = JSON.parse(await checked(run, `docker inspect ${quote(containerId)}`));
-      status = readiness(inspected, undefined, containerId);
-      // Local is virtual; Apps discovers its containers as local::<Docker ID>.
-      if (!isLocalServer(serverId)) await prisma.app.create({ data: {
-        name: body.name || body.image!.split(":")[0].split("/").pop()!, containerId: containerId.slice(0, 12), containerName: body.name || null,
-        image: body.image!, serverId, status: status === "RUNNING" ? "RUNNING" : status === "FAILED" ? "UNHEALTHY" : "UNKNOWN", cpuLimit: body.cpuLimit ?? null, memoryLimit: body.memoryLimit ?? null,
-        restartPolicy: body.restartPolicy || null, ports: body.ports ? JSON.stringify(body.ports) : null,
-      } });
+      const result = await deployImage(body as ImageInput, serverId, record.id, run);
+      routing = result.routing;
+      status = result.status as typeof status;
+      logs += `Native container configuration saved with immutable image digest: ${result.containerId}. Readiness: ${result.readiness}.\n`;
     } else {
-      const path = quote(body.projectPath!);
-      const project = quote(projectName(body));
-      // Exclusive mkdir preserves existing destinations. Partial assets stay for recovery.
-      await checked(run, `mkdir ${path}`);
-      logs += "Created new destination directory.\n";
-      const encoded = Buffer.from(body.composeContent!).toString("base64");
-      await checked(run, `umask 077; printf %s ${quote(encoded)} | base64 -d > ${quote(`${body.projectPath}/docker-compose.yml`)}`);
-      logs += "Compose file written (private permissions).\n";
-      await checked(run, `cd ${path} && docker compose -p ${project} up -d --no-recreate`, 120_000);
-      completed = true;
-      logs += "Compose up completed.\n";
-      const ids = (await checked(run, `cd ${path} && docker compose -p ${project} ps -a -q`)).split(/\s+/).filter(Boolean);
-      if (ids.length && ids.every(id => /^[a-f0-9]{12,64}$/.test(id))) status = readiness(JSON.parse(await checked(run, `docker inspect ${ids.map(quote).join(" ")}`)), expectedServices);
-      logs += `Expected services: ${expectedServices.length}.\n`;
+      const result = await deployCompose(run, body, serverId, record.id);
+      status = result.status;
+      logs += `Native Compose configuration and encrypted definition saved. Containers: ${result.containerIds.length}. Readiness: ${result.status}.\n`;
     }
   } catch {
-    status = completed && status !== "FAILED" ? "UNVERIFIED" : "FAILED";
+    try {
+      const saved = await readDeploymentDefinition(record.id);
+      if (saved && saved.state.serverId !== serverId) throw new Error("Target changed");
+      pending = saved ? !!saved.state.pending : null;
+    } catch { pending = null; }
+    uncertain = pending !== false;
+    status = uncertain ? "UNVERIFIED" : "FAILED";
     logs += "Deployment or readback failed. Partial files/containers may remain on the target; no automatic rollback or deletion was attempted.\n";
   }
-  logs += status === "RUNNING" ? "All expected containers are running and healthy.\n" : status === "FAILED" ? "Deployment failed. Inspect target state before retrying.\n" : "Readiness is unverified: containers may be absent, starting, or have no health check. Inspect the target before relying on this app.\n";
-  const updated = await prisma.deploymentLog.update({ where: { id: record.id }, data: { status, logs } });
-  return NextResponse.json({ success: status === "RUNNING", data: { ...updated, createdAt: updated.createdAt.toISOString() } as DeploymentInfo,
-    ...(status !== "RUNNING" ? { error: status === "FAILED" ? "Deployment failed; partial assets may remain." : "Deployment command completed but application readiness is unverified." } : {}),
-  }, { status: status === "FAILED" ? 500 : 201 });
+  logs += status === "RUNNING" ? "All expected containers are running and healthy; public routing and TLS are separate checks.\n" : status === "FAILED" ? "Deployment failed. Inspect target state before retrying.\n" : "Readiness is unverified: containers may be absent, starting, or have no health check. Inspect the target before relying on this app.\n";
+  let updated: typeof record = { ...record, status, logs };
+  try { updated = await prisma.deploymentLog.update({ where: { id: record.id }, data: { status, logs } }); }
+  catch { uncertain = true; status = "UNVERIFIED"; updated = { ...record, status, logs }; }
+  return NextResponse.json({ success: !uncertain && status === "RUNNING", data: { ...updated, createdAt: updated.createdAt.toISOString() } as DeploymentInfo,
+    uncertain, pending, recovery: { deploymentId: record.id, serverId, readOnly: true, url: `/api/deploy/${record.id}` }, routing,
+    ...(status !== "RUNNING" ? { error: uncertain ? "Deployment outcome is uncertain. Inspect retained recovery and target state; do not retry automatically." : status === "FAILED" ? "Deployment failed; partial assets may remain." : "Deployment command completed but application readiness is unverified." } : {}),
+  }, { status: uncertain || status === "FAILED" ? 500 : 201 });
 }

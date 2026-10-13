@@ -27,9 +27,23 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
   const [image, setImage] = useState("");
   const [name, setName] = useState("");
   const [ports, setPorts] = useState(""); // comma-separated like 8080:80,443:443
+  const [envText, setEnvText] = useState("");
+  const [mountText, setMountText] = useState("");
+  const [mountConsent, setMountConsent] = useState(false);
+  const [networkText, setNetworkText] = useState("");
+  const [healthCommand, setHealthCommand] = useState("");
+  const [domain, setDomain] = useState("");
+  const [proxyId, setProxyId] = useState("");
+  const [backendPort, setBackendPort] = useState("");
+  const [entrypoint, setEntrypoint] = useState("");
+  const [resolver, setResolver] = useState("");
+  const [routingNetwork, setRoutingNetwork] = useState("");
+  const [optionsError, setOptionsError] = useState("");
   const [cpuLimit, setCpuLimit] = useState("");
   const [memoryLimit, setMemoryLimit] = useState("");
   const [restartPolicy, setRestartPolicy] = useState("unless-stopped");
+  const [defaultsReady, setDefaultsReady] = useState(false);
+  const [defaultsError, setDefaultsError] = useState("");
   const [deploying, setDeploying] = useState(false);
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const [inspecting, setInspecting] = useState(false);
@@ -52,10 +66,34 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
 
   useEffect(() => {
     fetchServers();
+    let current = true;
+    fetch("/api/settings/general", { cache: "no-store" }).then(async res => {
+      const json = await res.json();
+      if (!res.ok || !json.success || !Number.isInteger(json.data?.dockerMemoryLimitMB) || !["no", "always", "unless-stopped", "on-failure"].includes(json.data?.dockerRestartPolicy)) throw new Error("Defaults unavailable");
+      if (!current) return;
+      setMemoryLimit(String(json.data.dockerMemoryLimitMB));
+      setRestartPolicy(json.data.dockerRestartPolicy);
+      setDefaultsReady(true);
+    }).catch(() => { if (current) setDefaultsError("Docker defaults unavailable. Reload before deploying."); });
+    return () => { current = false; };
   }, [fetchServers]);
 
   const selectedServer = servers.find((s) => s.id === serverId);
 
+  function imageOptions() {
+    const env: Record<string, string> = {};
+    for (const line of envText.split("\n").filter(line => line.trim())) {
+      const at = line.indexOf("="); const key = line.slice(0, at);
+      if (at < 1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || Object.prototype.hasOwnProperty.call(env, key)) throw new Error("Use unique environment KEY=value lines.");
+      env[key] = line.slice(at + 1);
+    }
+    const mounts = mountText.split("\n").filter(line => line.trim()).map(line => {
+      const [type, source, target, mode, ...extra] = line.trim().split("|");
+      if (!["volume", "bind"].includes(type) || !source || !target?.startsWith("/") || ![undefined, "ro", "rw"].includes(mode) || extra.length || !mountConsent) throw new Error("Review mounts and consent; use type|source|/target|ro or rw.");
+      return { type, source, target, readOnly: mode === "ro", consent: true };
+    });
+    return { env, mounts, networks: networkText.split(",").map(s => s.trim()).filter(Boolean), ...(healthCommand ? { healthcheck: { test: ["CMD-SHELL", healthCommand], intervalSeconds: 10, timeoutSeconds: 5, retries: 3, startPeriodSeconds: 10 } } : {}), ...(domain ? { domain, routing: { proxyId, backendPort: Number(backendPort), entrypoint, resolver: resolver || null, network: routingNetwork } } : {}) };
+  }
   async function inspectOutcome() {
     if (!busyRef.current || inspectionRef.current || deploying) return;
     inspectionRef.current = true;
@@ -69,7 +107,10 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
       const logs = history.data.filter(log => log && typeof log.id === "string" && (log.serverId || "local") === serverId && log.repoUrl === `docker://${image.trim()}` && Date.parse(log.createdAt) >= submittedAt.current);
       setInspection({ logs, containers: target.data });
       // Empty inventory is not proof of absence: existing container readers can swallow host errors.
-      if (!logs.length || logs.some(log => !["RUNNING", "FAILED", "UNVERIFIED"].includes(log.status))) throw new Error("No terminal history evidence");
+      if (logs.length !== 1 || logs.some(log => !["RUNNING", "FAILED", "UNVERIFIED"].includes(log.status))) throw new Error("No terminal history evidence");
+      const detailResponse = await fetch(`/api/deploy/${encodeURIComponent(logs[0].id)}`, { cache: "no-store" });
+      const detail = await detailResponse.json();
+      if (!detailResponse.ok || detail.success !== true || detail.data?.serverId !== serverId || detail.data?.pending !== false || detail.data?.uncertain === true || detail.data?.drift === true || !Array.isArray(detail.data?.containerIds) || !detail.data.containerIds.length || !detail.data.containerIds.every((id: string) => target.data!.some(container => container.id === id))) throw new Error("Exact target evidence unavailable");
       invalidate();
       setOutcomeUnknown(false);
       busyRef.current = false;
@@ -81,7 +122,8 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
   }
 
   async function handleDeploy() {
-    if (busyRef.current || !readyRef.current || safeMode || deploying || !serverId || !image) return;
+    if (!defaultsReady || busyRef.current || !readyRef.current || safeMode || deploying || !serverId || !image) return;
+    let options; try { options = imageOptions(); setOptionsError(""); } catch (error) { setOptionsError((error as Error).message); return; }
     const targetLabel = serverId === "local" ? "Local server" : `${selectedServer?.name || serverId} (${selectedServer?.host || serverId})`;
     if (!window.confirm(`Deploy ${image.trim()} to ${targetLabel}? This pulls an image, starts a container and publishes the configured ports (${ports || "none"}).`)) return;
     busyRef.current = true;
@@ -110,16 +152,19 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
           name: name.trim() || undefined,
           ports: portList.length > 0 ? portList : undefined,
           cpuLimit: cpuLimit ? Number(cpuLimit) : undefined,
-          memoryLimit: memoryLimit ? Number(memoryLimit) : undefined,
-          restartPolicy: restartPolicy || undefined,
+          memoryLimit: memoryLimit === "" ? 0 : Number(memoryLimit),
+          restartPolicy,
+          ...options,
         }),
       });
 
       const json = await res.json();
-      if (!json || typeof json.success !== "boolean" || typeof json.data?.id !== "string" || !json.data.id || !["RUNNING", "FAILED", "UNVERIFIED"].includes(json.data.status) || json.success !== (json.data.status === "RUNNING") || (!res.ok && json.data.status !== "FAILED")) throw new Error("Ambiguous response");
+      if (!json || typeof json.success !== "boolean" || typeof json.data?.id !== "string" || !json.data.id || !["RUNNING", "FAILED", "UNVERIFIED"].includes(json.data.status) || (json.success && json.data.status !== "RUNNING") || (!res.ok && json.data.status === "RUNNING" && json.uncertain !== true)) throw new Error("Ambiguous response");
+      unknown = json.pending !== false || json.uncertain === true;
+      setOutcomeUnknown(unknown);
       setResult({
-        success: json.success,
-        message: json.data?.status === "RUNNING" ? "Running and healthy" : `${json.data?.status || "FAILED"}: ${json.error || "Readiness unverified"}`,
+        success: json.success && !unknown,
+        message: unknown ? "Outcome uncertain or pending. Controls stay locked; inspect history and the original target (read-only)." : json.data.status === "RUNNING" ? `Container running and healthy. Routing: ${json.routing?.activeProxy === "verified" ? "verified" : "not verified"}; TLS: ${json.routing?.tls === "verified" ? "verified" : "not verified"}.` : `${json.data.status}: ${json.error || "Readiness unverified"}`,
         id: json.data?.id,
       });
     } catch {
@@ -166,14 +211,15 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
         {inspection.logs.map(log => <a key={log.id} className="block underline" href={`/deploy#deployment-${log.id}`}>{log.id} · {log.status}</a>)}
         {inspection.containers.map(container => <p key={container.id}>{container.name || container.id} · {container.image} · {container.state}</p>)}
       </div>}
-      <fieldset disabled={deploying || outcomeUnknown} className="space-y-4">
+      {defaultsError && <p role="alert" className="text-sm text-red-400">{defaultsError}</p>}
+      <fieldset disabled={!defaultsReady || deploying || outcomeUnknown} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Deploy Target Selector */}
         <Field label="Deploy Target" tooltip="Choose where to deploy this Docker image — on this server (Local) or on a connected remote server.">
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => { if (busyRef.current) return; invalidate(); setResult(null); setDeployTarget("local"); setServerId("local"); }}
+              onClick={() => { if (busyRef.current) return; invalidate(); setResult(null); setDeployTarget("local"); setServerId("local"); setMountConsent(false); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
                 deployTarget === "local"
                   ? "border-brand-500 bg-brand-500/10 text-white"
@@ -185,7 +231,7 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
             </button>
             <button
               type="button"
-              onClick={() => { if (busyRef.current) return; invalidate(); setResult(null); setDeployTarget("remote"); setServerId(""); }}
+              onClick={() => { if (busyRef.current) return; invalidate(); setResult(null); setDeployTarget("remote"); setServerId(""); setMountConsent(false); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors ${
                 deployTarget === "remote"
                   ? "border-brand-500 bg-brand-500/10 text-white"
@@ -202,7 +248,7 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
         <Field label="Target Server" required tooltip="The server where this Docker container will run. Select any connected remote server.">
           <select
             value={serverId}
-            onChange={(e) => { if (!busyRef.current) { invalidate(); setServerId(e.target.value); } }}
+            onChange={(e) => { if (!busyRef.current) { invalidate(); setServerId(e.target.value); setMountConsent(false); } }}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none"
           >
             <option value="">Select server</option>
@@ -257,7 +303,7 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
           />
         </Field>
 
-        <Field label="Memory Limit (MB)" tooltip="Maximum memory (RAM) in megabytes this container can use. Example: 512 = 512 MB. Leave empty for no limit.">
+        <Field label="Memory Limit (MB)" tooltip="Maximum memory (RAM) in megabytes this container can use. Example: 512 = 512 MB. 0 or empty means unlimited. Initial value comes from Settings.">
           <input
             type="number"
             min="0"
@@ -275,18 +321,26 @@ export function DockerImageDeploy({ onBusyChange }: { onBusyChange?: (busy: bool
           onChange={(e) => { if (!busyRef.current) { invalidate(); setRestartPolicy(e.target.value); } }}
           className="w-full max-w-xs bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none"
         >
-          <option value="">None</option>
+          <option value="no">None</option>
           <option value="always">Always</option>
           <option value="unless-stopped">Unless Stopped</option>
           <option value="on-failure">On Failure</option>
         </select>
       </Field>
 
+      <details className="space-y-3"><summary className="cursor-pointer py-2">Environment, storage, health and routing</summary>
+        <label className="block text-sm">Environment (KEY=value per line)<textarea aria-label="Image environment" autoComplete="off" spellCheck={false} value={envText} onChange={e => { if (!busyRef.current) { invalidate(); setEnvText(e.target.value); } }} className="block w-full rounded bg-gray-900 p-2" /></label>
+        <label className="block text-sm">Mounts (volume|name|/target|ro or bind|/source|/target|rw)<textarea aria-label="Image mounts" value={mountText} onChange={e => { if (!busyRef.current) { invalidate(); setMountText(e.target.value); setMountConsent(false); } }} className="block w-full rounded bg-gray-900 p-2" /></label>
+        <label className="block text-sm"><input type="checkbox" checked={mountConsent} onChange={e => { if (!busyRef.current) { invalidate(); setMountConsent(e.target.checked); } }} /> I reviewed these existing volumes/bind paths and their write access.</label>
+        {[["Existing networks (comma-separated)", networkText, setNetworkText], ["Health command (container shell)", healthCommand, setHealthCommand], ["Domain (exact lowercase hostname)", domain, setDomain], ["Proxy container ID (64 characters)", proxyId, setProxyId], ["Backend port", backendPort, setBackendPort], ["Proxy entrypoint", entrypoint, setEntrypoint], ["TLS resolver (optional)", resolver, setResolver], ["Routing network", routingNetwork, setRoutingNetwork]].map(([label, value, setter]) => <label key={String(label)} className="block text-sm">{String(label)}<input aria-label={String(label)} value={String(value)} onChange={e => { if (!busyRef.current) { invalidate(); (setter as (value: string) => void)(e.target.value); } }} className="block w-full rounded bg-gray-900 p-2" /></label>)}
+        <p className="text-xs text-gray-400">Environment values are submitted only to the selected target deployment; previews/logs must not expose secrets. Routing verifies an existing inspected proxy and DNS; it does not change DNS. No health command uses the image default; missing health is unverified.</p>
+      </details>
       </fieldset>
-      <Button variant="secondary" loading={checking} disabled={deploying || outcomeUnknown || !serverId || !image.trim()} onClick={() => runPreflight({ type: "image", serverId, image: image.trim(), name: name.trim() || undefined, ports: ports.split(",").map(p => p.trim()).filter(Boolean), cpuLimit: cpuLimit ? Number(cpuLimit) : undefined, memoryLimit: memoryLimit ? Number(memoryLimit) : undefined, restartPolicy: restartPolicy || undefined })}>Run pre-flight</Button>
-      <p role="status" className="text-sm text-gray-400">{preflightError || (preflight?.ready ? "Current inputs checked. Deploy creates a new container; no rollback is provided." : preflight ? preflight.checks.map(c => c.detail).join(" ") : "Run pre-flight for these inputs before deploying.")}</p>
+      {optionsError && <p role="alert" className="text-sm text-red-400">{optionsError}</p>}
+      <Button variant="secondary" loading={checking} disabled={!defaultsReady || deploying || outcomeUnknown || !serverId || !image.trim()} onClick={() => { try { const options = imageOptions(); setOptionsError(""); void runPreflight({ ...options, type: "image", serverId, image: image.trim(), name: name.trim() || undefined, ports: ports.split(",").map(p => p.trim()).filter(Boolean), cpuLimit: cpuLimit ? Number(cpuLimit) : undefined, memoryLimit: memoryLimit === "" ? 0 : Number(memoryLimit), restartPolicy }); } catch (error) { invalidate(); setOptionsError((error as Error).message); } }}>Run pre-flight</Button>
+      <p role="status" className="text-sm text-gray-400">{preflightError || (preflight?.ready ? "Current inputs checked. Deploy creates a new container; saved lifecycle actions are available in history." : preflight ? preflight.checks.map(c => c.detail).join(" ") : "Run pre-flight for these inputs before deploying.")}</p>
       {safeMode && <p role="status" className="text-sm text-amber-400">Safe Mode is on. Turn it off to deploy containers on the selected server. Requirement checks remain available.</p>}
-      <Button variant="primary" loading={deploying} disabled={!preflight?.ready || checking || safeMode || deploying || outcomeUnknown || !serverId || !image.trim()} onClick={handleDeploy}>
+      <Button variant="primary" loading={deploying} disabled={!defaultsReady || !preflight?.ready || checking || safeMode || deploying || outcomeUnknown || !serverId || !image.trim()} onClick={handleDeploy}>
         <Play className="h-4 w-4 mr-1" /> Deploy Image
       </Button>
     </div>

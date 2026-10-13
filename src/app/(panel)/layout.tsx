@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { I18nProvider } from "@/lib/i18n";
 import { usePathname } from "next/navigation";
+import { useTheme } from "@/hooks/useTheme";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -25,6 +26,7 @@ const pageTitles: Record<string, string> = {
 };
 
 function PanelContent({ children }: { children: React.ReactNode }) {
+  useTheme();
   const { collapsed } = useSidebar();
   const pathname = usePathname();
 

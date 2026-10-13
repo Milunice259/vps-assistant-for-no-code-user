@@ -3,11 +3,62 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --surface-page: 3 7 18;
+    --surface-card: 17 24 39;
+    --surface-raised: 31 41 55;
+    --surface-hover: 55 65 81;
+    --surface-active: 75 85 99;
+    --text-strong: 255 255 255;
+    --text-primary: 243 244 246;
+    --text-secondary: 209 213 219;
+    --text-muted: 156 163 175;
+    --border-subtle: 31 41 55;
+    --border-default: 55 65 81;
+    --border-strong: 75 85 99;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-page: 243 244 246;
+    --surface-card: 255 255 255;
+    --surface-raised: 249 250 251;
+    --surface-hover: 229 231 235;
+    --surface-active: 209 213 219;
+    --text-strong: 17 24 39;
+    --text-primary: 31 41 55;
+    --text-secondary: 55 65 81;
+    --text-muted: 75 85 99;
+    --border-subtle: 209 213 219;
+    --border-default: 156 163 175;
+    --border-strong: 107 114 128;
+    --ink-brand: #4338ca;
+    --ink-red: #b91c1c;
+    --ink-green: #15803d;
+    --ink-emerald: #047857;
+    --ink-amber: #92400e;
+    --ink-yellow: #854d0e;
+    --ink-orange: #9a3412;
+    --ink-blue: #1d4ed8;
+    --ink-sky: #0369a1;
+    --ink-cyan: #0e7490;
+    --ink-purple: #7e22ce;
+    --ink-indigo: #4338ca;
+  }
+
   body {
     @apply bg-gray-950 text-gray-100 antialiased;
   }
 
-  /* Custom scrollbar for dark theme */
+  /* Solid action backgrounds retain white labels, including their descendants. */
+  :is(.bg-brand-500, .bg-brand-600, .bg-brand-700,
+      .bg-red-500, .bg-red-600, .bg-red-700,
+      .bg-emerald-500, .bg-emerald-600, .bg-emerald-700) {
+    --text-strong: 255 255 255;
+  }
+
+  /* Custom scrollbar follows the neutral surface palette. */
   ::-webkit-scrollbar {
     @apply w-2;
   }
@@ -22,7 +73,7 @@
 
   /* Selection color */
   ::selection {
-    @apply bg-brand-600/30 text-white;
+    @apply bg-brand-600/30 text-gray-100;
   }
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useCallback, useRef } from "react";
 import {
   Zap,
@@ -468,6 +470,7 @@ function ActionCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { formatDate } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const isLoading = result.status === "loading";
 
@@ -562,7 +565,7 @@ function ActionCard({
           </div>
           {result.timestamp && (
             <p className="text-[10px] text-gray-600 mt-1">
-              {new Date(result.timestamp).toLocaleTimeString()}
+              {formatDate(result.timestamp, { timeStyle: "medium" })}
             </p>
           )}
         </div>
@@ -575,7 +578,7 @@ function ActionCard({
           </div>
           {result.timestamp && (
             <p className="text-[10px] text-gray-600 mt-1">
-              {new Date(result.timestamp).toLocaleTimeString()}
+              {formatDate(result.timestamp, { timeStyle: "medium" })}
             </p>
           )}
         </div>

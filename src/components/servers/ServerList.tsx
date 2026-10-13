@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, RefreshCw, Search, Server } from "lucide-react";
@@ -12,6 +14,7 @@ import { ServerForm } from "./ServerForm";
 type Filter = "all" | "local" | "remote" | "active" | "inactive";
 
 export function ServerList() {
+  const { formatDate } = useTranslation();
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +115,7 @@ export function ServerList() {
                     <td className="px-4 py-3"><Badge variant={isLocal ? "info" : "default"}>{isLocal ? "Local" : "Remote"}</Badge></td>
                     <td className="px-4 py-3 font-mono text-gray-300">{isLocal ? server.host : `${server.username}@${server.host}:${server.port}`}</td>
                     <td className="px-4 py-3"><Badge variant={server.isActive ? "success" : "danger"}>{server.isActive ? "Active" : "Inactive"}</Badge></td>
-                    <td className="px-4 py-3 text-gray-400">{server.lastConnected ? new Date(server.lastConnected).toLocaleString() : "Never"}</td>
+                    <td className="px-4 py-3 text-gray-400">{server.lastConnected ? formatDate(server.lastConnected) : "Never"}</td>
                   </tr>
                 );
               })}

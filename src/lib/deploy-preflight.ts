@@ -1,4 +1,6 @@
 import yaml from "js-yaml";
+import { validateComposeAssets } from "./compose-deployment";
+import { getGeneralSettings } from "./general-settings";
 import { validateDockerImage, validateRestartPolicy, validateCpu, validateMemory, validateEnvKey, validateEnvValue, validatePath, validateComposeObject } from "@/lib/validation";
 
 export type DeployRunner = (command: string, timeoutMs?: number) => Promise<string>;
@@ -6,6 +8,13 @@ export type DockerInput = {
   type: "image" | "compose"; serverId?: string; image?: string; name?: string;
   ports?: string[]; env?: Record<string, string>; cpuLimit?: number; memoryLimit?: number; restartPolicy?: string;
   composeContent?: string; projectPath?: string; projectName?: string;
+  composeMode?: "create" | "update"; composeDeploymentId?: string;
+  composeConsent?: { directory?: string; builds?: string[]; recreate?: boolean; foreignBinds?: string[]; externalVolumes?: string[]; externalNetworks?: string[] };
+  composeFiles?: Record<string, string>;
+  composeRevision?: string;
+  dataCompatibility?: "unchanged" | "operator-confirmed";
+  schemaCompatibility?: "unchanged" | "operator-confirmed";
+  composePlan?: { revision: string; services: string[] };
 };
 export const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 const marker = "__PANEL_DEPLOY_EXIT_";
@@ -22,8 +31,8 @@ const portNumber = (value: unknown) => /^\d{1,5}$/.test(String(value)) && Number
 const safeName = (value: unknown) => typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(value);
 export function validateDockerDeploy(body: DockerInput): string | null {
   if (body.type === "image") {
-    for (const result of [validateDockerImage(body.image), validateRestartPolicy(body.restartPolicy), validateCpu(body.cpuLimit), validateMemory(body.memoryLimit)]) if (!result.valid) return result.reason;
-    if ((body.name !== undefined && !safeName(body.name)) || (body.cpuLimit !== undefined && typeof body.cpuLimit !== "number") || (body.memoryLimit !== undefined && typeof body.memoryLimit !== "number")) return "Malformed image options";
+    for (const result of [validateDockerImage(body.image), validateRestartPolicy(body.restartPolicy), validateCpu(body.cpuLimit), validateMemory(body.memoryLimit === 0 ? undefined : body.memoryLimit)]) if (!result.valid) return result.reason;
+    if ((body.name !== undefined && !safeName(body.name)) || (body.cpuLimit !== undefined && typeof body.cpuLimit !== "number") || (body.memoryLimit !== undefined && typeof body.memoryLimit !== "number") || (body.restartPolicy !== undefined && typeof body.restartPolicy !== "string")) return "Malformed image options";
     if (body.ports !== undefined && (!Array.isArray(body.ports) || body.ports.some(p => typeof p !== "string" || !/^\d{1,5}:\d{1,5}(?:\/(?:tcp|udp))?$/.test(p) || p.split("/")[0].split(":").some(n => !portNumber(n))))) return "Invalid port mapping";
     if (body.env !== undefined) {
       if (!body.env || typeof body.env !== "object" || Array.isArray(body.env)) return "Invalid environment options";
@@ -42,21 +51,7 @@ export function validateDockerDeploy(body: DockerInput): string | null {
     if (/\$(?:[A-Za-z_]|\{)/.test(JSON.stringify(doc).replace(/\$\$/g, ""))) return "Compose interpolation is not supported; use $$ for literal dollars";
   } catch { return "Invalid Compose YAML"; }
   if (!validateComposeObject(doc).valid) return "Unsupported or unsafe Compose configuration";
-  // ponytail: fresh image-only stacks; add build/bind/external resources only with asset-aware planning.
-  if (Object.keys(doc).some(k => !["version", "services", "volumes", "networks"].includes(k))) return "Compose overrides, includes and interpolation are not supported";
-  for (const service of Object.values(doc.services as Record<string, Record<string, unknown>>)) {
-    if (!validateDockerImage(service.image).valid || ["build", "env_file"].some(k => k in service) || (service.container_name !== undefined && !safeName(service.container_name))) return "Use supported images without build or env_file";
-    if (service.deploy !== undefined && (!service.deploy || typeof service.deploy !== "object" || (service.deploy as { replicas?: unknown }).replicas !== undefined && (service.deploy as { replicas?: unknown }).replicas !== 1)) return "Only single-container services are supported";
-    if (service.labels && (typeof service.labels === "object" ? Object.keys(service.labels).some(k => k.startsWith("com.docker.compose.")) : true)) return "Reserved Compose labels cannot be overridden";
-    for (const vol of (service.volumes || []) as unknown[]) {
-      if (typeof vol === "string" ? vol.split(":").length < 2 || !/^[a-zA-Z0-9_-]+$/.test(vol.split(":")[0]) : !vol || typeof vol !== "object" || (vol as { type: string }).type !== "volume") return "Only project-owned named volumes are supported";
-    }
-  }
-  for (const key of ["volumes", "networks"]) {
-    if (doc[key] !== undefined && (!doc[key] || typeof doc[key] !== "object" || Array.isArray(doc[key]))) return "Invalid Compose resources";
-    for (const resource of Object.values((doc[key] || {}) as Record<string, unknown>)) if (resource !== null && (typeof resource !== "object" || Array.isArray(resource) || Object.keys(resource).length)) return "Use default project-owned volumes and networks only";
-  }
-  return null;
+  return validateComposeAssets(body, doc);
 }
 export function projectName(body: DockerInput) {
   return body.projectName || body.projectPath!.split("/").pop()!.toLowerCase().replace(/[^a-z0-9_-]/g, "");
@@ -74,38 +69,21 @@ async function requireFresh(run: DeployRunner, kind: "container" | "volume" | "n
   if (names.split(/\s+/).includes(name)) throw new Error("An asset with this name already exists");
 }
 export async function dockerPreflight(run: DeployRunner, body: DockerInput) {
+  // Resolve once before both planning and execution; Compose owns its explicit definition.
+  if (body.type === "image") {
+    const settings = await getGeneralSettings();
+    if (body.restartPolicy === undefined) body.restartPolicy = settings.dockerRestartPolicy;
+    if (body.memoryLimit === undefined && settings.dockerMemoryLimitMB > 0) body.memoryLimit = settings.dockerMemoryLimitMB;
+  }
   await resourcePreflight(run, true);
   let ports: Array<{ published: string; protocol: string }> = [];
-  let services: string[] = [];
+  const services: string[] = [];
   if (body.type === "image") {
     if (body.name) await requireFresh(run, "container", body.name);
     ports = (body.ports || []).map(p => ({ published: p.split(":")[0], protocol: p.endsWith("/udp") ? "udp" : "tcp" }));
   } else {
-    const project = projectName(body);
-    if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(project)) throw new Error("Choose a valid project name");
-    await checked(run, `test ! -e ${quote(body.projectPath!)} && test ! -L ${quote(body.projectPath!)}`);
-    // Native config reads stdin; no destination writes and no config/secret output in logs.
-    const encoded = Buffer.from(body.composeContent!).toString("base64");
-    const config = JSON.parse(await checked(run, `printf %s ${quote(encoded)} | base64 -d | docker compose --project-directory ${quote(body.projectPath!)} -p ${quote(project)} -f - config --format json`));
-    if (!config.services || !Object.keys(config.services).length) throw new Error("Compose configuration has no services");
-    services = Object.keys(config.services);
-    const existing = await checked(run, `docker ps -aq --filter ${quote(`label=com.docker.compose.project=${project}`)}`);
-    if (existing) throw new Error("Compose project already exists. Choose a new project name.");
-    for (const kind of ["volume", "network"]) {
-      const resources = config[`${kind}s`] || {};
-      for (const resource of Object.values(resources) as Array<{ name?: string; external?: boolean }>) {
-        if (resource.external || !safeName(resource.name)) throw new Error("Unsupported Compose resource");
-        await requireFresh(run, kind as "volume" | "network", resource.name!);
-      }
-    }
-    for (const service of Object.values(config.services) as Array<{ container_name?: string; ports?: Array<{ published?: string; protocol?: string }> }>) {
-      if (service.container_name) await requireFresh(run, "container", service.container_name);
-      for (const port of service.ports || []) {
-        if (port.published === undefined) continue; // Docker allocates an ephemeral port.
-        if (!portNumber(port.published) || !["tcp", "udp"].includes(port.protocol || "tcp")) throw new Error("Port ranges and unsupported protocols are not supported");
-        ports.push({ published: String(port.published), protocol: port.protocol || "tcp" });
-      }
-    }
+    const { composePreflight } = await import("./compose-deployment");
+    return await composePreflight(run, body);
   }
   const allocated = new Set<string>();
   if (ports.length) {

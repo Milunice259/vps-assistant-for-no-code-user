@@ -34,12 +34,15 @@ function compose() {
 }
 async function forms() {
   for (const component of ['DockerImageDeploy', 'DockerComposeDeploy']) for (const failure of ['network', 'json', 'http', 'shape', 'null', 'false-success']) {
-    const hook = hooks(), requests = [], busy = []; let inspectionFails = true, releaseInspection, historyStatus = 'UNVERIFIED';
+    const hook = hooks(), requests = [], busy = [], effects = [];
+    hook.react.useEffect = fn => effects.push(fn); let inspectionFails = true, releaseInspection, historyStatus = 'UNVERIFIED';
     const proxy = new Proxy({}, { get: (_, key) => key });
     const runtime = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
     const fn = load(`src/components/deploy/${component}.tsx`, { react: hook.react, 'react/jsx-runtime': runtime, 'lucide-react': proxy, '@/components/ui/Button': proxy, '@/components/ui/FileBrowser': proxy, '@/components/deploy/DeployRequirementBanner': proxy, '@/contexts/SafeModeContext': { useSafeMode: () => ({ safeMode: false }) } }, {
       window: { confirm: () => true },
       fetch: async (url, options = {}) => {
+        if (url === "/api/settings/general") return { ok: true, json: async () => ({ success: true, data: { dockerMemoryLimitMB: 0, dockerRestartPolicy: "unless-stopped" } }) };
+        if (url === "/api/servers") return { ok: true, json: async () => ({ success: true, data: [] }) };
         requests.push([url, options]);
         if (url.endsWith('/preflight')) return { ok: true, json: async () => ({ success: true, data: { ready: true, checks: [] } }) };
         if (url === '/api/deploy/docker') {
@@ -54,6 +57,9 @@ async function forms() {
     })[component];
     const render = () => hook.render(() => fn({ onBusyChange: value => busy.push(value) }));
     const findButton = label => nodes(render()).find(n => n.type === 'Button' && text(n).includes(label));
+    render();
+    hook.react.useEffect = () => {};
+    if (component === 'DockerImageDeploy') { for (const effect of effects) effect(); await new Promise(resolve => setImmediate(resolve)); }
     for (const node of nodes(render())) if (node.props.onChange && ['input', 'textarea'].includes(node.type)) node.props.onChange({ target: { value: node.props.placeholder === 'nginx:latest' ? 'nginx' : node.props.placeholder?.startsWith('/') ? '/opt/fixture-new' : node.props.value } });
     await findButton('Run pre-flight').props.onClick();
     await findButton(component === 'DockerImageDeploy' ? 'Deploy Image' : 'Deploy Compose').props.onClick();

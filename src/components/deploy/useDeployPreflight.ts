@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 export type PreflightResult = {
+  gitPlan?: { commitHash: string; expectedCommit?: string; revision: string; composeDeploymentId?: string; services?: string[]; risks?: { directory: string; builds: string[]; foreignBinds: string[]; externalVolumes: string[]; externalNetworks: string[]; recreate: boolean } };
   ready: boolean; checks: Array<{ id: string; label: string; status: "pass" | "warn" | "fail"; detail: string }>; nextSteps: string[];
 };
 // Only a revision is retained, never input/Compose/environment snapshots.

@@ -32,16 +32,17 @@ async function main() {
     let result = 'RUNNING', commands = [], localContainers = false;
     const run = command => {
       commands.push(command);
-      if (result === 'FAILED' && (command.includes('docker pull ') || command.includes(' up -d '))) return mark('', 1);
+      if (result === 'FAILED' && (command.includes('native-image-create') || command.includes('native-compose-create'))) return mark('', 1);
       if (command.includes('docker inspect ')) return mark(JSON.stringify([{ Id: id, State: { Status: 'running', Health: result === 'RUNNING' ? { Status: 'healthy' } : undefined }, Config: { Labels: { 'com.docker.compose.service': 'web' } } }]));
       return output(command);
     };
     const mocks = {
+      ...require('./check-guided-deploy.cjs').serviceMocks(),
       '@/lib/db': { prisma },
       '@/lib/auth': { getSession: async () => ({ sub: 'test-owner', role: 'OWNER' }) },
       '@/lib/permissions': { can: () => true },
       '@/lib/server-access': { canAccessServer: async () => true, scopedServerWhere: async () => ({}) },
-      '@/lib/operation-safety': { requireSafeModeOff: (_action, body) => { assert.equal(body.safeModeOff, true); return null; } },
+      '@/lib/operation-safety': { ADVANCED_COOKIE: 'advanced', verifyAdvancedToken: async () => true, requireSafeModeOff: (_action, body) => { assert.equal(body.safeModeOff, true); return null; } },
       '@/lib/server-ssh': { connectToServer: async serverId => { assert.equal(serverId, 'remote-fk'); return { ssh: {} }; } },
       '@/lib/ssh': { closeSSH: async () => {}, executeCommand: async (_ssh, command) => run(command) },
       '@/lib/local-server': { isLocalServer: serverId => serverId === 'local', execLocal: run, execOnHost: run },
@@ -52,8 +53,8 @@ async function main() {
       if (serverId !== 'local') await prisma.server.create({ data: { id: serverId, name: 'Disposable remote fixture', host: '192.0.2.1', username: 'test' } });
       for (const type of ['image', 'compose']) for (const expected of ['RUNNING', 'UNVERIFIED', 'FAILED']) {
         result = expected; commands = [];
-        const input = { type, serverId, safeModeOff: true, ...(type === 'image' ? { image: 'nginx', name: 'fk-check' } : { projectPath: '/opt/fk-check', composeContent }) };
-        const response = await POST({ json: async () => input });
+        const input = { type, serverId, safeModeOff: true, ...(type === 'image' ? { image: 'nginx', name: 'fk-check' } : { projectPath: '/opt/fk-check', composeContent, composeRevision: 'b'.repeat(64) }) };
+        const response = await POST({ json: async () => input, cookies: { get: () => ({ value: 'signed-fixture' }) } });
         const body = await response.json();
         assert(body.data?.id, `${serverId}/${type}/${expected}: ${response.status} ${JSON.stringify(body)}`);
         assert.equal(response.status, expected === 'FAILED' ? 500 : 201);
@@ -64,7 +65,7 @@ async function main() {
         assert.equal(stored.logs, body.data.logs);
         assert.equal(stored.serverId, serverId === 'local' ? null : serverId);
         assert.equal(stored.server?.id ?? null, serverId === 'local' ? null : serverId);
-        assert(commands.some(command => command.includes(type === 'image' ? 'docker pull ' : 'mkdir ')), 'deployment must reach executor');
+        assert(commands.some(command => command.includes(type === 'image' ? 'native-image-create' : 'native-compose-create')), 'deployment must reach executor');
         if (serverId === 'local') {
           assert.equal(await prisma.server.count(), 0, 'no synthetic local Server');
           assert.equal(await prisma.app.count(), 0, 'local Docker discovery owns App identity');
@@ -76,20 +77,28 @@ async function main() {
     assert.equal(await prisma.deploymentLog.count(), cases.length);
     assert.equal(await prisma.deploymentLog.count({ where: { status: 'BUILDING' } }), 0);
     const apps = await prisma.app.findMany({ include: { server: true } });
-    assert.equal(apps.length, 2, 'remote successful/unverified images remain DB-tracked');
+    assert.equal(apps.length, 0, 'native services own persistence; mocked service creates no App rows');
     assert(apps.every(app => app.serverId === 'remote-fk' && app.server.id === 'remote-fk' && app.containerId === shortId));
     console.log(`PASS ${cases.length} real route/Prisma terminal records: ${cases.join(', ')}`);
 
     // Read the actual Apps API: local is canonical local::<Docker ID>, not a DB App.
     assert(localContainers);
+    const inventory = load('src/lib/apps-inventory.ts');
     const { GET } = load('src/app/api/apps/route.ts', {
       ...mocks,
       '@/lib/app-access': {}, '@/lib/crypto': {},
+      '@/lib/apps-inventory': inventory,
+      // ponytail: no adopted settings here; real encrypted projection has check-conf3-projection.cjs.
+      '@/lib/app-configuration-projection': { projectAppConfiguration: async apps => apps },
       '@/lib/local-server': { execLocal: command => {
-        if (command.startsWith('docker ps -a --format')) return `${shortId}\tfk-check\tnginx\trunning\t`;
-        if (command.startsWith('docker inspect --format')) return '';
-        throw new Error(`Unexpected discovery command: ${command}`);
-      }, tryExecOnHost: () => '' },
+        assert.equal(command, command.startsWith('docker inspect')
+          ? `docker inspect --format '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}{{"\\n"}}{{end}}' ${id}`
+          : inventory.DOCKER_INVENTORY_COMMAND);
+        return command.startsWith('docker inspect') ? '' : `${id}\tfk-check\tnginx\trunning`;
+      }, execOnHost: command => {
+        assert.equal(command, inventory.SERVICE_INVENTORY_COMMAND);
+        return '';
+      } },
     });
     const response = await GET({ nextUrl: new URL('http://localhost/api/apps') });
     assert.equal(response.status, 200);
@@ -97,8 +106,8 @@ async function main() {
     assert.equal(body.success, true);
     const local = body.data.filter(app => app.serverId === 'local');
     assert.equal(local.length, 1);
-    assert.equal(local[0].id, `local::${shortId}`);
-    assert.equal(local[0].containerId, shortId);
+    assert.equal(local[0].id, `local::${id}`);
+    assert.equal(local[0].containerId, id);
     assert.equal(local[0].status, 'RUNNING');
     assert.equal(body.data.filter(app => app.serverId === 'remote-fk').length, apps.length);
     assert.equal(await prisma.server.count(), 1);

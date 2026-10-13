@@ -2,11 +2,11 @@ import { getSession } from "@/lib/auth";
 import { canAccessServer } from "@/lib/server-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { connectToServer } from "@/lib/server-ssh";
+import { closeSSH } from "@/lib/ssh";
 import { execOnHost, canAccessHost } from "@/lib/local-server";
 import { validatePath } from "@/lib/validation";
 import { safeErrorMessage } from "@/lib/safe-error";
-import SSH2Promise from "ssh2-promise";
 import { readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -154,31 +154,17 @@ async function listLocalDirectory(dirPath: string): Promise<FileEntry[]> {
  * List a directory on a remote server via SSH.
  */
 async function listRemoteDirectory(
-  server: { host: string; port: number; username: string; encryptedPass?: string | null; encryptedKey?: string | null },
+  server: { id: string },
   dirPath: string
 ): Promise<FileEntry[]> {
-  const sshConfig: Record<string, unknown> = {
-    host: server.host,
-    port: server.port,
-    username: server.username,
-    readyTimeout: 10000,
-  };
-
-  if (server.encryptedKey) {
-    sshConfig.privateKey = decrypt(server.encryptedKey);
-  } else if (server.encryptedPass) {
-    sshConfig.password = decrypt(server.encryptedPass);
-  }
-
-  const ssh = new SSH2Promise(sshConfig);
+  const { ssh } = await connectToServer(server.id);
   try {
-    await ssh.connect();
     const result = await ssh.exec(
       `ls -la --time-style=long-iso "${dirPath}" 2>/dev/null || ls -la "${dirPath}" 2>/dev/null`
     );
     return parseLsOutput(result, dirPath);
   } finally {
-    ssh.close();
+    await closeSSH(ssh);
   }
 }
 

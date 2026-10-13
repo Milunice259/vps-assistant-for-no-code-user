@@ -18,7 +18,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build && node scripts/monitoring-worker.cjs --build
 
 # ─── Stage 3: Production-only Dependencies ───
 # Derived FROM deps (no second npm ci = no double network download)
@@ -52,6 +52,10 @@ COPY --from=builder /app/.next/static ./.next/static
 
 # 4. Copy Prisma schema for entrypoint (prisma db push)
 COPY --from=builder /app/prisma ./prisma
+
+# Independent monitoring runtime (no TypeScript compiler in production).
+COPY --from=builder /app/scripts/monitoring-worker.cjs ./scripts/monitoring-worker.cjs
+COPY --from=builder /app/scripts/monitoring-runtime ./scripts/monitoring-runtime
 
 # Copy entrypoint
 COPY docker-entrypoint.sh ./

@@ -41,6 +41,7 @@ export async function connectToServer(serverId: string): Promise<ServerSSHResult
     : undefined;
 
   const config: SSHConnectionConfig = {
+    serverId: server.id,
     host: server.host,
     port: server.port,
     username: server.username,

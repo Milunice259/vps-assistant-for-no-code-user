@@ -10,7 +10,10 @@ let session, allowed, calls, rows, localAllowed;
 const reply = (body, options = {}) => ({ status: options.status || 200, body, headers: new Headers(options.headers) });
 const touched = (name, result) => (...args) => { calls.push([name, ...args]); return typeof result === 'function' ? result(...args) : result; };
 const mocks = {
-  'next/server': { NextResponse: { json: reply } },
+  ...require('./check-guided-deploy.cjs').serviceMocks((body) => calls.push(['native-input', body])),
+  '@/lib/git-deployment': {}, '@/lib/ssh/deploy': {},
+  'next/server': { NextRequest: class { constructor(url, options) { this.url = url; this.headers = options.headers; this.body = JSON.parse(options.body); } async json() { return this.body; } }, NextResponse: class { static json(body, options = {}) { return Object.assign(new this(), reply(body, options)); } } },
+  '@/lib/deployment-lifecycle': {}, '@/lib/container-recreate': {},
   '@/lib/auth': { getSession: async () => session },
   '@/lib/permissions': { can: (role, minimum) => (minimum === 'ADMIN' ? ['OWNER', 'ADMIN'] : ['OWNER', 'ADMIN', 'MANAGER', 'OPERATOR']).includes(role) },
   '@/lib/server-access': {
@@ -27,7 +30,7 @@ const mocks = {
     },
     app: { create: touched('write') }, auditLog: { create: async () => {} },
   } },
-  '@/lib/operation-safety': { requireSafeModeOff: (action, body) => { calls.push(['safety', action]); return body.safeModeOff === true ? null : reply({ success: false }, { status: 423 }); } },
+  '@/lib/operation-safety': { ADVANCED_COOKIE: 'advanced', verifyAdvancedToken: async () => true, requireSafeModeOff: (action, body) => { calls.push(['safety', action]); return body.safeModeOff === true ? null : reply({ success: false }, { status: 423 }); } },
   '@/lib/deployer': { prepareDeployment: touched('analyze', () => ({ projectDir: '/mock', detectedStack: 'node', port: 3000 })), cleanupDeployDir: touched('cleanup'), pruneOldDeployments: touched('prune') },
   '@/lib/crypto': { encrypt: x => x, decrypt: x => x },
   '@/lib/server-ssh': { connectToServer: touched('ssh', () => ({ ssh: {}, server: { name: 'Remote A' } })), isDisconnectedError: () => false },
@@ -50,10 +53,10 @@ function loadSource(file) {
 function load(file) {
   const code = ts.transpileModule(fs.readFileSync(path.join(deployDir, file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
-  vm.runInNewContext(code, { module, exports: module.exports, require: name => name in mocks ? mocks[name] : name === '@/app/api/deploy/route' ? load('route.ts') : require(name), Headers, Buffer, console, Error }, { filename: file });
+  vm.runInNewContext(code, { module, exports: module.exports, require: name => name in mocks ? mocks[name] : name === '@/app/api/deploy/route' ? load('route.ts') : name === '../[id]/route' ? load('[id]/route.ts') : require(name), Headers, Buffer, console, Error }, { filename: file });
   return module.exports;
 }
-const request = body => ({ json: async () => body });
+const request = body => ({ json: async () => JSON.parse(JSON.stringify(body)), cookies: { get: () => ({ value: 'signed-fixture' }) } });
 function reset() { session = { sub: 'alice', username: 'alice', role: 'MANAGER' }; allowed = false; localAllowed = undefined; calls = []; rows = []; }
 function untouched() { assert.deepEqual(calls.filter(([name]) => !['access', 'safety'].includes(name)), [], 'denial must precede DB target lookup, command, SSH, writes and pruning'); }
 async function securityRegressions() {
@@ -81,26 +84,27 @@ async function securityRegressions() {
         reset(); allowed = true;
         const doc = { services: { app: { image: 'nginx', volumes: [vol] } } };
         assert.equal(validator(yaml.load(yaml.dump(doc))).valid, false, JSON.stringify(vol));
-        const res = await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: yaml.dump(doc), safeModeOff: true }));
+        const res = await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent: yaml.dump(doc), safeModeOff: true }));
         assert.equal(res.status, 400); untouched();
       }
     }
     for (const doc of [{ services: [] }, { services: {} }, { services: { app: [] } }, { services: { app: { ports: {} } } }, { services: { app: { volumes: {} } } }, { services: { app: { image: {} } } }, { services: { app: { ports: [{}] } } }]) {
       reset(); allowed = true;
       assert.equal(validator(yaml.load(yaml.dump(doc))).valid, false, JSON.stringify(doc));
-      assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: yaml.dump(doc), safeModeOff: true }))).status, 400); untouched();
+      assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent: yaml.dump(doc), safeModeOff: true }))).status, 400); untouched();
     }
     for (const extra of [{ composeContent: {} }, { composeContent: 'services: [' }, { projectPath: [] }, { projectName: {} }, { projectName: 'bad name' }]) {
       reset(); allowed = true;
-      assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: 'services: {app: {image: nginx}}', safeModeOff: true, ...extra }))).status, 400); untouched();
+      assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent: 'services: {app: {image: nginx}}', safeModeOff: true, ...extra }))).status, 400); untouched();
     }
     const bindCompose = 'services: {app: {image: nginx, volumes: [{type: bind, source: /opt/data, target: /data}]}}';
     reset(); allowed = true;
-    assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: bindCompose, safeModeOff: true }))).status, 400); untouched();
+    assert.equal((await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent: bindCompose, safeModeOff: true }))).status, 500);
+    assert(!calls.some(([name, ...args]) => name === 'command' && args.includes('native-compose-create')), 'unconsented bind cannot reach native mutation');
     const safeCompose = 'services: {web: {image: nginx}}';
     assert.equal(validator(yaml.load(safeCompose)).valid, true);
     reset(); allowed = true;
-    const response = await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeContent: safeCompose, safeModeOff: true }));
+    const response = await docker().POST(request({ serverId: 'remote-a', type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent: safeCompose, safeModeOff: true }));
     assert.equal(response.status, 201, 'real YAML import must allow a valid Compose deployment');
     assert(calls.some(([name]) => name === 'ssh'));
     assert(calls.some(([name, _ssh, command]) => name === 'command' && command.includes('compose')));
@@ -118,18 +122,15 @@ async function securityRegressions() {
       const value = 'x -v /:/host --privileged';
       const res = await docker().POST(request({ ...validImage, env: { TOKEN: value, QUOTE: "it's > ./host" } }));
       assert.equal(res.status, 201);
-      const command = calls.find(([name, _ssh, cmd]) => name === 'command' && typeof cmd === 'string' && cmd.includes('docker run -d'))[2];
-      // Parse only: never execute the captured Docker command.
-      const parsed = require('node:child_process').spawnSync('python3', ['-c', 'import json,shlex,sys; print(json.dumps(shlex.split(sys.argv[1])))', command], { encoding: 'utf8' });
-      assert.equal(parsed.status, 0);
-      const argv = JSON.parse(parsed.stdout);
-      assert(argv.includes(`TOKEN=${value}`)); assert(argv.includes("QUOTE=it's > ./host"));
-      assert(!argv.includes('-v')); assert(!argv.includes('--privileged'));
+      const received = calls.find(([name]) => name === 'native-input')[1];
+      assert.equal(received.env.TOKEN, value); assert.equal(received.env.QUOTE, "it's > ./host");
+      // Native Engine receives the environment object, not shell flags.
+      assert.equal(Object.keys(received.env).length, 2);
       for (const [name, args] of calls) if (name === 'write') assert(!JSON.stringify(args).includes(value), 'env secret leaked to persisted logs');
       assert(!JSON.stringify(res.body).includes(value));
       reset(); allowed = true;
       mocks['@/lib/ssh'].executeCommand = async (...args) => {
-        if (args[1].includes('docker run -d')) throw new Error(`Failed command: ${args[1]}`);
+        if (args[1].includes('native-image-create')) throw new Error(`Failed command: ${args[1]}`);
         return runner(...args);
       };
       const failed = await docker().POST(request({ ...validImage, env: { TOKEN: value } }));
@@ -151,16 +152,16 @@ async function securityRegressions() {
       executor[method] = async (...args) => {
         calls.push(['command', ...args]);
         const command = serverId === 'local' ? args[0] : args[1];
-        if (command.includes('base64 -d') && command.includes('docker-compose.yml')) {
+        if (command.includes('native-compose-create')) {
           uploadCommand = command;
           throw new Error(`Failed command: ${command}`);
         }
         return require('./check-guided-deploy.cjs').output(command);
       };
       try {
-        const res = await docker().POST(request({ serverId, type: 'compose', projectPath: '/opt/app', composeContent, safeModeOff: true }));
+        const res = await docker().POST(request({ serverId, type: 'compose', projectPath: '/opt/app', composeRevision: 'b'.repeat(64), composeContent, safeModeOff: true }));
         assert.equal(res.status, 500);
-        assert(uploadCommand?.includes(encoded), 'real upload command must contain encoded fixture');
+        assert(uploadCommand, 'canonical service invocation must fail');
         const writes = calls.filter(([name]) => name === 'write').map(([, args]) => args.data);
         assert(writes.some(data => data.status === 'FAILED'), 'failure must be persisted');
         for (const [label, output] of [['response', res.body], ['persisted logs', writes]]) {
@@ -298,7 +299,7 @@ async function main() {
   assert.equal((await load('route.ts').POST(request({ serverId: 'local', repoUrl: 'https://github.com/example/repo' }))).status, 201);
   assert(calls.some(([name]) => name === 'analyze')); assert(!calls.some(([name]) => ['ssh', 'server', 'safety'].includes(name)));
   reset(); allowed = true;
-  assert.equal((await load('docker/route.ts').POST(request({ serverId: 'local', type: 'image', safeModeOff: true }))).status, 400);
+  assert.equal((await load('docker/route.ts').POST(request({ serverId: 'local', type: 'image', safeModeOff: true }))).status, 400); untouched();
   assert(!calls.some(([name]) => name === 'ssh'));
   reset(); session = null;
   assert.equal((await load('route.ts').GET()).status, 401); untouched();

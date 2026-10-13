@@ -12,6 +12,10 @@ interface AppLogViewerProps {
 }
 
 export function AppLogViewer({ appId, appName, onClose }: AppLogViewerProps) {
+  return <TargetAppLogViewer key={appId} appId={appId} appName={appName} onClose={onClose} />;
+}
+
+function TargetAppLogViewer({ appId, appName, onClose }: AppLogViewerProps) {
   const [lines, setLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -31,6 +33,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function BackupPage() {
+  const { formatDate } = useTranslation();
   const { safeMode } = useSafeMode();
   const busy = useRef(false);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
@@ -170,7 +173,7 @@ export default function BackupPage() {
                     <Badge variant="info">{formatSize(b.size)}</Badge>
                   </td>
                   <td className="px-4 py-3 text-gray-400">
-                    {new Date(b.created).toLocaleString()}
+                    {formatDate(b.created)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end">

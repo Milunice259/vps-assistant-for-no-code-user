@@ -3,7 +3,8 @@
  */
 
 import type SSH2Promise from "ssh2-promise";
-import { executeCommandSafe } from "./connection";
+import { executeCommandSafe, executeCommand } from "./connection";
+import { parseHostPorts } from "@/lib/host-ports";
 
 // ─── Docker Networks (for topology) ───
 
@@ -87,31 +88,5 @@ export async function getRemoteDockerNetworks(
  * Fetch host-level open ports from a remote server using ss.
  */
 export async function getRemoteHostPorts(ssh: SSH2Promise) {
-  const raw = await executeCommandSafe(ssh, "ss -tulnp 2>/dev/null | tail -n +2");
-  if (!raw) return [];
-
-  return raw
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.trim().split(/\s+/);
-      const protocol = parts[0] || "";
-      const localAddr = parts[4] || "";
-      const process = parts[6] || "";
-
-      const lastColon = localAddr.lastIndexOf(":");
-      const address = localAddr.substring(0, lastColon);
-      const port = parseInt(localAddr.substring(lastColon + 1), 10);
-
-      const processMatch = process.match(/\(\("([^"]+)"/);
-      const processName = processMatch ? processMatch[1] : "";
-
-      return {
-        protocol,
-        localAddress: address,
-        localPort: isNaN(port) ? 0 : port,
-        process: processName,
-        state: "LISTEN",
-      };
-    });
+  return parseHostPorts(await executeCommand(ssh, "ss -H -tulnp", 10_000));
 }

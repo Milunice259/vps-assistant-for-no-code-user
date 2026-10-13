@@ -15,7 +15,10 @@ function formatBytes(bytes: number): string {
 }
 
 export function DiskUsage({ total, used, available }: DiskUsageProps) {
-  const percentage = total > 0 ? (used / total) * 100 : 0;
+  if (![total, used, available].every(Number.isFinite) || total <= 0 || used < 0 || available < 0) {
+    return <div className="space-y-2 text-sm"><span className="font-medium text-gray-300">Disk</span><p className="text-gray-400">Unavailable — host filesystem could not be read.</p></div>;
+  }
+  const percentage = (used / total) * 100;
   const clamped = Math.min(100, Math.max(0, percentage));
 
   return (

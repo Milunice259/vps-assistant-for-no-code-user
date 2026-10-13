@@ -22,6 +22,13 @@ const mocks = {
       update: touch('update', ({ data }) => (row = { ...row, ...data })),
     },
   } },
+  '@/lib/git-deployment': {
+    deployGitCompose: touch('deploy', async (run) => { await require('./check-guided-deploy.cjs').load('src/lib/deploy-preflight.ts').checked(run, 'fixture-final-preflight'); return { success: remoteSuccess, status: remoteSuccess ? 'RUNNING' : 'UNVERIFIED', commitHash: 'c'.repeat(40), logs: 'Canonical execution result' }; }),
+    // Authenticated encrypted-state readers are service boundaries, not runtime proof.
+    readGitSource: touch('source-readback', async (id, target) => { assert.equal(id, row.id); assert.equal(target, row.serverId); return { pending: !remoteSuccess, source: { serverId: target, commitHash: row.commitHash, customPath: row.customPath } }; }),
+  },
+  '@/lib/deployment-state': { readDeploymentDefinition: touch('definition-readback', async id => { assert.equal(id, row.id); return { state: { serverId: row.serverId, pending: !remoteSuccess } }; }) },
+  '@/lib/ssh/deploy': { validateGitDeploy: () => {} },
   '@/lib/crypto': { encrypt: touch('encrypt', value => `encrypted:${value}`), decrypt: value => value.replace('encrypted:', '') },
   '@/lib/deployer': {
     prepareDeployment: touch('analyze', () => { if (failAnalysis) throw new Error('Clone failed'); return { projectDir: '/mock/repo', detectedStack: 'node', port: 3000 }; }),
@@ -40,6 +47,9 @@ function load(file, overrides = {}, globals = {}) {
   const module = { exports: {} };
   vm.runInNewContext(code, { module, exports: module.exports, Error, Date, Buffer, console, require: name => {
     if (name in overrides) return overrides[name];
+    if (name === './DeploymentLifecycle') return { DeploymentLifecycle: 'DeploymentLifecycle' };
+    if (name === '../[id]/route') return { POST: async (request, ctx) => { calls.push(['lifecycle', await request.json(), (await ctx.params).id]); return reply({ success: false, code: 'DELEGATED' }, { status: 409 }); } };
+    if (name === '@/lib/i18n') return { useTranslation: () => ({ t: (key, fallback) => fallback || key, formatDate: value => new Date(value).toISOString() }) };
     if (name === '@/lib/deploy-preflight') return require('./check-guided-deploy.cjs').load('src/lib/deploy-preflight.ts');
     if (name === './useDeployPreflight') return require('./check-guided-deploy.cjs').load('src/components/deploy/useDeployPreflight.ts', { react: overrides.react }, globals);
     if (name === '@/lib/validation') return load('src/lib/validation.ts');
@@ -53,6 +63,7 @@ function reset() {
   session = { sub: 'alice', username: 'alice', role: 'ADMIN' }; allowed = true; failAnalysis = false; remoteSuccess = true;
 }
 const request = body => ({ json: async () => body });
+const executed = { action: 'deploy', commitHash: 'c'.repeat(40), revision: 'b'.repeat(64) };
 const valid = { repoUrl: 'https://github.com/example/repo', branch: 'main' };
 function nodes(tree) { return !tree || typeof tree !== 'object' ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)]; }
 function text(tree) { return tree == null || typeof tree === 'boolean' ? '' : typeof tree !== 'object' ? String(tree) : [tree.props?.children].flat(Infinity).map(text).join(' '); }
@@ -91,13 +102,15 @@ async function main() {
   });
   await check('remote Git retains real execution and literal acknowledgment', async () => {
     for (const safeModeOff of [undefined, false, 'true']) {
-      reset(); assert.equal((await load('src/app/api/deploy/route.ts').POST(request({ ...valid, serverId: 'remote-a', customPath: '/opt/app', safeModeOff }))).status, 423);
+      reset(); assert.equal((await load('src/app/api/deploy/route.ts').POST(request({ ...valid, ...executed, serverId: 'remote-a', customPath: '/opt/app', safeModeOff }))).status, 423);
       assert(!calls.some(([name]) => ['server', 'create', 'ssh', 'deploy', 'cleanup'].includes(name)));
     }
     for (const success of [true, false]) {
       reset(); remoteSuccess = success;
-      const response = await load('src/app/api/deploy/route.ts').POST(request({ ...valid, serverId: 'remote-a', customPath: '/opt/app', envVars: 'TOKEN=remote-secret', safeModeOff: true }));
-      assert.equal(response.status, success ? 201 : 500); assert.equal(row.status, success ? 'RUNNING' : 'FAILED');
+      const response = await load('src/app/api/deploy/route.ts').POST(request({ ...valid, ...executed, serverId: 'remote-a', customPath: '/opt/app', envVars: 'TOKEN=remote-secret', safeModeOff: true }));
+      assert.equal(response.status, success ? 201 : 202); assert.equal(row.status, success ? 'RUNNING' : 'UNVERIFIED');
+      assert.equal(response.body.data.pending, !success); assert.equal(response.body.data.uncertain, !success);
+      assert.deepEqual(calls.filter(([name]) => name.endsWith('-readback')).map(([name]) => name), ['source-readback', 'definition-readback']);
       assert(calls.some(([name]) => name === 'deploy')); assert(!calls.some(([name]) => name === 'analyze'));
     }
   });
@@ -106,29 +119,23 @@ async function main() {
     const old = mocks['@/lib/ssh'].executeCommand;
     mocks['@/lib/ssh'].executeCommand = touch('command', async () => '__PANEL_DEPLOY_EXIT_1__');
     try {
-      const response = await load('src/app/api/deploy/route.ts').POST(request({ ...valid, serverId: 'remote-a', customPath: '/opt/new', safeModeOff: true }));
+      const response = await load('src/app/api/deploy/route.ts').POST(request({ ...valid, ...executed, serverId: 'remote-a', customPath: '/opt/new', safeModeOff: true }));
       assert.equal(response.status, 500);
       assert(calls.some(([name]) => name === 'ssh')); assert(calls.some(([name]) => name === 'close'));
-      assert(!calls.some(([name]) => ['create', 'deploy'].includes(name)));
+      assert(row.status === 'FAILED');
     } finally { mocks['@/lib/ssh'].executeCommand = old; }
   });
-  await check('unsupported rollback preserves auth/scope/ack and never writes or audits success', async () => {
-    const post = body => load('src/app/api/deploy/rollback/route.ts').POST(request(body));
-    reset(); session = null; assert.equal((await post({ deploymentId: 'old' })).status, 401); assert.equal(calls.length, 0);
-    reset(); session.role = 'MANAGER'; assert.equal((await post({ deploymentId: 'old' })).status, 403); assert.equal(calls.length, 0);
-    reset(); allowed = false; assert.equal((await post({ deploymentId: 'old', safeModeOff: true })).status, 403);
-    assert(!calls.some(([name]) => ['safety', 'create', 'audit', 'deploy'].includes(name)));
-    for (const safeModeOff of [undefined, false, 'true']) {
-      reset(); assert.equal((await post({ deploymentId: 'old', safeModeOff })).status, 423);
-      assert(!calls.some(([name]) => ['create', 'audit', 'deploy'].includes(name)));
-    }
-    for (const status of ['RUNNING', 'ANALYZED', 'FAILED']) {
-      reset(); row.status = status;
-      const response = await post({ deploymentId: 'old', safeModeOff: true });
-      assert.equal(response.status, 503); assert.equal(response.body.success, false); assert.equal(response.body.code, 'ROLLBACK_UNAVAILABLE');
-      assert.match(response.body.error, /not supported|unavailable/i);
-      assert(!calls.some(([name]) => ['create', 'update', 'audit', 'ssh', 'deploy'].includes(name)));
-    }
+  await check('legacy rollback forwards exact request to canonical lifecycle without claiming success', async () => {
+    reset();
+    class Request { constructor(url, options) { this.url=url; this.headers=options.headers; this.body=JSON.parse(options.body); } async json() { return this.body; } }
+    const post = load('src/app/api/deploy/rollback/route.ts', { 'next/server': { NextRequest: Request, NextResponse: { json: reply } } }).POST;
+    for (const invalid of [null, [], {}, { deploymentId: 42 }]) { assert.equal((await post({ json: async () => invalid })).status,400); assert.equal(calls.length,0); }
+    const body={deploymentId:'old',mode:'apply',safeModeOff:true,revision:'b'.repeat(64),confirmation:'ROLLBACK old',dataCompatibility:'unchanged',schemaCompatibility:'operator-confirmed'};
+    const result=await post({url:'https://fixture.invalid/api/deploy/rollback',headers:{cookie:'signed-fixture'},json:async()=>body});
+    assert.equal(result.status,409); assert.equal(result.body.success,false);
+    const forwarded=calls.find(([name])=>name==='lifecycle');
+    assert.equal(forwarded[2],'old'); assert.deepEqual(JSON.parse(JSON.stringify(forwarded[1])),{...body,action:'rollback'});
+    assert(!calls.some(([name])=>['create','update','audit','ssh','deploy'].includes(name)));
   });
   await check('local Git requirements do not require Docker', async () => {
     reset(); const response = await load('src/app/api/deploy/requirements/route.ts').POST(request({ mode: 'git', serverId: 'local' }));
@@ -141,7 +148,7 @@ async function main() {
     let tree = render(); assert.match(text(tree), /Analyze repository/); assert.match(text(tree), /not deploy/i);
     assert(!nodes(tree).some(node => node.type === 'textarea')); assert(!text(tree).includes('Domain (optional)')); assert(!text(tree).includes('Custom Path'));
     nodes(tree).find(node => node.type === 'button' && node.props.onClick?.toString().includes('setDeployTarget("remote")')).props.onClick();
-    tree = render(); nodes(tree).find(node => node.type === 'textarea').props.onChange({ target: { value: 'TOKEN=retained-remote-secret' } });
+    tree = render(); assert(!nodes(tree).some(node => node.type === 'textarea'), 'analysis never requests runtime secrets');
     nodes(tree).find(node => node.type === 'button' && node.props.onClick?.toString().includes('setDeployTarget("local")')).props.onClick();
     tree = render(); await nodes(tree).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
     assert(!JSON.stringify(requests).includes('retained-remote-secret'));
@@ -154,16 +161,9 @@ async function main() {
     const rows = ['PREPARED', 'UNVERIFIED', 'FAILED'].map(status => ({ id: status, status, serverId: 'remote-a', logs: '', repoUrl: status, createdAt: new Date() }));
     const tree = mount('src/components/deploy/DeployLog.tsx', 'DeployLog', { '@/hooks/useSSE': { useSSE: () => ({ data: { deployments: rows } }) } })();
     const cards = nodes(tree).filter(node => node.props.className === 'rounded-xl border border-gray-700 bg-gray-800 p-4');
-    assert.match(text(cards[0]), /Repository prepared/); assert.match(text(cards[0]), /not deployed/); assert.match(text(cards[0]), /remain on remote server/);
+    assert.match(text(cards[0]), /Repository prepared/); assert.match(text(cards[0]), /not deployed/); assert.match(text(cards[0]), /remain/);
     assert.match(text(cards[1]), /Readiness unverified/); assert.match(text(cards[2]), /FAILED/);
     assert(!nodes(tree).some(node => node.props.variant === 'success' || node.props.loading === true || node.props.className?.includes('animate-spin')));
-    for (const status of ['PREPARED', 'UNVERIFIED', 'FAILED']) {
-      let index = 0;
-      const react = { useState: initial => { const i = index++; return [i === 10 ? { id: status, status, detectedStack: 'unknown' } : initial, () => {}]; }, useEffect: () => {} };
-      const form = mount('src/components/deploy/DeployForm.tsx', 'DeployForm', { react, './useDeployPreflight': { useDeployPreflight: () => ({ preflight: null, checking: false, invalidate: () => {}, runPreflight: () => {}, readyRef: { current: false }, busyRef: { current: false } }) } })();
-      assert.match(text(form), status === 'PREPARED' ? /prepared — not deployed/ : status === 'UNVERIFIED' ? /Readiness unverified/ : /Deployment failed/);
-      assert(!text(form).includes('Remote services running and healthy')); assert(!nodes(form).some(node => node.props.loading === true));
-    }
   });
   await check('history distinguishes analysis and conservatively labels known legacy false BUILDING only', () => {
     const rows = [

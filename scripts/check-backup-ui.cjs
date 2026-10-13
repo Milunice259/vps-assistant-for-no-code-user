@@ -61,6 +61,10 @@ function load(relative, mocks = {}) {
 }
 const { ConfirmDialog } = load('../src/components/ui/ConfirmDialog.tsx', { '@/components/ui/Button': { Button } });
 const Page = load('../src/app/(panel)/backup/page.tsx', {
+  '@/lib/i18n': load('../src/lib/i18n.tsx', {
+    '@/locales/en.json': require('../src/locales/en.json'),
+    '@/locales/vi.json': require('../src/locales/vi.json'),
+  }),
   'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) },
   '@/components/ui/Button': { Button },
   '@/components/ui/Badge': { Badge: ({ children }) => React.createElement('span', null, children) },

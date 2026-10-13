@@ -17,7 +17,7 @@ function load(file, dependencies = {}) {
   return module.exports;
 }
 const validation = load('src/lib/validation.ts');
-const input = { repoUrl: 'https://github.com/example/check.git', branch: 'main', customPath: '/opt/apps/check', serverId: 'remote-a', safeModeOff: true, envVars: 'TOKEN=REMOTE_TRUTH_SECRET' };
+const input = { action: 'deploy', commitHash: 'c'.repeat(40), revision: 'b'.repeat(64), repoUrl: 'https://github.com/example/check.git', branch: 'main', customPath: '/opt/apps/check', serverId: 'remote-a', safeModeOff: true, envVars: 'TOKEN=REMOTE_TRUTH_SECRET' };
 // Match executeCommand's stdout.trim(), including silent-success marker-only output.
 const marker = '\n__VPS_DEPLOY_OK__';
 const healthy = [{ Service: 'web', State: 'running', Health: 'healthy' }];
@@ -64,6 +64,13 @@ function fixture(kind) {
   const reply = (body, options = {}) => ({ body, status: options.status || 200 });
   const route = load('src/app/api/deploy/route.ts', {
     'next/server': { NextResponse: { json: reply } },
+    '@/lib/local-server': {}, '@/lib/ssh/deploy': { validateGitDeploy: () => {} },
+    // Legacy executor outcomes are mapped at the canonical service boundary; encrypted readers stay mocked.
+    '@/lib/git-deployment': {
+      deployGitCompose: async () => { const r = await helper.remoteDeployViaSSH({}, input.repoUrl, input.branch, input.customPath, input.envVars); return { ...r, success: r.status === 'RUNNING' }; },
+      readGitSource: async (id, target) => { assert.equal(id, row.id); assert.equal(target, input.serverId); return { pending: row.status !== 'RUNNING', source: { serverId: target, commitHash: row.commitHash, customPath: row.customPath } }; },
+    },
+    '@/lib/deployment-state': { readDeploymentDefinition: async id => { assert.equal(id, row.id); return { state: { serverId: input.serverId, pending: row.status !== 'RUNNING' } }; } },
     '@/lib/db': { prisma: { server: { findUnique: async () => ({ id: input.serverId }) }, deploymentLog: {
       create: async ({ data }) => (row = { ...data, id: 'fixture', commitHash: null, createdAt: new Date() }),
       update: async ({ data }) => (row = { ...row, ...data }),
@@ -101,15 +108,17 @@ async function main() {
       assert.equal(result.status, status, `${kind}: helper lifecycle`);
       assert.equal(result.success, success, `${kind}: helper execution`);
       assert.equal(throughRoute.row().status, status, `${kind}: persisted lifecycle`);
-      assert.equal(response.body.success, success);
-      assert.equal(response.status, success ? 201 : 500);
+      assert.equal(response.body.success, status === 'RUNNING');
+      assert.equal(response.body.data.pending, status !== 'RUNNING');
+      assert.equal(response.body.data.uncertain, status !== 'RUNNING');
+      assert.equal(response.status, status === 'RUNNING' ? 201 : 202);
       for (const secret of [input.envVars, 'REMOTE_TRUTH_SECRET', Buffer.from(input.envVars).toString('base64'), 'base64 -d']) {
         assert(!result.logs.includes(secret)); assert(!JSON.stringify(response).includes(secret));
       }
       if (['mkdir-failed', 'clone-failed', 'pull-failed', 'commit-invalid', 'env-failed', 'env-throws'].includes(kind)) assert(!direct.commands.some(cmd => cmd.includes('compose')));
       if (kind === 'no-compose') assert.match(result.logs, /not deployed/i);
       if (kind.startsWith('health-')) assert.match(result.logs, /health|readiness/i);
-      console.log(`PASS ${kind}: real helper + route => ${status}`);
+      console.log(`PASS ${kind}: legacy helper + canonical route boundary => ${status}`);
     } catch (error) { failed++; console.error(`FAIL ${kind}: ${error.message}`); }
   }
   for (const mode of ['auth', 'role', 'scope', 'ack']) {

@@ -1,5 +1,7 @@
 "use client";
 
+import { calendarDate, useTranslation } from "@/lib/i18n";
+
 import { useState, useEffect, useCallback } from "react";
 import { Shield, Filter, ChevronLeft, ChevronRight, Search, Download, ChevronDown } from "lucide-react";
 
@@ -57,6 +59,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export default function AuditPage() {
+  const { formatDate, timeZone } = useTranslation();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -91,16 +94,10 @@ export default function AuditPage() {
   const totalPages = Math.ceil(total / perPage) || 1;
 
   const filtered = entries.filter((e) => {
-    // Date range filter
-    if (dateFrom) {
-      const entryDate = new Date(e.createdAt);
-      const fromDate = new Date(dateFrom);
-      if (entryDate < fromDate) return false;
-    }
-    if (dateTo) {
-      const entryDate = new Date(e.createdAt);
-      const toDate = new Date(dateTo + "T23:59:59");
-      if (entryDate > toDate) return false;
+    // Date inputs are inclusive calendar days in the same zone as the table.
+    if (dateFrom || dateTo) {
+      const day = calendarDate(e.createdAt, timeZone);
+      if (!day || (dateFrom && day < dateFrom) || (dateTo && day > dateTo)) return false;
     }
     // Text search
     if (searchQuery.trim()) {
@@ -188,6 +185,7 @@ export default function AuditPage() {
         <div className="flex items-center gap-2">
           <input
             type="date"
+            aria-label={`From (${timeZone})`}
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
             className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white [color-scheme:dark]"
@@ -195,6 +193,7 @@ export default function AuditPage() {
           <span className="text-xs text-gray-500">to</span>
           <input
             type="date"
+            aria-label={`To (${timeZone})`}
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
             className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white [color-scheme:dark]"
@@ -244,7 +243,7 @@ export default function AuditPage() {
                     <ChevronDown className={`h-3.5 w-3.5 text-gray-600 transition-transform ${expandedId === e.id ? "rotate-180" : ""}`} />
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">
-                    {new Date(e.createdAt).toLocaleString()}
+                    {formatDate(e.createdAt)}
                   </td>
                   <td className="px-4 py-2">
                     <span className={`text-xs font-mono px-2 py-0.5 rounded ${ACTION_COLORS[e.action] || "text-gray-400 bg-gray-500/10"}`}>

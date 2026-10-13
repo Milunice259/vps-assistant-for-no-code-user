@@ -38,6 +38,8 @@ export type AuditAction =
   | "user_updated"
   | "user_deleted"
   | "security_settings_updated"
+  | "general_settings_updated"
+  | "app_configuration_updated"
   | "passcode_enabled"
   | "passcode_disabled"
   | "passcode_unlock"

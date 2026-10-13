@@ -7,12 +7,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNotification } from "@/lib/notifications";
 import { safeErrorMessage } from "@/lib/safe-error";
+import { getSession } from "@/lib/auth";
+import { adminRoles, normalizeRole } from "@/lib/server-access";
 
 export const dynamic = "force-dynamic";
+
+async function requireAdmin() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!adminRoles.has(normalizeRole(session.role))) return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+  return null;
+}
 
 // ── GET — List all channels + their alert rules ──
 export async function GET() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const channels = await prisma.notificationChannel.findMany({
       include: { alertRules: true },
       orderBy: { createdAt: "desc" },
@@ -33,6 +44,8 @@ export async function GET() {
 // ── POST — Create a channel or alert rule ──
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const body = await request.json();
     const { type: actionType } = body as { type: string };
 
@@ -119,6 +132,8 @@ export async function POST(request: NextRequest) {
 // ── PATCH — Toggle channel/rule or update rule settings ──
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const body = await request.json();
     const { id, type } = body as { id?: string; type?: "channel" | "alert" };
     if (!id || !type) {
@@ -153,6 +168,8 @@ export async function PATCH(request: NextRequest) {
 // ── DELETE — Remove a channel or alert rule ──
 export async function DELETE(request: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const itemType = searchParams.get("type") || "channel";

@@ -1,196 +1,164 @@
 import { authorizeApp } from "@/lib/app-access";
-import { NextRequest } from "next/server";
+import { verifySessionToken } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
+import { createLogRedactor, redactLogs } from "@/lib/log-redaction";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
-import { createSSHConnection, closeSSH } from "@/lib/ssh";
-import SSH2Promise from "ssh2-promise";
+import { connectToServer } from "@/lib/server-ssh";
+import { closeSSH, executeCommand } from "@/lib/ssh";
+import { isLocalServer } from "@/lib/local-server";
+import { spawn } from "node:child_process";
 
 export const dynamic = "force-dynamic";
-
 type RouteContext = { params: Promise<{ id: string }> };
-
-/** Maximum lines buffered before dropping oldest */
+type LogChannel = NodeJS.ReadableStream & { destroy?: () => void; stderr: NodeJS.ReadableStream };
+const MAX_BUFFER_BYTES = 256 * 1024;
 const MAX_BUFFER_LINES = 1000;
-/** Batch interval in milliseconds */
-const BATCH_INTERVAL_MS = 500;
 
-/**
- * GET /api/apps/[id]/logs/stream - Stream container logs via SSE.
- * Query: ?lines=200 (tail lines, default 200)
- *
- * Uses `docker logs -f --tail <N>` via SSH, streaming each line as an SSE event.
- * Includes backpressure: buffers up to MAX_BUFFER_LINES, drops oldest on overflow,
- * and batches output every BATCH_INTERVAL_MS.
- */
-export async function GET(
-  request: NextRequest,
-  context: RouteContext
-): Promise<Response> {
+export async function GET(request: NextRequest, context: RouteContext): Promise<Response> {
+  // Retain the login that opened this stream, not timer-time request cookies.
+  const token = request.cookies.get("vps-session")?.value;
+  const session = token ? await verifySessionToken(token) : null;
+  if (!token || !session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const denied = await authorizeApp(id, false);
   if (denied) return denied;
-  const url = new URL(request.url);
-  const tailLines = parseInt(url.searchParams.get("lines") || "200", 10);
 
-  const app = await prisma.app.findUnique({
-    where: { id },
-    include: { server: true },
-  });
+  const discovered = id.startsWith("discovered::") || id.startsWith("local::");
+  const parts = id.split("::");
+  const app = discovered ? null : await prisma.app.findUnique({ where: { id } });
+  const serverId = discovered ? (parts[0] === "local" ? "local" : parts[1]) : app?.serverId;
+  const containerRef = discovered ? parts[parts.length - 1] : app?.containerId || app?.containerName;
+  if (!serverId || !containerRef) return NextResponse.json({ success: false, error: "App or container not found" }, { status: 404 });
+  if (!/^[a-zA-Z0-9_.-]+$/.test(containerRef)) return NextResponse.json({ success: false, error: "Invalid container reference" }, { status: 400 });
+  const requested = Number(new URL(request.url).searchParams.get("lines") || 200);
+  const tail = Number.isFinite(requested) ? Math.min(5000, Math.max(10, Math.floor(requested))) : 200;
 
-  if (!app || !app.containerId) {
-    return new Response(
-      JSON.stringify({ success: false, error: "App or container not found" }),
-      { status: 404, headers: { "Content-Type": "application/json" } }
-    );
+  async function authorized() {
+    const current = await verifySessionToken(token!);
+    if (!current || current.sub !== session!.sub || !(await canAccessServer(current.sub, current.role, serverId!))) return false;
+    if (!discovered) {
+      const target = await prisma.app.findUnique({ where: { id }, select: { serverId: true, containerId: true, containerName: true } });
+      if (!target || target.serverId !== serverId || (target.containerId || target.containerName) !== containerRef) return false;
+    }
+    return true;
   }
+  if (!(await authorized())) return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
 
-  const server = app.server;
-  const password = server.encryptedPass ? decrypt(server.encryptedPass) : undefined;
-  const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
-
-  let ssh: SSH2Promise | null = null;
-
-  const stream = new ReadableStream({
-    async start(controller) {
+  let cleanup = () => {};
+  let drain: () => Promise<void> = async () => {};
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
       const encoder = new TextEncoder();
-
-      // ── Backpressure buffer ──
-      const lineBuffer: string[] = [];
-      let batchTimer: ReturnType<typeof setInterval> | null = null;
-
-      function flushBuffer() {
-        if (lineBuffer.length === 0) return;
-        const lines = lineBuffer.splice(0, lineBuffer.length);
-        for (const line of lines) {
-          try {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(line)}\n\n`));
-          } catch {
-            // Stream closed
-          }
-        }
+      const buffer: Uint8Array[] = [];
+      let bufferedBytes = 0;
+      let closed = false;
+      let ended = false;
+      let flushing: Promise<void> | null = null;
+      let ssh: Awaited<ReturnType<typeof connectToServer>>["ssh"] | null = null;
+      let stopSource = () => {};
+      const listeners: (() => void)[] = [];
+      function listen<T extends unknown[]>(source: NodeJS.EventEmitter, event: string, handler: (...args: T) => void) {
+        source.on(event, handler);
+        listeners.push(() => source.removeListener(event, handler));
       }
+      const timer = setInterval(() => { void flush(); }, 500);
+      timer.unref?.();
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(timer);
+        request.signal.removeEventListener("abort", cleanup);
+        for (const remove of listeners) remove();
+        stopSource();
+        if (ssh) { void closeSSH(ssh).catch(() => {}); ssh = null; }
+        buffer.length = 0;
+        bufferedBytes = 0;
+        try { controller.close(); } catch { /* Already cancelled. */ }
+      };
+      request.signal.addEventListener("abort", cleanup, { once: true });
+      if (request.signal.aborted) { cleanup(); return; }
 
       function addLine(line: string) {
-        lineBuffer.push(line);
-        // Drop oldest lines if buffer exceeds max
-        while (lineBuffer.length > MAX_BUFFER_LINES) {
-          lineBuffer.shift();
-        }
+        if (closed) return;
+        const payload = encoder.encode(`data: ${JSON.stringify(redactLogs(line))}\n\n`);
+        buffer.push(payload);
+        bufferedBytes += payload.byteLength;
+        while (buffer.length > MAX_BUFFER_LINES || bufferedBytes > MAX_BUFFER_BYTES) bufferedBytes -= buffer.shift()!.byteLength;
       }
-
-      function cleanup() {
-        if (batchTimer) {
-          clearInterval(batchTimer);
-          batchTimer = null;
-        }
+      const stdout = createLogRedactor(addLine);
+      const stderr = createLogRedactor(addLine);
+      async function flush() {
+        if (closed) return;
+        if (flushing) { await flushing; return flush(); }
+        flushing = deliver();
+        try { await flushing; } finally { flushing = null; }
       }
-
-      try {
-        ssh = await createSSHConnection({
-          host: server.host,
-          port: server.port,
-          username: server.username,
-          password,
-          privateKey,
-        });
-
-        const safeId = app.containerId!.replace(/[^a-zA-Z0-9_.-]/g, "");
-        const safeTail = Math.min(Math.max(tailLines, 10), 5000);
-
-        // Start batch flush timer
-        batchTimer = setInterval(flushBuffer, BATCH_INTERVAL_MS);
-
-        // Use SSH exec to run docker logs -f
-        const rawSSH = (ssh as unknown as { ssh: { connection: { exec: (cmd: string, cb: (err: Error | null, stream: NodeJS.ReadableStream & { stderr: NodeJS.ReadableStream }) => void) => void } } }).ssh;
-
-        if (rawSSH?.connection?.exec) {
-          rawSSH.connection.exec(
-            `docker logs -f --tail ${safeTail} ${safeId} 2>&1`,
-            (err: Error | null, execStream: NodeJS.ReadableStream & { stderr: NodeJS.ReadableStream }) => {
-              if (err) {
-                addLine(`[ERROR] ${err.message}`);
-                flushBuffer();
-                cleanup();
-                try { controller.close(); } catch { /* ok */ }
-                return;
-              }
-
-              execStream.on("data", (chunk: Buffer) => {
-                const text = chunk.toString("utf-8");
-                const lines = text.split("\n");
-                for (const line of lines) {
-                  if (line.trim()) {
-                    addLine(line);
-                  }
-                }
-              });
-
-              execStream.stderr.on("data", (chunk: Buffer) => {
-                const text = chunk.toString("utf-8");
-                const lines = text.split("\n");
-                for (const line of lines) {
-                  if (line.trim()) {
-                    addLine(line);
-                  }
-                }
-              });
-
-              execStream.on("close", () => {
-                flushBuffer();
-                cleanup();
-                try { controller.close(); } catch { /* ok */ }
-                if (ssh) closeSSH(ssh);
-              });
-
-              // Handle client disconnect
-              request.signal.addEventListener("abort", () => {
-                try {
-                  execStream.removeAllListeners();
-                  cleanup();
-                  if (ssh) closeSSH(ssh);
-                  controller.close();
-                } catch { /* ok */ }
-              });
-            }
-          );
-        } else {
-          // Fallback: use executeCommand for non-streaming
-          const { executeCommand } = await import("@/lib/ssh");
-          const output = await executeCommand(
-            ssh,
-            `docker logs --tail ${safeTail} ${safeId} 2>&1`,
-            30_000
-          );
-          for (const line of output.split("\n")) {
-            try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(line)}\n\n`));
-            } catch { /* ok */ }
-          }
-          cleanup();
-          controller.close();
-          await closeSSH(ssh);
-        }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Stream failed";
+      drain = () => buffer.length || ended ? flush() : Promise.resolve();
+      async function deliver() {
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(`[ERROR] ${msg}`)}\n\n`));
-        } catch { /* ok */ }
-        cleanup();
-        try { controller.close(); } catch { /* ok */ }
-        if (ssh) await closeSSH(ssh);
+          // Also check an idle stream. Fail closed on DB/auth verification errors.
+          if (!(await authorized())) { cleanup(); return; }
+          if (closed) return;
+          if (buffer.length && (controller.desiredSize || 0) > 0) {
+            const payload = new Uint8Array(bufferedBytes);
+            let offset = 0;
+            for (const line of buffer) { payload.set(line, offset); offset += line.byteLength; }
+            buffer.length = 0;
+            bufferedBytes = 0;
+            // One authorized emission containing the usual per-line SSE events.
+            controller.enqueue(payload);
+          }
+          if (ended && !buffer.length) cleanup();
+        } catch { cleanup(); }
       }
+      function finish(error?: Error) {
+        if (closed || ended) return;
+        stdout.end(); stderr.end();
+        if (error) addLine(`[ERROR] ${error.message}`);
+        ended = true;
+        void flush();
+      }
+      function follow(out: NodeJS.ReadableStream, err: NodeJS.ReadableStream, source: NodeJS.EventEmitter) {
+        listen(out, "data", (chunk: Buffer) => { if (!closed) stdout.write(chunk); });
+        listen(err, "data", (chunk: Buffer) => { if (!closed) stderr.write(chunk); });
+        listen(source, "close", () => finish());
+        listen(source, "error", (error: Error) => finish(error));
+      }
+      void (async () => {
+        try {
+          if (isLocalServer(serverId)) {
+            const child = spawn("docker", ["logs", "-f", "--tail", String(tail), containerRef], { stdio: ["ignore", "pipe", "pipe"] });
+            stopSource = () => { child.kill(); };
+            follow(child.stdout!, child.stderr!, child);
+          } else {
+            const connected = await connectToServer(serverId);
+            if (closed) { await closeSSH(connected.ssh); return; }
+            ssh = connected.ssh;
+            if (!(await authorized()) || closed) { cleanup(); return; }
+            const raw = (ssh as unknown as { ssh?: { connection?: { exec: (cmd: string, callback: (error: Error | null, channel: LogChannel) => void) => void } } }).ssh;
+            if (raw?.connection?.exec) {
+              raw.connection.exec(`docker logs -f --tail ${tail} ${containerRef} 2>&1`, (error, channel) => {
+                if (closed) { channel?.destroy?.(); return; }
+                if (error) { finish(error); return; }
+                stopSource = () => { channel.destroy?.(); };
+                follow(channel, channel.stderr, channel);
+              });
+            } else {
+              const output = await executeCommand(ssh, `docker logs --tail ${tail} ${containerRef} 2>&1`, 30_000);
+              if (!closed) { stdout.write(encoder.encode(output)); finish(); }
+            }
+          }
+        } catch (error) { finish(error instanceof Error ? error : new Error("Stream failed")); }
+      })();
     },
-
-    cancel() {
-      if (ssh) closeSSH(ssh);
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+    pull() { return drain(); },
+    cancel() { cleanup(); },
+  }, { highWaterMark: MAX_BUFFER_BYTES, size: chunk => chunk.byteLength });
+  return new Response(stream, { headers: {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "private, no-store, no-transform",
+    "Vary": "Cookie",
+    Connection: "keep-alive",
+  } });
 }

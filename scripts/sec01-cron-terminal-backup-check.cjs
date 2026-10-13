@@ -12,6 +12,8 @@ let access = true;
 let crontab = '\n# task\n* * * * * date\n';
 const response = { json: (body, options = {}) => ({ ...body, status: options.status || 200 }) };
 let safety;
+let validation;
+validation = load('src/lib/validation.ts');
 safety = load('src/lib/operation-safety.ts');
 for (const key of ['terminal_execute', 'cron_add', 'cron_delete', 'backup_restore', 'backup_delete']) assert.ok(safety.DANGEROUS_ACTIONS.has(key), `Missing safety registry key ${key}`);
 function load(file) {
@@ -32,7 +34,13 @@ function load(file) {
     },
     '@/lib/crypto': { decrypt: () => { throw Error('Unexpected credentials'); } },
     '@/lib/local-server': { isLocalServer: id => id === 'local', execOnHost: async command => { effects.push(command); return command.startsWith('crontab -l 2>') ? crontab : 'mock output'; } },
-    '@/lib/validation': { validateTerminalCommand: () => ({ valid: true }) },
+    '@/lib/validation': validation,
+    '@/lib/server-ssh': { connectToServer: async id => {
+      assert.equal(id, 'remote-fixture');
+      effects.push(['connect', id]);
+      return { ssh: { exec: async command => { effects.push(['remote-exec', command]); return command.startsWith('crontab -l 2>') ? crontab : 'mock output'; } } };
+    } },
+    '@/lib/ssh': { closeSSH: async () => { effects.push(['close']); } },
     '@/lib/audit': { auditLog: async () => {}, getClientIp: () => 'test-ip' },
     '@/lib/safe-error': { safeErrorMessage: (_, fallback) => fallback },
     'ssh2-promise': class { constructor() { throw Error('Unexpected SSH'); } },
@@ -47,16 +55,23 @@ function request(body = {}, query = '', ack = false) {
   return { json: async () => body, url: `http://test.invalid/api${query}`, headers: new Headers(ack ? { 'X-Safe-Mode-Off': 'true' } : {}) };
 }
 const context = { params: Promise.resolve({ id: 'local' }) };
+const remoteContext = { params: Promise.resolve({ id: 'remote-fixture' }) };
 async function blocked(route, method, req, status) {
-  const before = effects.length;
-  const result = await route[method](req, context);
-  assert.equal(result.status, status, `${method} expected ${status}, got ${JSON.stringify(result)}`);
-  assert.equal(effects.length, before, 'Rejected request reached executor/filesystem');
+  for (const target of [context, remoteContext]) {
+    const before = effects.length;
+    const result = await route[method](req, target);
+    assert.equal(result.status, status, `${method} expected ${status}, got ${JSON.stringify(result)}`);
+    assert.equal(effects.length, before, 'Rejected request reached connection/executor/filesystem');
+  }
 }
 (async () => {
   const cron = load('src/app/api/servers/[id]/cron/route.ts');
   const terminal = load('src/app/api/servers/[id]/terminal/route.ts');
   const backup = load('src/app/api/backup/route.ts');
+  for (const ack of [false, 'true']) {
+    await blocked(cron, 'POST', request({ schedule: '* * * * *', command: 'date', safeModeOff: ack }), 423);
+    await blocked(terminal, 'POST', request({ command: 'date', safeModeOff: ack }), 423);
+  }
   await blocked(cron, 'POST', request({ schedule: '* * * * *', command: 'date' }), 423);
   await blocked(cron, 'DELETE', request({}, '?line=3&safeModeOff=true'), 423);
   await blocked(terminal, 'POST', request({ command: 'date', safeModeOff: 'true' }), 423);
@@ -69,19 +84,43 @@ async function blocked(route, method, req, status) {
   for (const line of ['', 'NaN', '1x', '1.5', '-1', '0', '10000', 'Infinity']) await blocked(cron, 'DELETE', request({}, `?line=${line}`, true), 400);
   for (const command of [null, 1, {}, '', 'date\0']) await blocked(terminal, 'POST', request({ command, safeModeOff: true }), 400);
   session = null;
+  await blocked(cron, 'GET', request(), 401);
+  await blocked(cron, 'DELETE', request({}, '?line=3', true), 401);
   await blocked(cron, 'POST', request({ safeModeOff: true }), 401);
   await blocked(terminal, 'POST', request({ command: 'date', safeModeOff: true }), 401);
   session = { sub: 'test-user', role: 'ADMIN' };
   access = false;
+  await blocked(cron, 'GET', request(), 403);
+  await blocked(cron, 'POST', request({ schedule: '* * * * *', command: 'date', safeModeOff: true }), 403);
   await blocked(cron, 'DELETE', request({}, '?line=3', true), 403);
   await blocked(terminal, 'POST', request({ command: 'date', safeModeOff: true }), 403);
   access = true;
+  for (const command of ['date; whoami', 'not-allowlisted']) {
+    const before = effects.length;
+    const result = await terminal.POST(request({ command, safeModeOff: true }), remoteContext);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.exitCode, 1);
+    assert.match(result.data.output, /Blocked:/);
+    assert.equal(effects.length, before, 'Allowlist rejection must precede connection');
+  }
   assert.equal((await cron.GET(request(), context)).data[0].line, 3, 'Physical blank lines must count for deletion');
   assert.equal((await cron.POST(request({ schedule: '*/5 * * * *', command: "printf 'hello\\n'", description: 'Nightly task', safeModeOff: true }), context)).status, 200);
   assert.match(effects.at(-1), /printf '%s\\n'/, 'Do not let echo interpret backslash escapes as new cron entries');
   assert.equal((await cron.DELETE(request({}, '?line=3', true), context)).status, 200);
   assert.match(effects.at(-1), /sed '3d'/);
   assert.equal((await terminal.POST(request({ command: 'date', safeModeOff: true }), context)).status, 200);
+  for (const [route, method, req] of [
+    [cron, 'GET', request()],
+    [cron, 'POST', request({ schedule: '*/5 * * * *', command: 'date', safeModeOff: true })],
+    [cron, 'DELETE', request({}, '?line=3', true)],
+    [terminal, 'POST', request({ command: 'date', safeModeOff: true })],
+  ]) {
+    const before = effects.length;
+    const result = await route[method](req, remoteContext);
+    assert.equal(result.status, 200);
+    assert.deepEqual(effects.slice(before).map(effect => effect[0]), ['connect', 'remote-exec', 'close'], 'Authorized requests use and close the canonical safe connection boundary');
+    if (method === 'GET') assert.equal(result.data[0].line, 3);
+  }
   assert.equal((await backup.POST(request({ action: 'create' }))).status, 200, 'Creating a panel checkpoint remains available in Safe Mode');
   assert.ok(effects.some(effect => Array.isArray(effect) && effect[0] === 'snapshot'));
   await blocked(backup, 'DELETE', request({}, '?name=..%2Fbackup.db', true), 400);

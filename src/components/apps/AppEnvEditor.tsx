@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Plus,
   Trash2,
@@ -25,6 +25,51 @@ import {
 import { Button } from "@/components/ui/Button";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 import type { ApiResponse } from "@/types";
+
+function EnvRecovery({ appId, onReconciled }: { appId: string; onReconciled: () => Promise<unknown> }) {
+  const { safeMode } = useSafeMode();
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const [message, setMessage] = useState("");
+  const [baseline, setBaseline] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [preview, setPreview] = useState<{token:string;confirmation:string;canReconcile?:boolean;pending?:boolean;count?:number;keys?:string[];kind:"reconcile"|"baseline-import"} | null>(null);
+  useEffect(() => { setPreview(null); setMessage(""); setBaseline(""); setConfirmation(""); }, [appId]);
+  async function run(action: "inspect" | "baseline-preview" | "reconcile" | "baseline-import") {
+    if (inFlight.current || ((action === "reconcile" || action === "baseline-import") && safeMode)) return;
+    inFlight.current = true; setBusy(true); setMessage("");
+    try {
+      const res = await fetch(`/api/apps/${appId}/env/recovery`, action === "inspect" ? {} : {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,env:action.startsWith("baseline")?JSON.parse(baseline):undefined,token:preview?.token,confirmation,safeModeOff:!safeMode})});
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Recovery unavailable");
+      if (action === "inspect" || action === "baseline-preview") {
+        setConfirmation("");
+        setPreview({...json.data,kind:action === "inspect"?"reconcile":"baseline-import"});
+        setMessage(action === "inspect" ? json.data.pending ? json.data.canReconcile ? "Original configuration verified. Confirm its current running or stopped state to unlock saved profiles. No container will be changed." : "Recovery still needs operator attention. No container changes or automatic retries were made." : "No operation is pending." : `Original baseline preview: ${json.data.count} entries. Import changes saved recovery data only, not the container.`);
+      } else { setPreview(null); setBaseline(""); setMessage("Saved state reconciled. No container was changed."); await onReconciled(); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Recovery unavailable"); }
+    finally { inFlight.current = false; setBusy(false); }
+  }
+  return <details className="border border-gray-700 rounded-lg p-3">
+    <summary className="cursor-pointer text-sm">Environment recovery</summary>
+    <div className="space-y-3 mt-3">
+      <Button disabled={busy} onClick={() => run("inspect")}>Inspect pending operation</Button>
+      <label className="block text-sm">Authoritative original Docker Env array (JSON)
+        <textarea aria-label="Original environment baseline" value={baseline} onChange={e => {setBaseline(e.target.value);setPreview(null);}} className="block w-full bg-gray-900 border border-gray-700 rounded p-2" />
+      </label>
+      <p className="text-xs text-gray-400">Use a trusted original deployment or backup. Current overwritten runtime values are not an original baseline.</p>
+      <Button disabled={busy || !baseline} onClick={() => run("baseline-preview")}>Preview baseline import</Button>
+      {message && <p role="status" className="text-sm break-words">{message}</p>}
+      {preview && (preview.kind === "baseline-import" || preview.canReconcile) && <>
+        {preview.keys && <p className="text-xs break-words">Keys: {preview.keys.join(", ")}</p>}
+        <label className="block text-sm">Type {preview.confirmation}
+          <input aria-label="Recovery confirmation" value={confirmation} onChange={e => setConfirmation(e.target.value)} className="block w-full bg-gray-900 border border-gray-700 rounded p-2" />
+        </label>
+        <Button disabled={busy || safeMode || confirmation !== preview.confirmation} onClick={() => run(preview.kind)}>Confirm saved-state reconciliation</Button>
+      </>}
+    </div>
+  </details>;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -79,6 +124,20 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
 
   // Action state
   const [actionStep, setActionStep] = useState<ActionStep>("idle");
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const mutationBusy = actionStep === "working" || outcomeUnknown;
+  const mutationInFlight = useRef(false);
+  async function inspectUnknownOutcome() {
+    try {
+      const res = await fetch(`/api/apps/${appId}/env/recovery`);
+      const json = await res.json();
+      if (!res.ok || !json.success || json.data.pending) throw new Error("Operation still pending; use Environment recovery");
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      if (prompt(`Live container: ${json.data.containerId} (${json.data.running ? "running" : "stopped"}). Active profiles: ${json.data.activeProfileNames.join(", ") || "none"}. No mutation was retried. Type CHECKED to accept this inspected outcome.`) !== "CHECKED") return;
+      if (!(await fetchEnv())) throw new Error("Profile inspection unavailable");
+      setOutcomeUnknown(false);
+    } catch { setActionError("Read-only inspection did not resolve the outcome. Mutations remain locked."); }
+  }
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -94,6 +153,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         setRuntimeVars(json.data.runtimeVars || {});
         setProfiles(json.data.profiles || []);
         setActiveProfile(json.data.activeProfile || null);
+        return true;
       } else {
         setError(json.error || "Failed to load");
       }
@@ -124,9 +184,11 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
   // ── Profile CRUD ──
 
   const handleCreateProfile = async () => {
-    if (safeMode || actionStep === "working") return;
+    if (safeMode || mutationInFlight.current || mutationBusy) return;
     if (!newProfileName.trim()) return;
     if (!confirm(`Create profile "${newProfileName.trim()}" for ${appName}?\n\nCreates an empty saved override profile only. The running container will not change until you apply it.`)) return;
+    mutationInFlight.current = true;
+    setOutcomeUnknown(true);
     setActionStep("working");
     setActionMessage("Creating profile…");
     try {
@@ -136,25 +198,30 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         body: JSON.stringify({ name: newProfileName.trim(), vars: {}, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) {
-        setActionStep("error");
+      if (!res.ok || !json.success || !json.data) {
+        mutationInFlight.current = false;
+      setActionStep("error");
         setActionError(json.error);
         return;
       }
       setNewProfileName("");
       setShowCreateForm(false);
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      mutationInFlight.current = false;
+      setOutcomeUnknown(false);
       setActionStep("idle");
       await fetchEnv();
       // Open for editing immediately
       openProfileEditor(json.data);
     } catch {
+      mutationInFlight.current = false;
       setActionStep("error");
       setActionError("Failed to create profile");
     }
   };
 
   const handleSaveProfile = async (confirmed = false) => {
-    if (safeMode || actionStep === "working" || !editingProfile) return false;
+    if (safeMode || mutationInFlight.current || mutationBusy || !editingProfile) return false;
 
     // Validate
     const emptyKeys = editEntries.filter((e) => e.key.trim() === "");
@@ -169,8 +236,10 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
       return false;
     }
 
-    if (!confirmed && !confirm(`Save profile "${editingProfile.name}" for ${appName}?\n\nReplaces the saved overrides; omitted keys, including stored secrets, will be removed. Hidden values kept under the same key stay unchanged. The running container will not change until you apply the profile.`)) return false;
+    if (!confirmed && !confirm(`Save profile "${editingProfile.name}" for ${appName}?\n\nReplaces the saved overrides; omitted keys, including stored secrets, will be removed. Hidden values kept under the same key stay unchanged. ${profiles.some(p => p.id === editingProfile.id && p.isActive) ? "This profile is active: saving recreates the container immediately, causing downtime; writable-layer data may be lost." : "The running container will not change until you apply the profile."}`)) return false;
 
+    mutationInFlight.current = true;
+    setOutcomeUnknown(true);
     setActionStep("working");
     setActionMessage("Saving profile…");
     setActionError(null);
@@ -191,18 +260,24 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
       );
       const json = await res.json();
       if (!res.ok || !json.success || !json.data) {
-        setActionStep("error");
+        mutationInFlight.current = false;
+      setActionStep("error");
         setActionError(json.error || "Failed to save profile");
         return false;
       }
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return true; }
       setEditingProfile(json.data);
       setEditEntries(Object.entries(json.data.vars as Record<string, string>).map(([key, value]) => ({ key, value })));
       setEditDirty(false);
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      mutationInFlight.current = false;
+      setOutcomeUnknown(false);
       setActionStep("done");
       setActionMessage("Profile saved!");
       await fetchEnv();
       return true;
     } catch {
+      mutationInFlight.current = false;
       setActionStep("error");
       setActionError("Failed to save");
       return false;
@@ -210,8 +285,10 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
   };
 
   const handleDeleteProfile = async (profile: ProfileInfo) => {
-    if (safeMode || actionStep === "working") return;
+    if (safeMode || mutationInFlight.current || mutationBusy) return;
     if (!confirm(`Delete profile "${profile.name}" for ${appName}?\n\n${profile.isActive ? "This profile is active. The container will be recreated without its overrides, causing downtime; data in its writable layer may be lost." : "Removes the saved overrides. The running container will not change."}`)) return;
+    mutationInFlight.current = true;
+    setOutcomeUnknown(true);
     setActionStep("working");
     setActionMessage(
       profile.isActive
@@ -225,8 +302,9 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         { method: "DELETE", headers: { "X-Safe-Mode-Off": "true" } }
       );
       const json = await res.json();
-      if (!res.ok || !json.success) {
-        setActionStep("error");
+      if (!res.ok || !json.success || !json.data) {
+        mutationInFlight.current = false;
+      setActionStep("error");
         setActionError(json.error);
         return;
       }
@@ -234,6 +312,9 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         setEditingProfile(null);
         setEditEntries([]);
       }
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      mutationInFlight.current = false;
+      setOutcomeUnknown(false);
       setActionStep("done");
       setActionMessage(
         json.data?.reverted
@@ -243,16 +324,19 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
       await fetchEnv();
       setTimeout(() => setActionStep("idle"), 3000);
     } catch {
+      mutationInFlight.current = false;
       setActionStep("error");
       setActionError("Failed to delete");
     }
   };
 
   const handleApplyProfile = async (profileId: string, saveFirst = false) => {
-    if (safeMode || actionStep === "working") return;
+    if (safeMode || mutationInFlight.current || mutationBusy) return;
     const profile = profiles.find((item) => item.id === profileId);
     if (!profile || !confirm(`${saveFirst && editDirty ? "Save and apply" : "Apply"} profile "${profile.name}" to ${appName}?\n\n${saveFirst && editDirty ? "Replaces the saved overrides; omitted keys, including stored secrets, will be removed. Hidden values kept under the same key stay unchanged. " : ""}Recreates the container with these overrides. The app will be briefly unavailable; data in its writable layer may be lost.`)) return;
     if (saveFirst && editDirty && !(await handleSaveProfile(true))) return;
+    mutationInFlight.current = true;
+    setOutcomeUnknown(true);
     setActionStep("working");
     setActionMessage("Applying profile… Recreating container with merged env.");
     setActionError(null);
@@ -263,11 +347,15 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         body: JSON.stringify({ profileId, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) {
-        setActionStep("error");
+      if (!res.ok || !json.success || !json.data) {
+        mutationInFlight.current = false;
+      setActionStep("error");
         setActionError(json.error);
         return;
       }
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      mutationInFlight.current = false;
+      setOutcomeUnknown(false);
       setActionStep("done");
       setActionMessage(
         `Profile "${json.data?.profileName}" applied! Container recreated with ${json.data?.mergedCount} env vars.`
@@ -275,14 +363,17 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
       await fetchEnv();
       setTimeout(() => setActionStep("idle"), 4000);
     } catch {
+      mutationInFlight.current = false;
       setActionStep("error");
       setActionError("Failed to apply profile");
     }
   };
 
   const handleDeactivate = async () => {
-    if (safeMode || actionStep === "working" || !activeProfile) return;
+    if (safeMode || mutationInFlight.current || mutationBusy || !activeProfile) return;
     if (!confirm(`Revert profile "${activeProfile.name}" on ${appName}?\n\nRecreates the container without this profile's overrides. The app will be briefly unavailable; data in its writable layer may be lost.`)) return;
+    mutationInFlight.current = true;
+    setOutcomeUnknown(true);
     setActionStep("working");
     setActionMessage("Deactivating profile… Reverting container to original env.");
     setActionError(null);
@@ -293,16 +384,21 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
         body: JSON.stringify({ profileId: null, safeModeOff: !safeMode }),
       });
       const json = await res.json();
-      if (!res.ok || !json.success) {
-        setActionStep("error");
+      if (!res.ok || !json.success || !json.data) {
+        mutationInFlight.current = false;
+      setActionStep("error");
         setActionError(json.error);
         return;
       }
+      if (json.data.newAppId && json.data.newAppId !== appId) { window.location.replace(`/apps/${json.data.newAppId.split("::").map(encodeURIComponent).join("::")}`); return; }
+      mutationInFlight.current = false;
+      setOutcomeUnknown(false);
       setActionStep("done");
       setActionMessage("Container reverted to original env.");
       await fetchEnv();
       setTimeout(() => setActionStep("idle"), 3000);
     } catch {
+      mutationInFlight.current = false;
       setActionStep("error");
       setActionError("Failed to deactivate");
     }
@@ -340,6 +436,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
   if (error) {
     return (
       <div className="text-center py-8 space-y-3">
+        <EnvRecovery key={appId} appId={appId} onReconciled={fetchEnv} />
         <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
           {error}
         </div>
@@ -356,6 +453,8 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
 
   return (
     <div className="space-y-5">
+      <EnvRecovery key={appId} appId={appId} onReconciled={fetchEnv} />
+      {outcomeUnknown && <Button onClick={inspectUnknownOutcome}>Inspect unknown outcome (read-only)</Button>}
       {/* Global action feedback bar */}
       {actionStep !== "idle" && (
         <div
@@ -508,7 +607,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
             {profiles.length === 0 && !showCreateForm ? (
               <div className="text-center py-6 space-y-3">
                 <div className="text-gray-500 text-sm">No profiles yet.</div>
-                <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(true)} disabled={safeMode || actionStep === "working"}>
+                <Button variant="ghost" size="sm" onClick={() => setShowCreateForm(true)} disabled={safeMode || mutationBusy}>
                   <Plus className="h-4 w-4 mr-1" /> Create first profile
                 </Button>
               </div>
@@ -550,7 +649,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                           <button
                             onClick={() => handleApplyProfile(profile.id)}
                             className="text-xs text-gray-500 hover:text-emerald-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
-                            disabled={safeMode || actionStep === "working"}
+                            disabled={safeMode || mutationBusy}
                           >
                             <Play className="h-3 w-3" /> Apply
                           </button>
@@ -558,7 +657,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                           <button
                             onClick={handleDeactivate}
                             className="text-xs text-gray-500 hover:text-amber-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors flex items-center gap-1"
-                            disabled={safeMode || actionStep === "working"}
+                            disabled={safeMode || mutationBusy}
                           >
                             <Power className="h-3 w-3" /> Revert
                           </button>
@@ -567,7 +666,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                           onClick={() => handleDeleteProfile(profile)}
                           aria-label={`Delete profile ${profile.name}`}
                           className="text-xs text-gray-500 hover:text-red-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors"
-                          disabled={safeMode || actionStep === "working"}
+                          disabled={safeMode || mutationBusy}
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -580,7 +679,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                 {!showCreateForm ? (
                   <button
                     onClick={() => setShowCreateForm(true)}
-                    disabled={safeMode || actionStep === "working"}
+                    disabled={safeMode || mutationBusy}
                     className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-400 py-1 transition-colors"
                   >
                     <Plus className="h-3.5 w-3.5" /> New profile
@@ -591,13 +690,13 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                       type="text"
                       placeholder="Profile name (e.g. Debug, Staging)"
                       value={newProfileName}
-                      disabled={safeMode || actionStep === "working"}
+                      disabled={safeMode || mutationBusy}
                       onChange={(e) => setNewProfileName(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleCreateProfile()}
                       className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-brand-500 focus:outline-none"
                       autoFocus
                     />
-                    <Button variant="primary" size="sm" onClick={handleCreateProfile} disabled={safeMode || actionStep === "working" || !newProfileName.trim()}>
+                    <Button variant="primary" size="sm" onClick={handleCreateProfile} disabled={safeMode || mutationBusy || !newProfileName.trim()}>
                       Create
                     </Button>
                     <button onClick={() => { setShowCreateForm(false); setNewProfileName(""); }} className="text-gray-500 hover:text-gray-300 p-1">
@@ -639,7 +738,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                 </p>
 
                 {/* Key-Value Editor */}
-                <fieldset disabled={safeMode || actionStep === "working"} className="space-y-3 disabled:opacity-60">
+                <fieldset disabled={safeMode || mutationBusy} className="space-y-3 disabled:opacity-60">
                 <div className="space-y-2">
                   {editEntries.map((entry, i) => (
                     <div key={i} className="flex gap-2 items-center group">
@@ -710,7 +809,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                     variant="ghost"
                     size="sm"
                     onClick={() => handleSaveProfile()}
-                    disabled={safeMode || !editDirty || actionStep === "working"}
+                    disabled={safeMode || !editDirty || mutationBusy}
                   >
                     <Save className="h-4 w-4 mr-1" /> Save
                   </Button>
@@ -719,7 +818,7 @@ export function AppEnvEditor({ appId, appName = appId }: { appId: string; appNam
                       variant="primary"
                       size="sm"
                       onClick={() => handleApplyProfile(editingProfile.id, true)}
-                      disabled={safeMode || actionStep === "working"}
+                      disabled={safeMode || mutationBusy}
                     >
                       <Play className="h-4 w-4 mr-1" /> Save & Apply
                     </Button>

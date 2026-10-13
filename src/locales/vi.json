@@ -57,5 +57,13 @@
   "onboarding.title": "Chào mừng! Hãy thiết lập nhé",
   "onboarding.step1": "Thêm máy chủ đầu tiên",
   "onboarding.step2": "Thiết lập thông báo",
-  "onboarding.step3": "Tạo thành viên nhóm"
+  "onboarding.step3": "Tạo thành viên nhóm",
+  "preferences.title": "Ngôn ngữ và múi giờ",
+  "preferences.description": "Áp dụng ngay và lưu trong trình duyệt này.",
+  "preferences.language": "Ngôn ngữ",
+  "preferences.timezone": "Múi giờ",
+  "preferences.preview": "Thời gian mẫu",
+  "preferences.coverage": "Thanh điều hướng và tùy chọn này đã được dịch. Các màn hình khác vẫn có thể chứa tiếng Anh hoặc tiếng Việt. Múi giờ chỉ đổi cách hiển thị, không đổi lịch trên máy chủ.",
+  "preferences.storageError": "Không thể lưu trong trình duyệt. Thay đổi có hiệu lực nhưng có thể mất khi tải lại.",
+  "nav.docs": "Trợ giúp"
 }

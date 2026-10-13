@@ -13,6 +13,8 @@
  */
 
 import os from "os";
+import { parseServiceInventory, serviceInventoryCommand } from "@/lib/service-inventory";
+import { parseHostPorts } from "@/lib/host-ports";
 import { execSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import type { ServerInfo } from "@/types";
@@ -204,52 +206,22 @@ export function getLocalContainers() {
 
 /**
  * Get local systemd services via nsenter (runs on the host).
- * Returns empty array when host access is unavailable (no throw).
+ * Availability is separate from host access and from a successfully empty inventory.
  */
-export function getLocalServices(): { services: Array<{ name: string; loadState: string; activeState: string; subState: string; unitFileState: string; description: string }>; hostAccess: boolean } {
+export function getLocalServices(): { services: Array<{ name: string; loadState: string; activeState: string; subState: string; unitFileState: string; description: string }>; hostAccess: boolean; available: boolean } {
   if (!canAccessHost()) {
-    return { services: [], hostAccess: false };
+    return { services: [], hostAccess: false, available: false };
   }
 
   try {
-    const raw = execOnHost(
-      "systemctl list-units --type=service --all --no-pager --plain --no-legend"
-    );
-    if (!raw) return { services: [], hostAccess: true };
-
-    const services = raw.split("\n").filter(Boolean).map((line) => {
-      const parts = line.trim().split(/\s+/);
-      const unitName = parts[0] || "";
-      const safeUnit = unitName.replace(/[^a-zA-Z0-9_.@-]/g, "");
-      let unitFileState = "unknown";
-
-      if (safeUnit) {
-        try {
-          unitFileState = execOnHost(
-            `systemctl show ${safeUnit} -p UnitFileState --value 2>/dev/null || true`,
-            5_000
-          ).trim() || "unknown";
-        } catch {
-          unitFileState = "unknown";
-        }
-      }
-
-      return {
-        name: unitName.replace(".service", ""),
-        loadState: parts[1] || "unknown",
-        activeState: parts[2] || "unknown",
-        subState: parts[3] || "unknown",
-        unitFileState,
-        description: parts.slice(4).join(" ") || "",
-      };
-    });
-    return { services, hostAccess: true };
+    const services = parseServiceInventory(execOnHost(serviceInventoryCommand));
+    return { services, hostAccess: true, available: true };
   } catch (err) {
     console.warn(
       "[local-server] Service discovery failed:",
       err instanceof Error ? err.message : err
     );
-    return { services: [], hostAccess: true };
+    return { services: [], hostAccess: true, available: false };
   }
 }
 
@@ -587,33 +559,7 @@ export function getLocalHostPorts(): Array<{
   protocol: string; localAddress: string; localPort: number;
   foreignAddress: string; foreignPort: number; state: string; process: string;
 }> {
-  try {
-    const raw = execLocal("ss -tlnp 2>/dev/null || echo ''", 10_000);
-    if (!raw.trim()) return [];
-
-    const lines = raw.trim().split("\n").filter(Boolean);
-    // Skip header line
-    return lines.slice(1).map((line) => {
-      const parts = line.split(/\s+/);
-      const state = parts[0] || "LISTEN";
-      const local = parts[3] || "";
-      const foreign = parts[4] || "";
-      const process = parts[5] || "";
-
-      // Parse local address:port
-      const lastColon = local.lastIndexOf(":");
-      const localAddress = local.slice(0, lastColon) || "*";
-      const localPort = parseInt(local.slice(lastColon + 1), 10) || 0;
-
-      const fLastColon = foreign.lastIndexOf(":");
-      const foreignAddress = foreign.slice(0, fLastColon) || "*";
-      const foreignPort = parseInt(foreign.slice(fLastColon + 1), 10) || 0;
-
-      return { protocol: "tcp", localAddress, localPort, foreignAddress, foreignPort, state, process };
-    });
-  } catch {
-    return [];
-  }
+  return parseHostPorts(execOnHost("ss -H -tulnp", 10_000));
 }
 
 /**

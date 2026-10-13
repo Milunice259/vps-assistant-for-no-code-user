@@ -115,6 +115,7 @@ export async function POST(
     const privateKey = server.encryptedKey ? decrypt(server.encryptedKey) : undefined;
 
     const ssh = await createSSHConnection({
+      serverId: server.id,
       host: server.host,
       port: server.port,
       username: server.username,

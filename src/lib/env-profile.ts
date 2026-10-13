@@ -3,6 +3,18 @@ import { encrypt, decrypt } from "@/lib/crypto";
 export const REDACTED = "[REDACTED]";
 const PREFIX = "enc:v1:";
 
+// Docker Env is an ordered array; it can contain multiline values and non-shell keys.
+export function encodeEnvBaseline(env: string[]): string {
+  return PREFIX + encrypt(JSON.stringify(env));
+}
+
+export function decodeEnvBaseline(stored: string): string[] {
+  if (!stored.startsWith(PREFIX)) throw new Error("Encrypted baseline required");
+  const env: unknown = JSON.parse(decrypt(stored.slice(PREFIX.length)));
+  if (!Array.isArray(env) || !env.every(v => typeof v === "string" && v.includes("=") && !v.includes("\0"))) throw new Error("Invalid baseline");
+  return env;
+}
+
 function invalidVars(): never {
   throw Object.assign(new Error("Invalid environment variables or unresolved redacted value"), { statusCode: 400 });
 }
@@ -23,6 +35,11 @@ export function mergeEnvVars(input: unknown, original: Record<string, string> = 
 export function decodeProfileVars(stored: string): Record<string, string> {
   // ponytail: legacy JSON is read-only compatible; migrate only after a backed-up migration.
   return mergeEnvVars(JSON.parse(stored.startsWith(PREFIX) ? decrypt(stored.slice(PREFIX.length)) : stored));
+}
+
+export function decodeEncryptedVars(stored: string): Record<string, string> {
+  if (typeof stored !== "string" || !stored.startsWith(PREFIX)) throw new Error("Authenticated encrypted state required");
+  return mergeEnvVars(JSON.parse(decrypt(stored.slice(PREFIX.length))));
 }
 
 export function encodeProfileVars(vars: Record<string, string>): string {

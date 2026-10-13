@@ -2,7 +2,9 @@ import { authorizeApp } from "@/lib/app-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isLocalAppId, parseLocalContainerId, execLocal, isLocalServer } from "@/lib/local-server";
-import { createSSEResponse } from "@/lib/sse-stream";
+import { computeDelta } from "@/lib/sse-stream";
+import { verifySessionToken } from "@/lib/auth";
+import { canAccessServer } from "@/lib/server-access";
 
 export const dynamic = "force-dynamic";
 
@@ -18,17 +20,19 @@ interface AppStreamData {
   pids: number;
 }
 
-/** Counter for periodic cleanup (every ~100 ticks ≈ 16 min) */
-let tickCount = 0;
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: RouteContext
 ) {
+  const token = request.cookies.get("vps-session")?.value;
+  const session = token ? await verifySessionToken(token) : null;
+  if (!token || !session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   const { id: appId } = await context.params;
   const denied = await authorizeApp(appId, false);
   if (denied) return denied;
-  const isLocal = isLocalAppId(appId);
+  const isDiscoveredLocal = appId.startsWith("discovered::local::");
+  const isLocal = isLocalAppId(appId) || isDiscoveredLocal;
   // ponytail: this stream uses local Docker only; remote streaming needs an SSH fetcher.
   const serverId = isLocal || appId.startsWith("discovered::local::") ? "local"
     : (await prisma.app.findUnique({ where: { id: appId }, select: { serverId: true } }))?.serverId;
@@ -36,16 +40,24 @@ export async function GET(
     return NextResponse.json({ success: false, error: "Live stats stream is only supported for local containers" }, { status: 400 });
   }
 
-  return createSSEResponse<AppStreamData>(
+  async function authorized() {
+    const current = await verifySessionToken(token!);
+    if (!current || current.sub !== session!.sub || !(await canAccessServer(current.sub, current.role, serverId!))) return false;
+    if (!isLocal) {
+      const target = await prisma.app.findUnique({ where: { id: appId }, select: { serverId: true } });
+      if (!target || target.serverId !== serverId) return false;
+    }
+    return true;
+  }
+  if (!(await authorized())) return NextResponse.json({ success: false, error: "Server access denied" }, { status: 403 });
+  return localStatsResponse(request, authorized,
     async () => {
-      if (await authorizeApp(appId)) throw new Error("Application access revoked");
       // Resolve container ID — from DB or from local:: prefix
       let containerId: string | null = null;
       let status = "UNKNOWN";
-      let dbAppId: string | null = null; // real DB id for metric persistence
 
       if (isLocal) {
-        containerId = parseLocalContainerId(appId);
+        containerId = isDiscoveredLocal ? appId.split("::")[2] : parseLocalContainerId(appId);
         try {
           const state = execLocal(
             `docker inspect --format "{{.State.Status}}" ${containerId.replace(/[^a-zA-Z0-9_.-]/g, "")}`,
@@ -56,7 +68,6 @@ export async function GET(
           status = "UNKNOWN";
         }
       } else {
-        dbAppId = appId;
         const app = await prisma.app.findUnique({
           where: { id: appId },
           select: { containerId: true, status: true, serverId: true },
@@ -96,31 +107,7 @@ export async function GET(
 
         const result: AppStreamData = { status, cpuPercent, memUsageMB, memLimitMB, netIn, netOut, pids };
 
-        // ── Persist metric to DB (non-local apps only) ──
-        if (dbAppId) {
-          try {
-            await prisma.appMetric.create({
-              data: {
-                appId: dbAppId,
-                cpuUsage: cpuPercent,
-                memUsage: memUsageMB,
-                netIn,
-                netOut,
-              },
-            });
-
-            // Periodic cleanup: delete metrics older than 30 days
-            tickCount++;
-            if (tickCount % 100 === 0) {
-              const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-              await prisma.appMetric.deleteMany({
-                where: { appId: dbAppId, timestamp: { lt: cutoff } },
-              });
-            }
-          } catch {
-            // DB write failure is not fatal — don't break the stream
-          }
-        }
+        // History is written only by the independent monitoring scheduler.
 
         return result;
       } catch {
@@ -138,6 +125,59 @@ export async function GET(
     10_000,  // check every 10s
     30_000   // heartbeat every 30s
   );
+}
+
+// This retained local-only stream fails closed; the shared fleet helper retries errors.
+function localStatsResponse(request: NextRequest, authorized: () => Promise<boolean>, fetchData: () => Promise<AppStreamData>, intervalMs: number, heartbeatMs: number) {
+  let cleanup = () => {};
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      let closed = false;
+      let busy = false;
+      let previous: AppStreamData | null = null;
+      let lastSend = Date.now();
+      const timer = setInterval(() => { void tick(); }, intervalMs);
+      timer.unref?.();
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(timer);
+        request.signal.removeEventListener("abort", cleanup);
+        try { controller.close(); } catch { /* Already cancelled. */ }
+      };
+      request.signal.addEventListener("abort", cleanup, { once: true });
+      if (request.signal.aborted) { cleanup(); return; }
+      async function tick() {
+        if (closed || busy) return;
+        busy = true;
+        try {
+          if (!(await authorized())) { cleanup(); return; }
+          if (closed || (controller.desiredSize || 0) <= 0) return;
+          const next = await fetchData();
+          // Recheck authorization after the live fetch before delivery.
+          if (!(await authorized())) { cleanup(); return; }
+          if (closed) return;
+          const delta = previous ? computeDelta(previous, next) : next;
+          const event = !previous ? "snapshot" : delta ? "delta" : Date.now() - lastSend >= heartbeatMs ? "heartbeat" : null;
+          if (event) {
+            controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(delta || {})}\n\n`));
+            lastSend = Date.now();
+          }
+          previous = next;
+        } catch { cleanup(); }
+        finally { busy = false; }
+      }
+      void tick();
+    },
+    cancel() { cleanup(); },
+  }, { highWaterMark: 1 });
+  return new Response(stream, { headers: {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "private, no-store, no-transform",
+    Vary: "Cookie",
+    Connection: "keep-alive",
+  } });
 }
 
 // ── Helpers ──

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslation } from "@/lib/i18n";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -62,7 +63,7 @@ const navGroups: NavGroup[] = [
       { label: "Backups", href: "/backup", icon: <Database className="h-5 w-5" />, minRole: "ADMIN" },
       { label: "Audit Log", href: "/audit", icon: <Shield className="h-5 w-5" /> },
       { label: "Docs", href: "/docs", icon: <BookOpen className="h-5 w-5" /> },
-      { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" />, minRole: "ADMIN" },
+      { label: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" />, minRole: "MANAGER" },
     ],
   },
 ];
@@ -80,6 +81,7 @@ function SidebarInner({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
+  const { t, formatDate } = useTranslation();
   const { safeMode, setSafeMode, safetyLoading, safetyError, expiresAt } = useSafeMode();
   const { user } = useAuth();
 
@@ -109,7 +111,7 @@ function SidebarInner({
           <div key={group.label} className="mb-4">
             {showLabels && (
               <span className="mb-1 block px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                {group.label}
+                {t(`nav.group.${group.label.toLowerCase()}`, group.label)}
               </span>
             )}
             <div className="space-y-1">
@@ -127,11 +129,11 @@ function SidebarInner({
                         ? "bg-brand-600/20 text-brand-400"
                         : "text-gray-400 hover:bg-gray-800 hover:text-white"
                     )}
-                    title={!showLabels ? item.label : undefined}
+                    title={!showLabels ? t(`nav.${item.href.slice(1)}`, item.label) : undefined}
                     onClick={onMobileClose}
                   >
                     <span className="shrink-0">{item.icon}</span>
-                    {showLabels && <span>{item.label}</span>}
+                    {showLabels && <span>{t(`nav.${item.href.slice(1)}`, item.label)}</span>}
                   </Link>
                 );
               })}
@@ -152,7 +154,7 @@ function SidebarInner({
             <span>{safetyLoading ? "Checking safety…" : safeMode ? "Safe Mode On" : "Advanced Mode"}</span>
             <span className={safeMode ? "text-emerald-400" : "text-yellow-400"}>{safeMode ? "Safe" : "Risk"}</span>
           </button>
-          {!safeMode && expiresAt && <p className="mt-2 text-xs text-gray-400">Safe Mode returns at {new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p>}
+          {!safeMode && expiresAt && <p className="mt-2 text-xs text-gray-400">Safe Mode returns at {formatDate(expiresAt, { hour: "2-digit", minute: "2-digit" })}.</p>}
           {safetyError && <p role="alert" className="mt-2 text-xs text-amber-300">{safetyError}</p>}
         </div>
       )}

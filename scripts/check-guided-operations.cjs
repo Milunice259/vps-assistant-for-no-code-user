@@ -57,7 +57,11 @@ async function executor(remote, mode = 'ok') {
     if (cleanup) return remote ? marker : '';
     return `${disk}${remote ? `\n${marker}` : ''}`;
   };
-  const local = load('src/lib/local-server.ts', { os: {}, child_process: { execSync: exec }, fs: {} });
+  const local = load('src/lib/local-server.ts', {
+    os: {}, child_process: { execSync: exec }, fs: {},
+    '@/lib/service-inventory': load('src/lib/service-inventory.ts', {}),
+    '@/lib/host-ports': load('src/lib/host-ports.ts', {}),
+  });
   const ssh = load('src/lib/ssh/actions.ts', { './connection': { executeCommand: async (_, command) => exec(command) }, '../validation': {} });
   const result = remote ? await ssh.quickAction({}, 'clear-apt-cache') : local.localQuickAction('clear-apt-cache');
   return { result, commands };

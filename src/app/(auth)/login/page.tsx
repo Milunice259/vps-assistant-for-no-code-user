@@ -56,7 +56,6 @@ export default function LoginPage() {
         <div className="w-14 h-14 bg-brand-600/20 rounded-xl flex items-center justify-center mb-4">
           <Terminal className="w-7 h-7 text-brand-400" />
         </div>
-        <h1 className="text-2xl font-bold text-white">VPS Control</h1>
         <p className="text-sm text-gray-400 mt-1">
           Sign in to manage your infrastructure
         </p>

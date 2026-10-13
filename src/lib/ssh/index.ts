@@ -9,6 +9,9 @@
 export {
   type SSHConnectionConfig,
   createSSHConnection,
+  probeSSHIdentity,
+  getSSHIdentity,
+  sshIdentitySettingKey,
   closeSSH,
   executeCommand,
   executeCommandSafe,

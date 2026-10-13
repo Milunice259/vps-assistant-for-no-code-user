@@ -5,6 +5,7 @@ import type { DashboardSummary } from "@/types";
 import { QuickOverview } from "@/components/dashboard/QuickOverview";
 import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
 import { RiskOverview } from "@/components/dashboard/RiskOverview";
+import { MonitoringStatus } from "@/components/dashboard/MonitoringStatus";
 import { Activity, AlertTriangle, CheckCircle2, GitBranch, Server, Wifi } from "lucide-react";
 
 function riskTone(failedDeploys: number, inactiveServers: number) {
@@ -15,6 +16,7 @@ function riskTone(failedDeploys: number, inactiveServers: number) {
 export default function DashboardPage() {
   const { data: summary, connected, error } = useSSE<DashboardSummary>("/api/dashboard/stream", {
     fallbackPollMs: 30_000,
+    pollUrl: "/api/dashboard/summary",
   });
 
   if (error) {
@@ -37,7 +39,8 @@ export default function DashboardPage() {
     );
   }
 
-  const healthy = summary.servers.inactive === 0 && summary.deployments.failed === 0;
+  const localCount = Math.max(0, summary.servers.total - summary.servers.remote);
+  const healthy = summary.servers.total > 0 && summary.servers.inactive === 0 && summary.deployments.failed === 0;
 
   return (
     <div className="space-y-6">
@@ -50,19 +53,19 @@ export default function DashboardPage() {
               </span>
               <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${riskTone(summary.deployments.failed, summary.servers.inactive)}`}>
                 {healthy ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                {healthy ? "Fleet healthy" : "Needs review"}
+                {summary.servers.total === 0 ? "No servers in scope" : healthy ? "No recorded issues" : "Needs review"}
               </span>
             </div>
             <h1 className="mt-4 text-2xl font-bold text-white md:text-3xl">Fleet Management Dashboard</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">
-              Multi-server overview for servers, applications, alerts, deployments, and safe operations. Open a server page for local or remote machine details.
+              {localCount === 0 ? "Remote-only overview. Local server data is excluded." : "Local and remote server overview."} Open a server page for live machine details.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:w-[620px] xl:grid-cols-4">
             <div className="rounded-2xl border border-gray-700 bg-gray-950/60 p-4">
               <p className="flex items-center gap-2 text-xs text-gray-500"><Server className="h-4 w-4" /> Servers</p>
               <p className="mt-2 text-2xl font-semibold text-white">{summary.servers.total}</p>
-              <p className="mt-1 text-xs text-gray-500">{summary.servers.remote} remote · 1 local</p>
+              <p className="mt-1 text-xs text-gray-500">{summary.servers.remote} remote · {localCount} local</p>
             </div>
             <div className="rounded-2xl border border-gray-700 bg-gray-950/60 p-4">
               <p className="flex items-center gap-2 text-xs text-gray-500"><Activity className="h-4 w-4" /> Apps</p>
@@ -84,8 +87,9 @@ export default function DashboardPage() {
       </section>
 
       <OnboardingWizard />
+      <MonitoringStatus />
       <RiskOverview />
-      <QuickOverview />
+      <QuickOverview summary={summary} />
     </div>
   );
 }

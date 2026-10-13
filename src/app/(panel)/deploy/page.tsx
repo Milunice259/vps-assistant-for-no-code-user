@@ -17,7 +17,7 @@ const DEPLOY_TABS = [
 ];
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
-  git: "Local analyzes the repository only. Remote deploys via SSH and Docker Compose.",
+  git: "Analyze a repository or execute a reviewed deployment on Local or Remote.",
   image: "Best when you already have a Docker image.",
   compose: "Best for multi-container apps with docker-compose.yml.",
 };
@@ -26,7 +26,10 @@ export default function DeployPage() {
   const [activeTab, setActiveTab] = useState("git");
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const historyBusyRef = useRef(false);
   const onBusyChange = (value: boolean) => { busyRef.current = value; setBusy(value); };
+  const onHistoryBusyChange = (value: boolean) => { historyBusyRef.current = value; setHistoryBusy(value); };
 
   return (
     <PermissionGate minimum="OPERATOR">
@@ -43,8 +46,8 @@ export default function DeployPage() {
             Review secrets and ports before pressing Deploy.
           </div>
         </div>
-        <fieldset disabled={busy}>
-          <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={tab => { if (!busyRef.current) setActiveTab(tab); }} />
+        <fieldset disabled={busy || historyBusy}>
+          <Tabs tabs={DEPLOY_TABS} activeTab={activeTab} onChange={tab => { if (!busyRef.current && !historyBusyRef.current) setActiveTab(tab); }} />
         </fieldset>
         {busy && <p role="status" className="mt-2 text-sm text-gray-400">Execution in progress. Wait for the result before changing the deployment source.</p>}
         <div className="mt-3 flex items-start gap-2 text-sm text-gray-400 leading-relaxed">
@@ -54,15 +57,15 @@ export default function DeployPage() {
       </section>
 
       {/* Deploy Form */}
-      <section>
+      <section><fieldset disabled={historyBusy}>
         {activeTab === "git" && <DeployForm onBusyChange={onBusyChange} />}
         {activeTab === "image" && <DockerImageDeploy onBusyChange={onBusyChange} />}
         {activeTab === "compose" && <DockerComposeDeploy onBusyChange={onBusyChange} />}
-      </section>
+      </fieldset></section>
 
       {/* Deployment History — title is inside DeployLog */}
       <section>
-        <DeployLog />
+        <DeployLog disabled={busy} onBusyChange={onHistoryBusyChange} />
       </section>
     </div>
     </PermissionGate>

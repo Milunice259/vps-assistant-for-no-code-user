@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { canAccessServer, scopedServerWhere } from "@/lib/server-access";
-import { execLocal, tryExecOnHost, readHostFile } from "@/lib/local-server";
+import { execLocal, execOnHost, getLocalHostPorts, tryExecOnHost, readHostFile } from "@/lib/local-server";
+import { cachedInventory, mergeInventory, parseInventory, DOCKER_INVENTORY_COMMAND, SERVICE_INVENTORY_COMMAND, type InventoryApp } from "@/lib/apps-inventory";
 import type { ApiResponse, DashboardSummary } from "@/types";
 
 // Bind-mount path set by docker-compose
@@ -10,61 +11,35 @@ const HOST_OS_RELEASE = "/host/os-release";
 
 export const dynamic = "force-dynamic";
 
-// ─── Helper: count local Docker containers by state ───
-
-interface ContainerCounts {
-  total: number;
-  running: number;
-  stopped: number;
-}
-
-function getContainerCounts(): ContainerCounts {
-  try {
-    // Docker CLI → socket → host daemon (no nsenter needed)
-    const raw = execLocal('docker ps -a --format "{{.State}}"', 10_000);
-    if (!raw) return { total: 0, running: 0, stopped: 0 };
-
-    const states = raw.split("\n").filter(Boolean);
-    return {
-      total: states.length,
-      running: states.filter((s) => s.toLowerCase() === "running").length,
-      stopped: states.filter((s) =>
-        ["exited", "dead", "created"].includes(s.toLowerCase())
-      ).length,
-    };
-  } catch {
-    return { total: 0, running: 0, stopped: 0 };
-  }
+function appCounts(apps: InventoryApp[]) {
+  return {
+    total: apps.length,
+    running: apps.filter((app) => app.status === "RUNNING").length,
+    stopped: apps.filter((app) => app.status === "STOPPED").length,
+  };
 }
 
 // ─── Helper: count Docker networks ───
 
-function getDockerNetworkCount(): number {
+function getDockerNetworkCount(): number | null {
   try {
     // Docker CLI → socket → host daemon
     const raw = execLocal('docker network ls --format "{{.Name}}"', 10_000);
     if (!raw) return 0;
     return raw.split("\n").filter(Boolean).length;
   } catch {
-    return 0;
+    return null;
   }
 }
 
 // ─── Helper: count listening ports on HOST ───
 
-function getListeningPortCount(): number {
-  // 1. Try local ss (works if container has host network or pid:host)
+function getListeningPortCount(): number | null {
   try {
-    const raw = execLocal("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
-    const count = parseInt(raw, 10);
-    if (!isNaN(count) && count > 0) return count;
+    return getLocalHostPorts().length;
   } catch {
-    // fall through
+    return null;
   }
-
-  // 2. Try nsenter to host
-  const raw = tryExecOnHost("ss -tulnp 2>/dev/null | tail -n +2 | wc -l", 10_000);
-  return parseInt(raw, 10) || 0;
 }
 
 // ─── Helper: get HOST OS info ───
@@ -75,8 +50,8 @@ interface OSInfo {
   arch: string;
 }
 
-function getOSInfo(): OSInfo {
-  let distro = "Linux";
+function getOSInfo(): OSInfo | null {
+  let distro = "";
   let kernel = "";
   let arch = "";
 
@@ -96,7 +71,7 @@ function getOSInfo(): OSInfo {
   kernel = tryExecOnHost("uname -r", 5_000);
   arch = tryExecOnHost("uname -m", 5_000);
 
-  return { distro, kernel, arch };
+  return distro || kernel || arch ? { distro, kernel, arch } : null;
 }
 
 /**
@@ -104,51 +79,42 @@ function getOSInfo(): OSInfo {
  * Exported so the SSE stream endpoint can reuse this.
  */
 export async function getDashboardSummary(session: NonNullable<Awaited<ReturnType<typeof getSession>>>): Promise<DashboardSummary> {
-  // ponytail: UI requires local metrics; deny rather than fake them until it supports a scoped summary.
-  if (!(await canAccessServer(session.sub, session.role, "local"))) {
-    throw new Error("Local server access required for dashboard summary");
-  }
+  const localAllowed = await canAccessServer(session.sub, session.role, "local");
   const serverScope = await scopedServerWhere(session.sub, session.role);
-  const appScope = { OR: [{ serverId: serverScope.id ?? { not: "local" } }, { serverId: "local" }] };
-  const deploymentScope = { OR: [...appScope.OR, { serverId: null }] };
-  // Run all queries in parallel
-  const [
-    containers,
-    dockerNetworks,
-    listeningPorts,
-    serverCounts,
-    appCounts,
-    deploymentCounts,
-  ] = await Promise.all([
-    // Docker containers (sync but fast)
-    Promise.resolve(getContainerCounts()),
-    Promise.resolve(getDockerNetworkCount()),
-    Promise.resolve(getListeningPortCount()),
-
-    // DB queries
-    prisma.server.groupBy({ where: serverScope, by: ["isActive"], _count: true }),
-    prisma.app.groupBy({
-      where: appScope,
-      by: ["status"],
-      _count: true,
-    }),
-    prisma.deploymentLog.groupBy({
-      where: deploymentScope,
-      by: ["status"],
-      _count: true,
-    }),
+  const appScope = { OR: [
+    { serverId: serverScope.id ?? { not: "local" } },
+    ...(localAllowed ? [{ serverId: "local" }] : []),
+  ] };
+  const deploymentScope = { OR: [...appScope.OR, ...(localAllowed ? [{ serverId: null }] : [])] };
+  const [servers, storedApps, deploymentCounts] = await Promise.all([
+    prisma.server.findMany({ where: serverScope, select: { id: true, isActive: true, updatedAt: true } }),
+    prisma.app.findMany({ where: appScope, include: { server: { select: { name: true } } } }),
+    prisma.deploymentLog.groupBy({ where: deploymentScope, by: ["status"], _count: true }),
   ]);
-
-  const remoteTotal = serverCounts.reduce((sum, g) => sum + g._count, 0);
-  const remoteActive = serverCounts.find((g) => g.isActive)?._count ?? 0;
-  const remoteInactive = Math.max(remoteTotal - remoteActive, 0);
-
-  // Aggregate app counts
-  const appTotal = appCounts.reduce((sum, g) => sum + g._count, 0);
-  const appRunning =
-    appCounts.find((g) => g.status === "RUNNING")?._count ?? 0;
-  const appStopped =
-    appCounts.find((g) => g.status === "STOPPED")?._count ?? 0;
+  // Match /api/apps: stored and cached states are not current runtime observations.
+  let apps: InventoryApp[] = storedApps.map((app) => ({
+    ...app, serverName: app.server.name, createdAt: app.createdAt.toISOString(), status: "UNKNOWN",
+  }));
+  let containers: DashboardSummary["containers"] = null;
+  if (localAllowed) {
+    const observedAt = new Date().toISOString();
+    for (const kind of ["docker", "systemd"] as const) {
+      try {
+        const raw = kind === "docker" ? execLocal(DOCKER_INVENTORY_COMMAND, 10_000) : execOnHost(SERVICE_INVENTORY_COMMAND, 10_000);
+        const observed = parseInventory(raw, kind, "local", "This Server", observedAt);
+        if (kind === "docker") containers = appCounts(observed);
+        apps = mergeInventory(apps, observed);
+      } catch { /* unavailable is not an empty successful observation */ }
+    }
+  }
+  const remoteServers = servers.filter((server) => server.id !== "local");
+  for (const server of remoteServers) {
+    const snapshot = server.isActive ? cachedInventory(server.id, server.updatedAt.toISOString()) : undefined;
+    if (snapshot) apps = mergeInventory(apps, snapshot.apps.map((app) => ({ ...app, status: "UNKNOWN" })));
+  }
+  const remoteTotal = remoteServers.length;
+  const remoteActive = remoteServers.filter((server) => server.isActive).length;
+  const remoteInactive = remoteTotal - remoteActive;
 
   // Aggregate deployment counts
   const deployTotal = deploymentCounts.reduce((sum, g) => sum + g._count, 0);
@@ -165,28 +131,24 @@ export async function getDashboardSummary(session: NonNullable<Awaited<ReturnTyp
 
   return {
     containers,
-    apps: {
-      total: appTotal,
-      running: appRunning,
-      stopped: appStopped,
-    },
+    apps: appCounts(apps),
     servers: {
-      total: remoteTotal + 1, // +1 for local server
-      active: remoteActive + 1, // local is always active
+      total: remoteTotal + Number(localAllowed),
+      active: remoteActive + Number(localAllowed),
       remote: remoteTotal,
       inactive: remoteInactive,
     },
-    network: {
-      listeningPorts,
-      dockerNetworks,
-    },
+    network: localAllowed ? {
+      listeningPorts: getListeningPortCount(),
+      dockerNetworks: getDockerNetworkCount(),
+    } : null,
     deployments: {
       total: deployTotal,
       running: deployRunning,
       failed: deployFailed,
       recent: recentCount,
     },
-    os: getOSInfo(),
+    os: localAllowed ? getOSInfo() : null,
   };
 }
 
@@ -202,9 +164,6 @@ export async function GET(): Promise<
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    if (!(await canAccessServer(session.sub, session.role, "local"))) {
-      return NextResponse.json({ success: false, error: "Local server access required for dashboard summary" }, { status: 403 });
-    }
     const summary = await getDashboardSummary(session);
     return NextResponse.json({ success: true, data: summary }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
   } catch (error) {

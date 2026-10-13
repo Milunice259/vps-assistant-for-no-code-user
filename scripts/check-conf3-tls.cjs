@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
+const { load, fixture } = require('./safe-env-recreate-regression.cjs');
+const crypto = require('node:crypto');
+const proxyId = 'c'.repeat(64), id = 'd'.repeat(64);
+let answers = ['203.0.113.12'], connects = 0, socketError = null, expires = 'Jan 1 00:00:00 2099 GMT', starts = 'Jan 1 00:00:00 2020 GMT', san = 'DNS:app.example.com';
+let config = { tls: { certificates: [{ certFile: '/certs/server.crt', keyFile: '/certs/server.key' }] } };
+const proxy = { Id: proxyId, Name: '/tls-proxy', State: { Running: true }, Config: { Cmd: ['--providers.docker=true','--providers.docker.exposedbydefault=false','--entrypoints.secure.address=:443','--entrypoints.secure.http.tls=true'], Env: [] }, NetworkSettings: { Networks: { net: {} }, Ports: { '443/tcp': [{ HostIp: '0.0.0.0', HostPort: '8443' }] } } };
+const target = { key: 'tls-fixture', serverId: 'local', inspect: { ...structuredClone(fixture), Id: id, State: { Running: true }, NetworkSettings: { Networks: { net: {} } } }, api: { call: async (method, path) => { assert.equal(method, 'GET'); if(path === '/containers/json?all=true') return [{ Id: proxyId, State: 'running', Image: 'traefik:v3' }]; if(path === `/containers/${proxyId}/json`) return proxy; if(path === `/containers/${id}/json`) return target.inspect; throw Error('Unexpected read'); } } };
+const dns = { Resolver: class { async resolve4(host) { return host === 'server.example.com' ? ['203.0.113.12'] : answers; } async resolve6() { return []; } } };
+const tls = { checkServerIdentity: () => undefined, connect(options) { connects++; assert.equal(options.host,'203.0.113.12'); assert.equal(options.port,8443); assert.equal(options.servername,'app.example.com'); assert.equal(options.rejectUnauthorized,true); const s = new EventEmitter(); s.authorized = true; s.setTimeout = () => {}; s.destroy = () => {}; s.getPeerCertificate = () => ({ valid_from: starts, valid_to: expires, subjectaltname: san, fingerprint256: 'fixture' }); process.nextTick(() => s.emit(socketError ? 'error' : 'secureConnect', socketError && Object.assign(Error('private error'),{code:socketError}))); return s; } };
+const hash = v => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const routing = load('src/lib/app-routing.ts', { 'node:dns/promises': dns, 'node:tls': tls, '@/lib/container-recreate': { configurationHash: hash }, '@/lib/local-server': { isLocalServer: () => true, getLocalServerInfo: () => ({ host: 'server.example.com' }) }, '@/lib/db': { prisma: {} } });
+const r = { proxyId, entrypoint: 'secure', backendPort: 8080, resolver: null, network: 'net' };
+routing.transformRouting(target,'app.example.com',r,{ Labels: target.inspect.Config.Labels });
+async function run() {
+ assert.equal(typeof routing.verifyRoutingTls,'function','TLS verification must exist');
+ let result = await routing.routingReadback(target,id,'app.example.com',r); assert.equal(result.tls,'verified'); assert.equal(result.activeProxy,'unverified'); assert.equal(result.certificate.hostnameVerified,true); assert.equal(result.certificate.chainTrusted,true);
+ assert.equal((await routing.routingView(target)).tls,'verified');
+ socketError='ERR_TLS_CERT_ALTNAME_INVALID'; result=await routing.routingReadback(target,id,'app.example.com',r); assert.equal(result.tls,'failed'); assert.equal(result.nativeConfigurationVerified,true); assert(!JSON.stringify(result).includes('private error'));
+ socketError='DEPTH_ZERO_SELF_SIGNED_CERT'; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'failed');
+ socketError='ECONNREFUSED'; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'pending');
+ socketError=null; expires='Jan 1 00:00:00 2000 GMT'; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'failed'); expires='Jan 1 00:00:00 2099 GMT';
+ starts='Jan 1 00:00:00 2098 GMT'; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'failed'); starts='Jan 1 00:00:00 2020 GMT';
+ san=''; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'failed'); san='DNS:app.example.com';
+ const before=connects; answers=['203.0.113.99']; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'unavailable'); assert.equal(connects,before); answers=['203.0.113.12','192.0.2.1']; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'unavailable'); assert.equal(connects,before); answers=['203.0.113.12'];
+ proxy.NetworkSettings.Ports['443/tcp']=[{HostIp:'127.0.0.1',HostPort:'8443'}]; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'unavailable'); assert.equal(connects,before);
+ proxy.NetworkSettings.Ports['443/tcp']=[{HostIp:'0.0.0.0',HostPort:'8443'}]; target.inspect.State.Running=false; assert.equal((await routing.routingReadback(target,id,'app.example.com',r)).tls,'unavailable'); assert.equal(connects,before);
+ console.log('CONF04 TLS source assertions passed: pinned authorized DNS + exact published port/SNI; CA/hostname/expiry; pending vs failed/unavailable; no socket on mismatch/stopped; read-only repeat; native apply success separate');
+}
+run().catch(e=>{console.error(e);process.exitCode=1;});

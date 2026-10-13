@@ -15,14 +15,11 @@ import {
 } from "lucide-react";
 import type { DashboardSummary } from "@/types";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
-import { useSSE } from "@/hooks/useSSE";
+
 
 const DEFAULT_CARD_IDS = ["servers", "apps", "running-apps", "deployments", "ports", "networks"];
 
-export function QuickOverview() {
-  const { data: summary } = useSSE<DashboardSummary>("/api/dashboard/stream", {
-    fallbackPollMs: 30_000,
-  });
+export function QuickOverview({ summary }: { summary: DashboardSummary }) {
   const [customizing, setCustomizing] = useState(false);
   const [visibleCardIds, setVisibleCardIds] = useState<string[]>(DEFAULT_CARD_IDS);
 
@@ -35,7 +32,7 @@ export function QuickOverview() {
         title: "Fleet Servers",
         value: summary.servers.total,
         breakdown: `${summary.servers.active} active · ${Math.max(summary.servers.total - summary.servers.active, 0)} inactive`,
-        subtitle: "Local + remote servers",
+        subtitle: summary.servers.total > summary.servers.remote ? "Local + remote servers" : "Remote-only scope",
         icon: <Server className="h-5 w-5" />,
         href: "/servers",
         color: "text-emerald-400",
@@ -99,9 +96,9 @@ export function QuickOverview() {
       {
         id: "ports",
         title: "Listening Ports",
-        value: summary.network.listeningPorts,
-        breakdown: "TCP / UDP open ports",
-        subtitle: "Network exposure",
+        value: summary.network?.listeningPorts ?? "Unavailable",
+        breakdown: "Local TCP / UDP open ports",
+        subtitle: "Open a server for its network exposure",
         icon: <Network className="h-5 w-5" />,
         href: "/network",
         color: "text-amber-400",
@@ -110,9 +107,9 @@ export function QuickOverview() {
       {
         id: "networks",
         title: "Docker Networks",
-        value: summary.network.dockerNetworks,
-        breakdown: "Bridge, overlay, custom",
-        subtitle: "Container networking",
+        value: summary.network?.dockerNetworks ?? "Unavailable",
+        breakdown: "Local bridge, overlay, custom",
+        subtitle: "Open a server for its container networking",
         icon: <Globe className="h-5 w-5" />,
         href: "/network",
         color: "text-teal-400",

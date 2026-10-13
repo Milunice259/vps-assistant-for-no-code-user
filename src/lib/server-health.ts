@@ -8,6 +8,9 @@ export interface ServerTestResult {
   os?: string;
   docker?: boolean;
   systemd?: boolean;
+  fingerprint?: string;
+  previousFingerprint?: string | null;
+  identityStatus?: "unverified" | "verified" | "changed";
 }
 
 export function friendlyConnectionError(error: unknown): string {

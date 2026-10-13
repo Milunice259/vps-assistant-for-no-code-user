@@ -45,8 +45,12 @@ const SERVER_TABS = [
 
 export default function ServerDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const serverId = params.id as string;
+  return <ServerDetail key={serverId} serverId={serverId} />;
+}
+
+function ServerDetail({ serverId }: { serverId: string }) {
+  const router = useRouter();
 
   const [server, setServer] = useState<ServerInfo | null>(null);
   const [loading, setLoading] = useState(true);

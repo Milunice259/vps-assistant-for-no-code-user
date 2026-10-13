@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useTranslation } from "@/lib/i18n";
+
+import { useCallback, useRef, useState } from "react";
+import { DeploymentLifecycle } from "./DeploymentLifecycle";
 import { Clock, RefreshCw } from "lucide-react";
 import type { DeploymentInfo, DeployStatus } from "@/types";
 import { Badge } from "@/components/ui/Badge";
@@ -22,14 +25,20 @@ interface DeployStreamData {
   deployments: DeploymentInfo[];
 }
 
-export function DeployLog() {
+export function DeployLog({ disabled, onBusyChange }: { disabled?: boolean; onBusyChange?: (busy: boolean) => void } = {}) {
+  const { formatDate } = useTranslation();
   const { data: streamData } = useSSE<DeployStreamData>("/api/deploy/stream", {
     fallbackPollMs: 10_000,
   });
   const [manualData, setManualData] = useState<DeploymentInfo[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeOperation, setActiveOperation] = useState<string | null>(null);
 
-  const deployments = manualData ?? streamData?.deployments ?? [];
+  const operationRef = useRef<string | null>(null);
+  const heldHistory = useRef<DeploymentInfo[]>([]);
+  const incoming = manualData ?? streamData?.deployments ?? [];
+  if (!operationRef.current) heldHistory.current = incoming;
+  const deployments = operationRef.current ? heldHistory.current : incoming;
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -105,7 +114,7 @@ export function DeployLog() {
                   {(analyzed || legacyAnalysis || deploy.status === "PREPARED") && <span className="text-xs text-gray-400">Application not deployed</span>}
                   {deploy.status === "PREPARED" && <span className="text-xs text-gray-400">Files remain on remote server</span>}
                   <span className="text-xs text-gray-500">
-                    {new Date(deploy.createdAt).toLocaleString()}
+                    {formatDate(deploy.createdAt)}
                   </span>
                 </div>
               </div>
@@ -114,6 +123,7 @@ export function DeployLog() {
                 <p className="my-2 break-all text-xs">Target: {deploy.serverId || "Local"} · Reference: {deploy.id}</p>
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-3 text-xs">{deploy.logs || "No execution output recorded."}</pre>
               </details>
+              {!analyzed && !legacyAnalysis && deploy.status !== "PREPARED" && <DeploymentLifecycle id={deploy.id} serverId={deploy.serverId || "local"} kind={deploy.repoUrl.startsWith("docker://") ? "image" : deploy.repoUrl.startsWith("compose://") ? "compose" : "git"} disabled={disabled || (activeOperation !== null && activeOperation !== deploy.id)} onBusyChange={value => { if (value && operationRef.current && operationRef.current !== deploy.id) return false; operationRef.current = value ? deploy.id : null; setActiveOperation(value ? deploy.id : null); onBusyChange?.(value); return true; }} />}
             </div>
             );
           })}

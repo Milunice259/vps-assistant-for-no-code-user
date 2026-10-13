@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse<ApiResponse>> {
   try {
+    if (!(await getSession())) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     return NextResponse.json({ success: true, data: await getSecuritySettings() });
   } catch (error) {
     return NextResponse.json({ success: false, error: safeErrorMessage(error, "Failed to load security settings") }, { status: 500 });
@@ -20,7 +21,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    if (session.role !== "ADMIN") return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    if (session.role !== "ADMIN" && session.role !== "OWNER") return NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
 
     const body = await request.json();
     const settings = await saveSecuritySettings(body.action === "force_logout_all"

@@ -36,21 +36,41 @@ function sourceLabel(app: AppInfo) {
   return "Docker";
 }
 
+type AppInventory = {
+  serverId: string;
+  enabled: boolean;
+  reachable: boolean | null;
+  source: "live" | "cached" | "stored";
+  observedAt: string | null;
+  docker: "available" | "unavailable";
+  systemd: "available" | "unavailable";
+};
+type InventoryApp = AppInfo & { inventorySource?: AppInventory["source"] };
+
 export function AppList() {
   const router = useRouter();
   const [apps, setApps] = useState<AppInfo[]>([]);
+  const [inventory, setInventory] = useState<AppInventory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewingLogs, setViewingLogs] = useState<{ id: string; name: string } | null>(null);
 
-  const fetchApps = useCallback(async () => {
+  const fetchApps = useCallback(async (liveRemote = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/apps");
-      const json: ApiResponse<AppInfo[]> = await res.json();
-      if (!json.success) throw new Error(json.error || "Failed to load apps");
-      setApps(json.data || []);
+      const res = await fetch(liveRemote ? "/api/apps?liveRemote=true" : "/api/apps", { cache: "no-store" });
+      const json: ApiResponse<InventoryApp[]> & { inventory?: AppInventory[] } = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Failed to load apps");
+      const observations = json.inventory || [];
+      setInventory(observations);
+      setApps((json.data || []).map((app) => {
+        const observation = observations.find((item) => item.serverId === app.serverId);
+        const runtime = app.appSource === "systemd" ? "systemd" : "docker";
+        const live = app.inventorySource === "live" && observation?.source === "live" &&
+          observation.enabled && observation.reachable !== false && observation[runtime] === "available";
+        return { ...app, status: live ? app.status : "UNKNOWN" };
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -86,23 +106,42 @@ export function AppList() {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
         <p className="text-sm text-red-400">{error}</p>
-        <Button variant="secondary" size="sm" onClick={fetchApps}>
+        <Button variant="secondary" size="sm" onClick={() => fetchApps()}>
           Retry
         </Button>
       </div>
     );
   }
 
+  const inventoryNotice = (
+    <div className="space-y-1 text-xs text-gray-400" aria-live="polite">
+      {inventory.map((item) => (
+        <p key={item.serverId}>
+          {apps.find((app) => app.serverId === item.serverId)?.serverName || (item.serverId === "local" ? "This Server" : item.serverId)}: {" "}
+          {!item.enabled ? "Disabled" : item.reachable === false ? "Unreachable" :
+            item.source === "cached" ? "Cached — current status unknown" :
+            item.source === "stored" ? "Remote inventory not checked — use Refresh to discover apps" : "Live inventory"}
+          {item.observedAt && <> · Checked {item.observedAt}</>}
+          {item.enabled && item.source !== "stored" && <>
+            {item.docker === "unavailable" && " · Docker unavailable"}
+            {item.systemd === "unavailable" && " · System services unavailable"}
+          </>}
+        </p>
+      ))}
+    </div>
+  );
+
   if (apps.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-16">
         <AppWindow className="h-10 w-10 text-gray-600" />
-        <p className="text-gray-400">No applications found</p>
+        <p className="text-gray-400">No applications in the current inventory</p>
         <p className="text-xs text-gray-600 max-w-sm text-center">
-          Applications are auto-discovered from Docker containers running on your servers.
-          Make sure you have servers configured and Docker containers running.
+          Refresh discovers Docker containers and supported system services on enabled servers.
+          Remote servers are not checked automatically.
         </p>
-        <Button variant="secondary" size="sm" onClick={fetchApps}>
+        {inventoryNotice}
+        <Button variant="secondary" size="sm" onClick={() => fetchApps(true)}>
           <RefreshCw className="h-4 w-4 mr-1" /> Refresh
         </Button>
       </div>
@@ -137,11 +176,13 @@ export function AppList() {
             <Rocket className="h-4 w-4 mr-1" />
             Deploy App
           </Button>
-          <Button variant="ghost" size="sm" onClick={fetchApps} title="Refresh app status">
+          <Button variant="ghost" size="sm" onClick={() => fetchApps(true)} title="Refresh and discover apps" aria-label="Refresh and discover apps">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
+
+      {inventoryNotice}
 
       {/* Grouped by server */}
       {Object.entries(grouped).map(([serverId, group]) => (

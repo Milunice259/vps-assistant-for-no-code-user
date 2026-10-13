@@ -104,6 +104,7 @@ function load(file) {
   }
   user = { ...user, role: 'MANAGER' };
   for (const args of [['/api/servers/local/cron', 'GET'], ['/api/servers/local/network/firewall', 'POST', { mode: 'dry-run' }],
+    ['/api/apps/local::fixture/configuration', 'POST', { mode: 'preview' }],
     ['/api/deploy', 'POST', {}], ['/api/deploy', 'POST', { serverId: 'local' }], ['/api/deploy/preflight', 'POST', {}], ['/api/deploy/requirements', 'POST', {}],
     ['/api/servers/local/actions', 'POST', { action: 'system-health-check' }], ['/api/servers/local/packages', 'GET'],
     ['/api/servers/local/packages?check=1', 'GET'], ['/api/network/packages?check=1', 'GET'],

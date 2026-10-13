@@ -9,6 +9,7 @@
 
 import os from "os";
 import { execSync } from "child_process";
+import { execOnHost } from "@/lib/local-server";
 
 export interface SystemStats {
   hostname: string;
@@ -138,11 +139,10 @@ function getDiskStats(): SystemStats["disk"] {
   if (now < diskCacheExpiry) return cachedDisk;
 
   try {
-    const output = execSync("df -B1 / | awk 'NR==2{print $2,$3,$4}'", {
-      encoding: "utf-8",
-      timeout: 5000,
-    }).trim();
-    const [total, used, available] = output.split(" ").map(Number);
+    const output = execOnHost("LC_ALL=C df -P -B1 /", 5000);
+    const fields = output.trim().split("\n").at(-1)!.trim().split(/\s+/);
+    const [total, used, available] = fields.slice(1, 4).map(Number);
+    if (![total, used, available].every(Number.isFinite) || total <= 0 || used < 0 || available < 0) throw new Error("Host disk stats unavailable");
 
     cachedDisk = {
       total: total || 0,

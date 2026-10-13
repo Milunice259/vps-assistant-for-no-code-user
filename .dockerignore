@@ -2,6 +2,8 @@ node_modules
 .next
 .git
 .gitignore
+.git-credentials
+.env*
 .env
 .env.local
 .env.*.local

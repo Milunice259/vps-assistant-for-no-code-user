@@ -39,7 +39,7 @@ Use it to answer simple questions quickly:
 
 The verified safety, inventory, configuration, deployment and monitoring workspace phases are now deployed. Monitoring runs in a separate bounded worker, persists replacement-stable resource history, and reports Docker, HTTP and TLS readiness independently. Alert delivery supports durable retry and recovery; unavailable observations never imply recovery.
 
-Release checks: 55 offline regressions, native isolated Docker/SSH/HTTP/TLS and delivery-receiver checks, production-data clone startup, and live database integrity/readback. The existing SQLite volume, encryption/session keys and user data are preserved. Live authenticated browser verification remains pending because the browser vault could not attach to the current login tab; this is not claimed as passed. Backup/restore and further operations phases remain separate work.
+Release checks: 55 offline regressions, native isolated Docker/SSH/HTTP/TLS and delivery-receiver checks, production-data clone startup, and live database integrity/readback. The existing SQLite volume, encryption/session keys and user data are preserved. Live authenticated production verification passed using the saved account: dashboard scheduler status (HTTP 200, worker online, outcome ok), independent app readiness, durable resource history and manual refresh, with rendered mobile charts and no horizontal overflow at 390px. Backup/restore and further operations phases remain separate work.
 
 ## Highlights
 

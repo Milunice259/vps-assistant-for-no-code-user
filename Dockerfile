@@ -18,7 +18,8 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build && node scripts/monitoring-worker.cjs --build
+# Webpack avoids Turbopack's native memory pressure in the shared build budget.
+RUN npm run build -- --webpack && node scripts/monitoring-worker.cjs --build
 
 # ─── Stage 3: Production-only Dependencies ───
 # Derived FROM deps (no second npm ci = no double network download)

@@ -35,6 +35,12 @@ Use it to answer simple questions quickly:
 - Did someone change something?
 - Do I have a backup before I touch anything?
 
+## Monitoring storage correction — verified 2026-11-12
+
+Absent discovered targets now retire only after a complete successful inventory; failed/empty-command output cannot imply removal. Stopped/offline targets remain distinct, historical aliases cannot restart collection, and replacement history stays continuous across Local/Remote runtimes. Database-confirmed App/server deletion also ends collection. No schema or stack change.
+
+Verified release: 56/56 frozen-source regressions, lint/types, constrained Docker build, isolated production-data startup, actual production registry 847 → 10 and new samples 847 → 10 per cycle. Offline allowlisted repair removed 12,278,359 repeated unavailable tail rows while preserving first outage markers, valid readings and exact protected-row fingerprints. Integrity/FK checks passed before and after compaction; production DB 4,789,686,272 → 142,909,440 bytes. Authenticated live scheduler/history and mobile 390px checks passed. A final consistent pre-repair database backup is retained; no historical code/image archive is required. Build uses native Webpack to fit the shared resource budget.
+
 ## Current release — whole-app phases 1–5
 
 The verified safety, inventory, configuration, deployment and monitoring workspace phases are now deployed. Monitoring runs in a separate bounded worker, persists replacement-stable resource history, and reports Docker, HTTP and TLS readiness independently. Alert delivery supports durable retry and recovery; unavailable observations never imply recovery.

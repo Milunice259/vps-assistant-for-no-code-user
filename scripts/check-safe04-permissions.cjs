@@ -90,7 +90,8 @@ async function sqliteOwnerConcurrency() {
   const { AsyncLocalStorage } = require('node:async_hooks');
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'safe04-owners-'));
-  const url = 'file:' + path.join(dir, 'owners.db');
+  // Let the contending SQLite lock time out before Prisma's 5s transaction expires.
+  const url = 'file:' + path.join(dir, 'owners.db') + '?socket_timeout=1';
   const clients = [0, 1].map(() => new PrismaClient({ datasources: { db: { url } } }));
   const scope = new AsyncLocalStorage();
   const db = new Proxy({}, { get: (_target, key) => {

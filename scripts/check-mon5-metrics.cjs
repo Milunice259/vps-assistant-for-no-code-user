@@ -18,7 +18,10 @@ let localId = old, slotId = untracked, remoteId = remote;
 function engine(server, command) {
  calls++;
  if (offline) throw Error('PRIVATE ENGINE ERROR');
- if (command.startsWith('docker ps ')) return server === 'local' ? `${localId}|managed|${stopped ? 'exited' : 'running'}|||\n${slotId}|slot|running|project|web|1\n${retained}|backup|exited|||` : `${remoteId}|remote|running|||`;
+ if (command.startsWith('docker ps ')) {
+  assert(command.endsWith(" && printf '\\n__MONITORING_INVENTORY_OK__\\n'"));
+  return (server === 'local' ? `${localId}|managed|${stopped ? 'exited' : 'running'}|||\n${slotId}|slot|running|project|web|1\n${retained}|backup|exited|||` : `${remoteId}|remote|running|||`) + '\n__MONITORING_INVENTORY_OK__\n';
+ }
  if (command.startsWith('docker stats ')) return (server === 'local' ? [localId, slotId] : [remoteId]).map(ID => JSON.stringify({ ID, CPUPerc: malformed ? 'NaN%' : '12.5%', MemUsage: '64MiB / 128MiB', NetIO: '2kB / 3kB' })).join('\n');
  throw Error('Unexpected command');
 }
@@ -63,7 +66,8 @@ async function run() {
  const history = await metrics.readMonitoringHistory('managed', '1h', new Date(+base + 60000));
  assert.equal(history.points.filter(p => p.cpu === 12.5).length, 2);
  assert.equal(history.points.at(-1).mem, 64); assert.equal(history.points.at(-1).netIn, 2000);
- assert.equal((await metrics.readMonitoringHistory(`local::${old}`, '1h', base)).identity, history.identity);
+ const oldHistory = await metrics.readMonitoringHistory(`local::${old}`, '1h', new Date(+base + 60000));
+ assert.equal(oldHistory.identity, history.identity); assert.equal(oldHistory.points.filter(p => p.cpu !== null).length, 2);
  assert.equal((await metrics.readMonitoringHistory(`local::${newer}`, '1h', base)).identity, history.identity);
  cache.delete(path.resolve('src/lib/monitoring-metrics.ts'));
  const restarted = load('src/lib/monitoring-metrics.ts');

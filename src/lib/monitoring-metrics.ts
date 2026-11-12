@@ -37,7 +37,10 @@ export async function collectMonitoringMetrics(now = new Date()): Promise<{ samp
   const time = minute(now.getTime());
   const servers = ["local", ...(await prisma.server.findMany({ where: { isActive: true }, select: { id: true } })).map(s => s.id).filter(id => id !== "local")];
   const apps = await prisma.app.findMany({ select: { id: true, serverId: true, containerId: true, deploymentId: true } });
-  const known = (await prisma.appSetting.findMany({ where: { key: { startsWith: registryPrefix } }, select: { value: true } })).map(row => JSON.parse(row.value) as Target);
+  const registered = (await prisma.appSetting.findMany({ where: { key: { startsWith: registryPrefix } }, select: { value: true } })).map(row => JSON.parse(row.value) as Target);
+  // Database deletion/disablement is authoritative even when an Engine is unavailable.
+  const known = registered.filter(t => servers.includes(t.serverId) && (!t.appId || apps.some(a => a.serverId === t.serverId && a.id === t.appId)));
+  await prisma.appSetting.deleteMany({ where: { key: { in: registered.filter(t => !known.includes(t)).map(t => registryPrefix + t.identity) } } });
   let sampled = 0, gaps = 0;
   for (const serverId of servers) {
     const targets = new Map<string, { target: Target; point: MonitoringMetricPoint }>();
@@ -47,6 +50,7 @@ export async function collectMonitoringMetrics(now = new Date()): Promise<{ samp
       targets.set(target.identity, { target, point: gap(time, "missing") });
     }
     const aliases = new Map<string, string>();
+    let authoritative = false;
     let close: (() => Promise<unknown>) | undefined;
     try {
       let run: (command: string) => Promise<string>;
@@ -57,7 +61,10 @@ export async function collectMonitoringMetrics(now = new Date()): Promise<{ samp
         run = command => executeCommand(ssh, command, 20_000);
       }
       // Only identity labels: no inspect environment, arbitrary labels or credentials.
-      const inventory = await run(`docker ps -a --no-trunc --format '{{.ID}}|{{.Names}}|{{.State}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.container-number"}}'`);
+      const marker = "__MONITORING_INVENTORY_OK__";
+      const output = (await run(`docker ps -a --no-trunc --format '{{.ID}}|{{.Names}}|{{.State}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.container-number"}}' && printf '\\n${marker}\\n'`)).trim();
+      if (output !== marker && !output.endsWith("\n" + marker)) throw new Error("Inventory command failed");
+      const inventory = output.slice(0, -marker.length).trim();
       const retained = new Set<string>();
       const deploymentRuntimes = new Map<string, string>();
       const deployments = await prisma.deploymentLog.findMany({ where: { serverId: serverId === "local" ? null : serverId }, select: { id: true } });
@@ -71,22 +78,28 @@ export async function collectMonitoringMetrics(now = new Date()): Promise<{ samp
       }
       const observed = inventory.split("\n").filter(Boolean).map(line => {
         const [id, name, state, project, service, replica, ...extra] = line.split("|");
-        if (extra.length || !/^[a-f0-9]{64}$/.test(id) || !/^[a-zA-Z0-9_.-]+$/.test(name) || !state) throw new Error("Invalid inventory");
+        if (extra.length || replica === undefined || !/^[a-f0-9]{64}$/.test(id) || !/^[a-zA-Z0-9_.-]+$/.test(name) || !["created", "restarting", "running", "removing", "paused", "exited", "dead"].includes(state)) throw new Error("Invalid inventory");
         return { id, name, state, project, service, replica };
       }).filter(c => !retained.has(c.id));
+      // A complete inventory, including an empty one, is authoritative; stats are not.
+      for (const [identity, { target }] of targets) {
+        if (!target.appId || !apps.some(a => a.serverId === serverId && a.id === target.appId)) targets.delete(identity);
+      }
       const stats = new Map<string, MonitoringMetricPoint>();
       if (observed.some(c => c.state === "running")) {
-        const raw = await run("docker stats --no-stream --no-trunc --format '{{json .}}'");
-        for (const line of raw.split("\n").filter(Boolean)) {
-          const row = JSON.parse(line) as Record<string, string>;
-          const cpu = Number(row.CPUPerc?.replace(/%$/, ""));
-          if (!/^[a-f0-9]{64}$/.test(row.ID) || !row.CPUPerc || !Number.isFinite(cpu) || cpu < 0) continue;
-          try {
-            const [netIn, netOut] = row.NetIO.split("/").map(s => quantity(s));
-            if (netOut === undefined) continue;
-            stats.set(row.ID, { time: new Date(time).toISOString(), cpu, mem: quantity(row.MemUsage.split("/")[0], true), netIn, netOut });
-          } catch { /* Missing/malformed samples remain explicit gaps. */ }
-        }
+        try {
+          const raw = await run("docker stats --no-stream --no-trunc --format '{{json .}}'");
+          for (const line of raw.split("\n").filter(Boolean)) {
+            const row = JSON.parse(line) as Record<string, string>;
+            const cpu = Number(row.CPUPerc?.replace(/%$/, ""));
+            if (!/^[a-f0-9]{64}$/.test(row.ID) || !row.CPUPerc || !Number.isFinite(cpu) || cpu < 0) continue;
+            try {
+              const [netIn, netOut] = row.NetIO.split("/").map(s => quantity(s));
+              if (netOut === undefined) continue;
+              stats.set(row.ID, { time: new Date(time).toISOString(), cpu, mem: quantity(row.MemUsage.split("/")[0], true), netIn, netOut });
+            } catch { /* Missing/malformed samples remain explicit gaps. */ }
+          }
+        } catch { /* Inventory remains authoritative when stats fail. */ }
       }
       for (const container of observed) {
         const bound = apps.filter(a => a.serverId === serverId && matches(a.containerId, container.id));
@@ -101,11 +114,21 @@ export async function collectMonitoringMetrics(now = new Date()): Promise<{ samp
           if (serverId === "local") aliases.set(aliasKey(`discovered::local::${runtime}`), identity);
         }
       }
+      authoritative = true;
     } catch {
+      aliases.clear();
+      for (const target of known.filter(t => t.serverId === serverId)) {
+        if (!targets.has(target.identity)) targets.set(target.identity, { target, point: gap(time, "unavailable") });
+      }
       // No zero samples and no raw executor/credential errors leave this boundary.
       for (const value of targets.values()) value.point = gap(time, "unavailable");
     } finally { if (close) await close().catch(() => {}); }
     await prisma.$transaction(async tx => {
+      if (authoritative) {
+        // Preserve historical handles; aliases are never collection inputs.
+        const removed = known.filter(t => t.serverId === serverId && !targets.has(t.identity));
+        await tx.appSetting.deleteMany({ where: { key: { in: removed.map(t => registryPrefix + t.identity) } } });
+      }
       for (const [key, identity] of aliases) await tx.appSetting.upsert({ where: { key }, create: { key, value: identity }, update: { value: identity } });
       for (const { target, point } of targets.values()) {
         const key = registryPrefix + target.identity;

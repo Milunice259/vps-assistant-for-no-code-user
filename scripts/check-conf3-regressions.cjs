@@ -18,7 +18,7 @@ const checks = [
   'check-firewall-safety', 'check-firewall-truth', 'check-fleet-read-scope', 'check-guided-deploy',
   'check-guided-operations', 'check-local-deploy-fk', 'check-onboarding-ux', 'check-panel-backup',
   'check-remote-env-upload', 'check-remote-git-truth', 'check-safe-dependencies', 'check-safe04-permissions',
-  'check-mon5-alerts', 'check-mon5-integration', 'check-mon5-metrics',
+  'check-mon5-alerts', 'check-mon5-integration', 'check-mon5-metrics', 'check-monitoring-lifecycle',
   'check-mon5-observations', 'check-mon5-readiness', 'check-mon5-ui',
   'safe-env-recreate-regression', 'safe03-log-stream-check', 'safe12-recovery-route-check',
   'safe12-remote-check', 'sec01-cron-terminal-backup-check', 'test-advanced-safety',

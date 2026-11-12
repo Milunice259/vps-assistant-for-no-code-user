@@ -88,7 +88,10 @@ function startWorker() { worker = spawn(process.execPath, [path.join(runtime, 'm
   const next = new Date(+base+60000); const second = await metrics.collectMonitoringMetrics(next); assert.equal(second.gaps,0);
   const after = await Promise.all(['managed','remote-app','local::'+discoveredId].map(id => metrics.readMonitoringHistory(id,'1h',next)));
   after.forEach((h,i) => { assert.equal(h.identity,before[i].identity); assert.equal(h.points.filter(p => p.cpu !== null).length,2); assert(h.points.filter(p => p.cpu !== null).every(p => p.mem >= 0 && p.netIn >= 0)); });
-  assert.equal((await metrics.readMonitoringHistory('local::'+old[0],'1h',next)).identity,after[0].identity);
+  for (const [i, handle] of ['local::'+old[0], 'discovered::remote::'+old[1], 'local::'+old[2]].entries()) {
+   const previous = await metrics.readMonitoringHistory(handle,'1h',next);
+   assert.equal(previous.identity,after[i].identity); assert.equal(previous.points.filter(p => p.cpu !== null).length,2);
+  }
   pass('actual docker ps/stats Local, SSH Remote and discovered SQLite history survives native rm/create IDs');
   // Readiness uses actual Engine API through a socket-path adapter only; no fake inspect/HTTP result.
   const nativeHttp = http.request;

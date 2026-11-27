@@ -17,7 +17,7 @@ public final class MainActivity extends Activity {
  private int tab=0,ink,muted,bg,surface;
  private boolean pairing,registered;
  private EditText origin,code;
- private final BroadcastReceiver updates=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(tab==0)render();}};
+ private final BroadcastReceiver updates=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(tab==0||tab==1&&Store.session(c)!=null)render();}};
  public void onCreate(Bundle state){super.onCreate(state);if(state!=null)tab=state.getInt("tab",0);render();Sync.schedule(this);}
  public void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putInt("tab",tab);}
  public void onResume(){super.onResume();IntentFilter filter=new IntentFilter(Sync.CHANGED);if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(updates,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,filter);registered=true;render();Sync.schedule(this);if(Store.session(this)!=null)Sync.request(this,null);}
@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
  private TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(5),0,dp(5));return t;}
  private GradientDrawable shape(int color){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(18));return d;}
  private LinearLayout card(){LinearLayout c=new LinearLayout(this);c.setOrientation(1);c.setPadding(dp(16),dp(12),dp(16),dp(12));c.setBackground(shape(surface));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);content.addView(c,lp);return c;}
- private Button button(LinearLayout parent,String label,View.OnClickListener listener){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextColor(ink);b.setMinHeight(dp(48));b.setOnClickListener(listener);parent.addView(b,new LinearLayout.LayoutParams(-1,-2));return b;}
+ private Button button(LinearLayout parent,String label,View.OnClickListener listener){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextColor(ink);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Store.dark(this)?0xFF29465D:0xFFDCE8F1));b.setMinHeight(dp(48));b.setOnClickListener(listener);parent.addView(b,new LinearLayout.LayoutParams(-1,-2));return b;}
  private void render(){
   boolean dark=Store.dark(this);ink=dark?0xFFF1F6FB:0xFF142C40;muted=dark?0xFFA6B8CA:0xFF566A7D;bg=dark?0xFF091724:0xFFEAF1F7;surface=dark?0xFF142B3D:Color.WHITE;
   if(tab==1)getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
@@ -38,7 +38,7 @@ public final class MainActivity extends Activity {
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);content=new LinearLayout(this);content.setOrientation(1);content.setPadding(dp(18),dp(8),dp(18),dp(12));scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
   if(tab==0)overview();else if(tab==1)connection();else settings();
   LinearLayout nav=new LinearLayout(this);String[] labels={tr("Tổng quan","Overview"),tr("Kết nối","Connect"),tr("Cài đặt","Settings")};
-  for(int i=0;i<3;i++){final int target=i;Button b=new Button(this);b.setText(labels[i]);b.setAllCaps(false);b.setTextSize(12);b.setTextColor(i==tab?0xFF16A88C:muted);b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){if(!pairing){tab=target;render();}}});nav.addView(b,new LinearLayout.LayoutParams(0,dp(56),1));}root.addView(nav);
+  for(int i=0;i<3;i++){final int target=i;Button b=new Button(this);b.setText(labels[i]);b.setAllCaps(false);b.setTextSize(12);b.setTextColor(i==tab?(dark?0xFF36D6AE:0xFF087D62):muted);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(surface));b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){if(!pairing){tab=target;render();}}});nav.addView(b,new LinearLayout.LayoutParams(0,dp(56),1));}root.addView(nav);
   setContentView(root);root.requestApplyInsets();
  }
  private void overview(){
@@ -54,7 +54,7 @@ public final class MainActivity extends Activity {
   if(data==null)hero.addView(text(tr("Chưa nhận được dữ liệu. Kiểm tra kết nối và Mobile API trên máy chủ.","No snapshot received. Check your connection and the server Mobile API."),14,muted));
   if(data!=null&&data.servers.isEmpty())hero.addView(text(tr("Không có VPS trong phạm vi được cấp.","No servers in the granted scope."),14,muted));
   if(data!=null)for(final Snapshot.Server s:data.servers){
-   String state=s.state(data);LinearLayout row=card();row.addView(text(s.name,20,ink));row.addView(text(Widgets.stateLabel(this,state),14,Widgets.color(state)));row.addView(text(Widgets.metrics(data,s),16,ink));row.addView(text(tr("Quan sát: ","Observed: ")+date(s.observed),12,muted));
+   String state=s.state(data);LinearLayout row=card();row.addView(text(s.name,20,ink));row.addView(text(Widgets.stateLabel(this,state),14,Widgets.color(this,state)));row.addView(text(Widgets.metrics(data,s),16,ink));row.addView(text(tr("Quan sát: ","Observed: ")+date(s.observed),12,muted));
    if(state.equals("online")){bars(row,s);row.addView(text(tr("Container dừng: ","Stopped containers: ")+count(s.stopped)+tr(" · Dịch vụ lỗi: "," · Failed services: ")+count(s.failed),13,muted));row.addView(text(tr("SSL sắp hết hạn: ","Expiring SSL: ")+count(s.certificates)+tr(" · Backup cũ: "," · Stale backup: ")+(s.backup==null?"—":s.backup?tr("Có","Yes"):tr("Không","No")),13,muted));}
    button(row,tr("Mở VPS trên trình duyệt","Open server in browser"),new View.OnClickListener(){public void onClick(View v){open(s.id.equals("local")?"/":"/servers/"+android.net.Uri.encode(s.id));}});
   }

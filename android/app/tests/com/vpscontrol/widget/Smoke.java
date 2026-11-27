@@ -39,7 +39,7 @@ public final class Smoke extends Instrumentation {
   Sync.schedule(c);JobInfo job=((JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE)).getPendingJob(27101);check(job!=null&&job.getIntervalMillis()==900000&&job.isPersisted(),"15 minute persisted JobScheduler");
   Store.putSetting(c,"interval","60");Sync.schedule(c);check(((JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE)).getPendingJob(27101).getIntervalMillis()==3600000,"Interval change");Store.putSetting(c,"interval","15");
   URL.setURLStreamHandlerFactory(new URLStreamHandlerFactory(){public URLStreamHandler createURLStreamHandler(String protocol){return protocol.equals("https")?new URLStreamHandler(){protected URLConnection openConnection(URL u){return new Fake(u);}protected URLConnection openConnection(URL u,Proxy p){return new Fake(u);}}:null;}});
-  response=data.raw;status=200;check(new Snapshot(Api.call("https://panel.example.com","/api/mobile/v1/snapshot",token,null)).servers.size()==9,"Native snapshot contract");check(token.equals(authorization.substring(7))&&!redirects&&"GET".equals(method),"Bearer and redirect boundary");
+  response=data.raw;status=200;check(new Snapshot(Api.call("https://panel.example.com","/api/mobile/v1/snapshot",token,null)).servers.size()==9,"Native snapshot contract");check(authorization!=null&&authorization.equals("Bearer "+token),"Snapshot authentication header");check(!redirects,"Redirect forwarding disabled");check("GET".equals(method),"Snapshot request method");
   response="{}";Api.pair("https://panel.example.com","mp1_"+String.join("",Collections.nCopies(32,"a")));check(authorization==null&&"POST".equals(method)&&posted.toString("UTF-8").contains("mp1_"),"Pair exchange has no bearer");
   status=302;try{Api.call("https://panel.example.com","/api/mobile/v1/snapshot",token,null);throw new AssertionError("redirect followed");}catch(Api.Failure e){check(e.kind.equals("redirect"),"No redirect credential forwarding");}
   status=200;response=String.join("",Collections.nCopies(131073,"x"));try{Api.call("https://panel.example.com","/api/mobile/v1/snapshot",token,null);throw new AssertionError("unbounded body");}catch(Api.Failure e){check(e.kind.equals("format"),"Response byte bound");}
@@ -66,7 +66,7 @@ public final class Smoke extends Instrumentation {
   Fake(URL url){super(url);posted=new ByteArrayOutputStream();}
   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
   public String getCipherSuite(){return "TLS_TEST";}public java.security.cert.Certificate[] getLocalCertificates(){return null;}public java.security.cert.Certificate[] getServerCertificates(){return new java.security.cert.Certificate[0];}
-  public int getResponseCode(){authorization=getRequestProperty("Authorization");method=getRequestMethod();redirects=getInstanceFollowRedirects();return status;}
+  public int getResponseCode(){authorization=getRequestProperty("Authorization");Smoke.method=getRequestMethod();redirects=getInstanceFollowRedirects();return status;}
   public String getContentType(){return "application/json";}public long getContentLengthLong(){return -1;}
   public InputStream getInputStream()throws IOException{return new ByteArrayInputStream(response.getBytes("UTF-8"));}
   public OutputStream getOutputStream(){return posted;}

@@ -1,15 +1,10 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="12dp" android:background="@drawable/card_bg">
- <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-  <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="VPS CONTROL" android:textSize="11sp" android:textStyle="bold" android:textColor="@color/muted" android:maxLines="1" android:ellipsize="end"/>
-  <TextView android:id="@+id/refresh" android:layout_width="40dp" android:layout_height="36dp" android:gravity="center" android:text="↻" android:textSize="26sp" android:textColor="@color/ink" android:contentDescription="Refresh"/>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp" android:background="@drawable/card_bg">
+ <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="22dp" android:gravity="center_vertical">
+  <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:text="VPS CONTROL" android:textColor="#A5ACC3" android:fontFamily="sans-serif-medium" android:textSize="11sp" android:letterSpacing="0.08" android:maxLines="1" android:ellipsize="end"/>
+  <ImageView android:id="@+id/refresh" android:layout_width="32dp" android:layout_height="match_parent" android:padding="4dp" android:scaleType="fitCenter" android:contentDescription="Refresh"/>
  </LinearLayout>
- <TextView android:id="@+id/headline" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="—" android:textSize="30sp" android:textStyle="bold" android:textColor="@color/ink" android:maxLines="1" android:ellipsize="end"/>
- <TextView android:id="@+id/summary" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/ink" android:maxLines="2" android:ellipsize="end"/>
- <LinearLayout android:id="@+id/bars" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="6dp">
-  <ProgressBar android:id="@+id/cpu_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="10dp" android:progressTint="#36D6AE" android:contentDescription="CPU"/>
-  <ProgressBar android:id="@+id/ram_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="10dp" android:progressTint="#56A8ED" android:contentDescription="RAM"/>
-  <ProgressBar android:id="@+id/disk_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="10dp" android:progressTint="#F2BD61" android:contentDescription="Disk"/>
- </LinearLayout>
- <LinearLayout android:id="@+id/rows" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:paddingTop="5dp"/>
- <TextView android:id="@+id/stamp" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="10sp" android:textColor="@color/muted" android:maxLines="2" android:ellipsize="end"/>
+ <TextView android:id="@+id/headline" android:text="VPS Control" android:textColor="#F4F5FC" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="sans-serif-medium" android:textSize="24sp" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+ <TextView android:id="@+id/summary" android:textColor="#64DDB1" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="4dp" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+ <ImageView android:id="@+id/visual" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scaleType="fitCenter" android:paddingTop="4dp" android:paddingBottom="5dp" android:importantForAccessibility="yes"/>
+ <TextView android:id="@+id/stamp" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
 </LinearLayout>

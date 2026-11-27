@@ -27,9 +27,10 @@ public class Widgets extends AppWidgetProvider {
   if(c.getResources().getConfiguration().orientation==2){w=o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH,w);h=o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,h);}
   Snapshot snapshot=Store.snapshot(c);
   if(android.os.Build.VERSION.SDK_INT>=31){
+   ArrayList<SizeF> offered=o.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES);
    Map<SizeF,RemoteViews> sizes=new LinkedHashMap<SizeF,RemoteViews>();
-   for(int[] size:new int[][]{{110,110},{160,160},{250,110},{250,180},{250,250},{350,350}})sizes.put(new SizeF(size[0],size[1]),render(c,id,single,size[0],size[1],snapshot));
-   m.updateAppWidget(id,new RemoteViews(sizes));
+   if(offered!=null&&offered.size()<=4)for(SizeF size:offered)if(size.getWidth()>=60&&size.getHeight()>=60&&size.getWidth()<=1000&&size.getHeight()<=1000)sizes.put(size,render(c,id,single,(int)size.getWidth(),(int)size.getHeight(),snapshot));
+   if(!sizes.isEmpty())m.updateAppWidget(id,new RemoteViews(sizes));else m.updateAppWidget(id,render(c,id,single,w,h,snapshot));
   }else m.updateAppWidget(id,render(c,id,single,w,h,snapshot));
  }
  public static String time(Context c,long value){return value<=0?"—":DateFormat.getTimeInstance(DateFormat.SHORT,Store.vi(c)?Locale.forLanguageTag("vi-VN"):Locale.ENGLISH).format(new Date(value));}
@@ -40,7 +41,7 @@ public class Widgets extends AppWidgetProvider {
   if(state.equals("disabled"))return Store.tr(c,"Đã tắt giám sát","Disabled");
   return Store.tr(c,"Chưa xác định","Unknown");
  }
- public static int color(Context c,String state){if(!Store.dark(c))return state.equals("online")?0xFF087D62:state.equals("offline")?0xFFBD2942:0xFF965E00;return state.equals("online")?0xFF36D6AE:state.equals("offline")?0xFFFF8187:0xFFF2BD61;}
+ public static int color(Context c,String state){return new Visuals(c).state(state);}
  public static String percent(Double value){return value==null?"—":String.format(Locale.ROOT,"%.0f%%",value);}
  public static String metrics(Snapshot data,Snapshot.Server s){boolean online=s.state(data).equals("online");return "CPU "+percent(online?s.cpu:null)+" · RAM "+percent(online?s.memory:null)+" · Disk "+percent(online?s.disk:null);}
  public static List<Snapshot.Server> selection(Context c,int id,Snapshot data){
@@ -52,44 +53,51 @@ public class Widgets extends AppWidgetProvider {
  }
  static PendingIntent activity(Context c,int id,boolean setup){Intent i=new Intent(c,setup?WidgetSetupActivity.class:MainActivity.class).setData(android.net.Uri.parse("vpswidget://local/"+id+(setup?"/setup":"/overview"))).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);return PendingIntent.getActivity(c,id+(setup?10000:0),i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}
  public static RemoteViews render(Context c,int id,boolean single,int width,int height,Snapshot data){
-  boolean wide=!single&&width>=230&&height<230,compact=height<140;
-  RemoteViews v=new RemoteViews(c.getPackageName(),wide?R.layout.widget_wide:R.layout.widget);boolean dark=Store.dark(c);int ink=dark?0xFFF1F6FB:0xFF142C40,muted=dark?0xFFA6B8CA:0xFF566A7D;
-  v.setInt(R.id.root,"setBackgroundResource",dark?R.drawable.card_bg:R.drawable.card_light);
-  for(int t:new int[]{R.id.title,R.id.stamp})v.setTextColor(t,muted);
-  v.setTextColor(R.id.summary,ink);v.setTextColor(R.id.refresh,ink);
+  RemoteViews v=new RemoteViews(c.getPackageName(),height<125?R.layout.widget_tiny:R.layout.widget);Visuals palette=new Visuals(c);boolean compact=height<145,small=width<180;
+  int pad=compact||small?10:18;
+  v.setInt(R.id.root,"setBackgroundResource",Store.dark(c)?R.drawable.card_bg:R.drawable.card_light);
+  v.setViewPadding(R.id.root,dp(c,pad),dp(c,compact?7:12),dp(c,pad),dp(c,compact?7:12));
+  v.setTextColor(R.id.title,palette.muted);v.setTextColor(R.id.headline,palette.ink);v.setTextColor(R.id.stamp,palette.muted);v.setTextColor(R.id.summary,palette.green);
+  v.setTextViewText(R.id.title,small?"VPS":"VPS CONTROL");v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,height<125?16:compact||small?18:24);
+  v.setTextViewTextSize(R.id.summary,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:12);v.setTextViewTextSize(R.id.stamp,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:11);
+  v.setImageViewBitmap(R.id.refresh,Visuals.icon(c,"refresh",palette.accent));
   v.setOnClickPendingIntent(R.id.root,activity(c,id,false));v.setOnClickPendingIntent(R.id.title,activity(c,id,true));
   Intent refresh=new Intent(c,Sync.RefreshReceiver.class).setData(android.net.Uri.parse("vpswidget://local/refresh"));v.setOnClickPendingIntent(R.id.refresh,PendingIntent.getBroadcast(c,0,refresh,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
-  v.setInt(R.id.refresh,"setHeight",dp(c,compact?22:wide?28:36));v.setTextViewTextSize(R.id.refresh,android.util.TypedValue.COMPLEX_UNIT_SP,height<140?20:26);v.setInt(R.id.stamp,"setMaxLines",height<140?1:2);
-  v.setContentDescription(R.id.refresh,Store.tr(c,"Cập nhật","Refresh"));
-  v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,compact?24:wide?28:32);v.setTextViewTextSize(R.id.summary,android.util.TypedValue.COMPLEX_UNIT_SP,compact?10:wide?10:12);v.setTextViewTextSize(R.id.stamp,android.util.TypedValue.COMPLEX_UNIT_SP,compact?9:10);v.setInt(R.id.summary,"setMaxLines",compact?1:wide?3:2);
-  v.setViewPadding(R.id.root,dp(c,10),dp(c,height<140?4:10),dp(c,10),dp(c,height<140?4:10));
-  v.setViewVisibility(R.id.rows,compact&&!wide?View.GONE:View.VISIBLE);
-  v.removeAllViews(R.id.rows);if(!wide)v.setViewVisibility(R.id.bars,View.GONE);
+  v.setContentDescription(R.id.refresh,Store.tr(c,"Cập nhật","Refresh"));v.setContentDescription(R.id.title,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));
   List<Snapshot.Server> servers=selection(c,id,data);boolean connected=Store.session(c)!=null;
-  v.setTextViewText(R.id.title,compact?"VPS":"VPS CONTROL");
-  String status=Store.error(c);String stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Quan sát"," · Observed");
-  if(!status.isEmpty())stamp=time(c,Store.received(c))+(compact?Store.tr(c," · Lưu cũ"," · Cached"):Store.tr(c," · Lỗi cập nhật, lưu cũ"," · Refresh error, cached"));
-  else if(Sync.busy())stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Đang cập nhật…"," · Refreshing…");
-  if(!connected){v.setTextViewText(R.id.headline,Store.tr(c,"Kết nối","Connect"));v.setTextColor(R.id.headline,muted);v.setTextViewText(R.id.summary,Store.tr(c,"Mở ứng dụng để ghép nối","Open app to pair"));stamp=Store.tr(c,"Chỉ đọc · HTTPS","Read only · HTTPS");}
-  else if(data==null){v.setTextViewText(R.id.headline,"—");v.setTextColor(R.id.headline,muted);v.setTextViewText(R.id.summary,Store.tr(c,"Chưa có dữ liệu","No data yet"));}
-  else if(single){
-   Snapshot.Server s=servers.isEmpty()?null:servers.get(0);
-   if(s==null){v.setTextViewText(R.id.headline,"—");v.setTextViewText(R.id.summary,Store.tr(c,"Chạm tiêu đề để chọn VPS","Tap title to select VPS"));}
-   else{String state=s.state(data);v.setTextViewText(R.id.title,s.name);v.setTextViewText(R.id.headline,stateLabel(c,state));v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,compact?14:width<200?17:height>250?30:24);v.setTextColor(R.id.headline,color(c,state));v.setTextViewText(R.id.summary,"CPU "+percent(state.equals("online")?s.cpu:null)+" · RAM "+percent(state.equals("online")?s.memory:null)+"\nDisk "+percent(state.equals("online")?s.disk:null));if(height>=200&&state.equals("online")){v.setViewVisibility(R.id.bars,View.VISIBLE);int[] bars={R.id.cpu_bar,R.id.ram_bar,R.id.disk_bar};Double[] values={s.cpu,s.memory,s.disk};for(int i=0;i<bars.length;i++){v.setViewVisibility(bars[i],values[i]==null?View.GONE:View.VISIBLE);if(values[i]!=null)v.setProgressBar(bars[i],100,(int)Math.round(values[i]),false);}}stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(status.isEmpty()?"":Store.tr(c," · lỗi cập nhật"," · refresh error"));}
+  String status=Store.error(c),stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Đã cập nhật"," · Updated");
+  if(!status.isEmpty())stamp=time(c,Store.received(c))+Store.tr(c," · Lưu cũ, lỗi cập nhật"," · Cached, refresh error");
+  else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
+  boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny?View.GONE:View.VISIBLE);
+  Double[] focused=null;boolean fleet=false,empty=false;
+  v.setViewVisibility(R.id.visual,View.VISIBLE);
+  if(!connected||data==null||servers.isEmpty()){
+   v.setTextViewText(R.id.headline,!connected?Store.tr(c,"Kết nối VPS","Connect VPS"):Store.tr(c,"Chưa có dữ liệu","No data yet"));
+   v.setTextViewText(R.id.summary,!connected?Store.tr(c,"Chạm để ghép nối","Tap to pair"):Store.tr(c,"Chọn VPS hoặc cập nhật","Select servers or refresh"));
+   v.setTextColor(R.id.summary,palette.muted);empty=true;
+   if(!connected)stamp=Store.tr(c,"Chỉ đọc · Kết nối an toàn","Read only · Secure access");
+  }else if(single||servers.size()==1){
+   Snapshot.Server s=servers.get(0);String state=s.state(data);boolean online=state.equals("online");
+   v.setTextViewText(R.id.headline,s.name);v.setTextViewText(R.id.summary,"● "+stateLabel(c,state));v.setTextColor(R.id.summary,palette.state(state));
+   Double[] values=online?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
+   focused=values;v.setContentDescription(R.id.visual,metrics(data,s));
+   stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
+   if(tiny){stamp=time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
   }else{
-   int online=0,offline=0,other=0;for(Snapshot.Server s:servers){String st=s.state(data);if(st.equals("online"))online++;else if(st.equals("offline"))offline++;else other++;}
-   v.setTextViewText(R.id.headline,online+"/"+servers.size());v.setTextColor(R.id.headline,other+offline==0&&online>0?color(c,"online"):color(c,"unknown"));
-   v.setTextViewText(R.id.summary,compact?offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"):wide?Store.tr(c,"Có kết nối\n","Online\n")+offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"):Store.tr(c,"Có kết nối","Online")+" · "+offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"));
-   int rows=Policy.rows(width,height,false),show=Math.min(rows,servers.size());
-   if(show<servers.size()&&rows>0)show=Math.max(1,show-1);
-   for(int n=0;n<show;n++){
-    Snapshot.Server s=servers.get(n);String state=s.state(data);RemoteViews row=new RemoteViews(c.getPackageName(),wide?R.layout.widget_row_compact:R.layout.widget_row);
-    row.setTextViewText(R.id.row_name,s.name+" · "+stateLabel(c,state));row.setTextColor(R.id.row_name,color(c,state));row.setTextViewText(R.id.row_metrics,metrics(data,s));row.setTextColor(R.id.row_metrics,muted);
-    row.setOnClickPendingIntent(R.id.row_root,browser(c,id*100+n,s.id));v.addView(R.id.rows,row);
-   }
-   if(show<servers.size()&&rows>0){RemoteViews row=new RemoteViews(c.getPackageName(),wide?R.layout.widget_row_compact:R.layout.widget_row);row.setTextViewText(R.id.row_name,"+"+(servers.size()-show)+Store.tr(c," VPS · mở ứng dụng"," servers · open app"));row.setTextColor(R.id.row_name,ink);row.setViewVisibility(R.id.row_metrics,View.GONE);v.addView(R.id.rows,row);}
+   int online=0,down=0,other=0;for(Snapshot.Server s:servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
+   v.setTextViewText(R.id.headline,online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
+   v.setTextViewText(R.id.summary,down+Store.tr(c," mất kết nối · "," unreachable · ")+other+Store.tr(c," cần kiểm tra"," to review"));v.setTextColor(R.id.summary,down>0?palette.red:other>0?palette.amber:palette.muted);
+   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.state(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
   }
-  v.setTextViewText(R.id.stamp,stamp);return v;
+  v.setTextViewText(R.id.stamp,stamp);
+  if(focused!=null||fleet||empty){
+   // Measure the same native layout first: font scale and actual launcher bounds determine the chart area.
+   View measured=v.apply(c,new android.widget.FrameLayout(c));measured.measure(View.MeasureSpec.makeMeasureSpec(dp(c,width),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(dp(c,height),View.MeasureSpec.EXACTLY));measured.layout(0,0,measured.getMeasuredWidth(),measured.getMeasuredHeight());
+   View visual=measured.findViewById(R.id.visual);float density=c.getResources().getDisplayMetrics().density;
+   int bodyW=Math.max(1,Math.round((visual.getMeasuredWidth()-visual.getPaddingLeft()-visual.getPaddingRight())/density));int bodyH=Math.max(1,Math.round((visual.getMeasuredHeight()-visual.getPaddingTop()-visual.getPaddingBottom())/density));
+   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused):fleet?Visuals.fleet(c,bodyW,bodyH,servers,data):Visuals.placeholder(c,bodyW,bodyH));
+  }
+  return v;
  }
  private static int dp(Context c,int value){return Math.round(value*c.getResources().getDisplayMetrics().density);}
  static PendingIntent browser(Context c,int code,String id){

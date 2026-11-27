@@ -60,6 +60,6 @@ public final class Sync {
   public void onReceive(Context c,Intent i){final PendingResult pending=goAsync();request(c,new Runnable(){public void run(){pending.finish();}});}
  }
  public static final class BootReceiver extends BroadcastReceiver {
-  public void onReceive(Context c,Intent i){schedule(c);Widgets.updateAll(c);}
+  public void onReceive(Context c,Intent i){if(Intent.ACTION_MY_PACKAGE_REPLACED.equals(i.getAction()))Updates.replaced(c);schedule(c);Widgets.updateAll(c);}
  }
 }

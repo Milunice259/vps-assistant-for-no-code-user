@@ -34,7 +34,10 @@ jobs:
           mkdir -p /tmp/widget-jvm
           javac -d /tmp/widget-jvm android/app/src/com/vpscontrol/widget/Policy.java android/app/tests/PolicyTest.java
           java -cp /tmp/widget-jvm PolicyTest
+          javac -d /tmp/widget-jvm android/app/src/com/vpscontrol/widget/UpdatePolicy.java android/app/tests/UpdatePolicyTest.java
+          java -cp /tmp/widget-jvm UpdatePolicyTest
           bash android/app/build.sh qa
+          bash android/app/build.sh unsigned
       - name: Prepare free hosted Android emulator
         env:
           API: ${{ matrix.api }}
@@ -66,22 +69,37 @@ jobs:
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
           adb shell input keyevent 82
-          adb install android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+          adb install android/app/build/VPS-Control-Widget-1.1.0-rc.3.apk
           adb install android/app/build/vps-widget-tests.apk
           adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.Smoke | tee /tmp/widget-tests.txt
           mkdir -p /tmp/widget-evidence
-          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa/files/qa /tmp/widget-evidence || true
+          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa3/files/qa /tmp/widget-evidence || true
           cp /tmp/widget-tests.txt /tmp/widget-evidence/
           adb logcat -d -s AndroidRuntime:E > /tmp/widget-evidence/crashes.txt
           grep -q 'PASS:' /tmp/widget-tests.txt
+          adb shell am instrument -w -e mode checks com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-checks.txt
+          grep -q 'PASS: updater checks' /tmp/widget-evidence/update-checks.txt
+          adb shell appops set com.vpscontrol.widget.qa3 REQUEST_INSTALL_PACKAGES allow
+          adb shell am instrument -w -e mode stage com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-cancel-stage.txt
+          adb logcat -d -s VPSUpdate:E
+          grep -q 'PASS: updater stage' /tmp/widget-evidence/update-cancel-stage.txt
+          python3 android/app/tests/install-ui.py cancel /tmp/widget-evidence
+          adb shell am instrument -w -e mode cancel com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-cancel.txt
+          grep -q 'PASS: updater cancel' /tmp/widget-evidence/update-cancel.txt
+          adb shell am instrument -w -e mode stage com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-install-stage.txt
+          adb logcat -d -s VPSUpdate:E
+          grep -q 'PASS: updater stage' /tmp/widget-evidence/update-install-stage.txt
+          python3 android/app/tests/install-ui.py install /tmp/widget-evidence
+          adb shell am instrument -w -e mode after com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-after.txt
+          grep -q 'PASS: updater after' /tmp/widget-evidence/update-after.txt
       - name: One-time requested APK handoff
         if: ${{ always() && matrix.api == 35 && contains(github.event.pull_request.title, '[APK handoff]') }}
         uses: actions/upload-artifact@v4
         with:
           name: vps-widget-qa-handoff
           path: |
-            android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
-            android/app/build/vps-control-v1.0.0-unsigned.apk
+            android/app/build/VPS-Control-Widget-1.1.0-rc.3.apk
+            android/app/build/vps-control-v1.1.0-unsigned.apk
             /tmp/widget-evidence/
           retention-days: 1
           if-no-files-found: error

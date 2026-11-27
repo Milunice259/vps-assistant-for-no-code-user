@@ -1,0 +1,23 @@
+VPS CONTROL — THIET LAP NOI KY TREN WINDOWS
+
+1. Giai nen ca thu muc ZIP vao may Windows cua anh.
+2. Mo START.cmd binh thuong, KHONG chon Run as Administrator.
+3. Lan dau se tai cong cu Microsoft/Google (khoang 250 MB).
+4. Khi duoc hoi da co khoa stable chua:
+   - Chon Yes neu anh da co khoa P12 stable va muon dung lai.
+   - Chon No de tao khoa dau tien, giu co dinh tren may nay.
+5. Tu nhap mat khau (it nhat 14 ky tu), nhap lai va luu mat khau
+   vao trinh quan ly mat khau rieng cua anh. Khong gui qua chat.
+6. Chon thu muc backup tren USB/o ngoai hoac thu muc cloud cua anh.
+   File backup .p12 da ma hoa; can giu mat khau rieng de phuc hoi.
+7. Ky va kiem tra xong se co KET-QUA-GUI-HERMES.zip.
+   Chi gui file nay cho Hermes. Khong gui thu muc keys, file backup
+   .p12, password.dpapi hoac mat khau.
+
+Khoa chinh: %LOCALAPPDATA%\VPSControlSigner\keys
+Phan mem tu dung lai khoa nay o cac lan sau; khong tao khoa moi
+neu da co khoa hoac dau vet khoa cu. Neu bi huy giua chung, chay lai.
+
+Bo nay ky dung APK 1.1.0 da kiem thu; khong rebuild APK, khong sua VPS,
+khong tu dang release. Hermes nhan APK da ky de verify/publish GitHub.
+Sau do anh cai ban stable tren dien thoai va tu ghep noi mot lan.

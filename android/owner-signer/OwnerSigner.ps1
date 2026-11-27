@@ -32,11 +32,13 @@ function Private-Directory([string]$Path) {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 function Inside([string]$Child, [string]$Parent) {
-    $c = [IO.Path]::GetFullPath($Child).TrimEnd('\') + '\'
-    $p = [IO.Path]::GetFullPath($Parent).TrimEnd('\') + '\'
+    $separator=[IO.Path]::DirectorySeparatorChar
+    $c = [IO.Path]::GetFullPath($Child).TrimEnd($separator) + $separator
+    $p = [IO.Path]::GetFullPath($Parent).TrimEnd($separator) + $separator
     return $c.StartsWith($p, [StringComparison]::OrdinalIgnoreCase)
 }
 function Get-Tools([string]$Root) {
+    [IO.Directory]::CreateDirectory($Root) | Out-Null
     $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'toolchain.json') -Raw | ConvertFrom-Json
     if ($config.schema -ne 1) { throw 'Unsupported toolchain manifest.' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

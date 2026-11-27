@@ -22,5 +22,5 @@ Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS;
 ## Phase 1 initial PoC
 - Java/RemoteViews offline demonstration under android/poc, package com.vpscontrol.widget.poc, Android 10+ (min 29), sample labels, no INTERNET or real connection. Separate disposable demo signing key, not upgrade-compatible with future production package.
 - Initial build uses existing Android SDK CLI directly (aapt2, javac, d8, zipalign, apksigner) rather than adding AGP or Gradle downloads for this isolated PoC; release build tooling to be finalized in later gates. No R8 shrink claim yet.
-- CI run 45955946777 on standard Ubuntu; Build in progress; result not verified.
+- CI run 45955946777 on standard Ubuntu: resource compilation and source checkout passed, javac failed on lambda metafactory with SDK stubs. Replaced lambda with explicit OnClickListener (8a74952b27df1bf700d53454af49a62a5ab2255c). Rebuild pending verification. No APK size or signature verified yet.
 - No artifact uploaded, no cache and no production access. Billing storage allowance not verified. UI render/install/resize remain untested; KVM unavailable in earlier probe. Phase 1 remains in progress.

@@ -46,7 +46,7 @@ let prevCpuTimes = os.cpus().map((cpu) => ({ ...cpu.times }));
 let samplerTimer: ReturnType<typeof setInterval> | null = null;
 let subscriberCount = 0;
 
-function sampleCpu(): void {
+function sampleCpu(): number | null {
   const currentTimes = os.cpus().map((cpu) => ({ ...cpu.times }));
 
   let totalIdle = 0;
@@ -75,7 +75,11 @@ function sampleCpu(): void {
     totalTick > 0
       ? Math.round(((totalTick - totalIdle) / totalTick) * 10000) / 100
       : 0;
+  return totalTick > 0 && totalIdle >= 0 && totalIdle <= totalTick ? latestCpuPercent : null;
 }
+
+/** Take one sample using existing tick counters, with null for no valid delta. */
+export function sampleCpuObservation(): number | null { return sampleCpu(); }
 
 /**
  * Register a subscriber for system stats.

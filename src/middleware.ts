@@ -79,7 +79,7 @@ function requiredRole(pathname: string, method: string): Role {
   if (pathname === "/api/notifications" || pathname.startsWith("/api/notifications/") || (pathname === "/api/settings/security" && MUTABLE_METHODS.has(method))) return "ADMIN";
   if (/^\/api\/users(?:\/[^/]+)?$/.test(pathname)) return "ADMIN";
   if (!MUTABLE_METHODS.has(method)) return "VIEWER";
-  if (pathname.startsWith("/api/auth/") || pathname === "/api/profile") return "VIEWER";
+  if (pathname.startsWith("/api/auth/") || pathname === "/api/profile" || pathname === "/api/mobile/v1/devices") return "VIEWER";
   if (pathname.startsWith("/api/users/") && pathname.endsWith("/passcode")) return "VIEWER";
   if (pathname.startsWith("/api/users") || pathname === "/api/backup" || pathname === "/api/servers" || pathname === "/api/servers/test" || /^\/api\/servers\/[^/]+$/.test(pathname)) return "ADMIN";
   return "OPERATOR";
@@ -113,6 +113,18 @@ export async function middleware(request: NextRequest) {
           },
         }
       ));
+    }
+
+    // Only these two exact native endpoints bypass cookie authentication and browser CSRF.
+    // Their handlers require separate mobile credentials, bounded bodies and rate limits.
+    if (pathname.startsWith("/api/mobile/")) {
+      if ((pathname === "/api/mobile/v1/pair" && request.method === "POST") ||
+          (pathname === "/api/mobile/v1/snapshot" && request.method === "GET")) {
+        return withSecurityHeaders(NextResponse.next());
+      }
+      if (pathname !== "/api/mobile/v1/devices" || !["GET","POST","DELETE"].includes(request.method)) {
+        return withSecurityHeaders(NextResponse.json({success:false,error:"Not found"},{status:404,headers:{"Cache-Control":"no-store"}}));
+      }
     }
 
     // ── CSRF Protection ──

@@ -1,0 +1,48 @@
+const assert = require("node:assert/strict");
+const path = require("node:path");
+// Validate isolated fixture before importing DB (which sets WAL mode).
+assert.match(process.env.DATABASE_URL||"", /^file:\/tmp\/vps-mobile-ci-[^/]+\/fixture\.db$/);
+const root = path.resolve(__dirname,"../scripts/monitoring-runtime/lib");
+const {prisma} = require(path.join(root,"db.js"));
+const {publishMobileSnapshot,pruneMobileSnapshots,mobileServerRevision,LOCAL_MOBILE_REVISION} = require(path.join(root,"mobile-snapshot-store.js"));
+const {readMobileSnapshot} = require(path.join(root,"mobile-snapshot-read.js"));
+(async()=>{
+  const a=await prisma.server.create({data:{name:"Mock A",host:"example.invalid",username:"test"}});
+  const b=await prisma.server.create({data:{name:"Mock B",host:"example.invalid",username:"test"}});
+  // A mobile read must remain DB-only even when a host execution path would fail.
+  const cp=require("node:child_process");
+  const oldExec=cp.exec, oldExecSync=cp.execSync;
+  cp.exec=cp.execSync=()=>{throw new Error("HOST COMMAND FORBIDDEN DURING MOBILE READ")};
+  const now=Date.now();
+  await prisma.appSetting.upsert({where:{key:"monitoring.heartbeat"},create:{key:"monitoring.heartbeat",value:JSON.stringify({at:now})},update:{value:JSON.stringify({at:now})}});
+  const sample={observedAt:new Date(now-1000),reachability:"online",cpuPercent:24,memoryPercent:62,diskPercent:45,stoppedContainers:1};
+  await publishMobileSnapshot(a.id,mobileServerRevision(a),sample);
+  await publishMobileSnapshot(b.id,mobileServerRevision(b),sample);
+  await publishMobileSnapshot("local",LOCAL_MOBILE_REVISION,sample);
+  await publishMobileSnapshot(a.id,mobileServerRevision(a),{...sample,observedAt:new Date(now-2000),cpuPercent:99});
+  assert.equal(await prisma.mobileServerSnapshot.count(),3);
+  const result=await readMobileSnapshot([a.id,"local"],now);
+  assert.equal(result.servers.length,2);
+  assert.equal(result.servers.find(s=>s.id===a.id).cpuPercent,24);
+  assert.equal(result.servers.find(s=>s.id===a.id).stoppedContainers,1);
+  assert.equal(result.servers.find(s=>s.id===a.id).backupStale,null);
+  assert.equal(JSON.stringify(result).includes("example.invalid"),false);
+  assert.equal((await readMobileSnapshot([],now)).servers.length,0);
+  await assert.rejects(()=>readMobileSnapshot(Array.from({length:101},(_,i)=>String(i)),now));
+  const changed=await prisma.server.update({where:{id:a.id},data:{host:"changed.invalid"}});
+  assert.equal((await readMobileSnapshot([a.id],now)).servers[0].state,"unknown");
+  await publishMobileSnapshot(a.id,mobileServerRevision(a),{...sample,observedAt:new Date(now-500)});
+  assert.equal((await readMobileSnapshot([a.id],now)).servers[0].state,"unknown");
+  await publishMobileSnapshot(a.id,mobileServerRevision(changed),{...sample,reachability:"unknown",observedAt:new Date(now-100)});
+  assert.equal((await readMobileSnapshot([a.id],now)).servers[0].cpuPercent,null);
+  await prisma.server.update({where:{id:a.id},data:{isActive:false}});
+  assert.equal((await readMobileSnapshot([a.id],now)).servers[0].state,"disabled");
+  await prisma.server.delete({where:{id:b.id}});
+  await pruneMobileSnapshots();
+  assert.equal(await prisma.mobileServerSnapshot.count(),1);
+  assert.equal((await readMobileSnapshot([b.id],now)).servers.length,0);
+  const longName=await prisma.server.create({data:{name:"X".repeat(257),host:"example.invalid",username:"test"}});
+  await assert.rejects(()=>readMobileSnapshot([longName.id],now),/name limit/);
+  cp.exec=oldExec;cp.execSync=oldExecSync;
+  console.log("Mobile snapshot DB lifecycle and projection: PASS");
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>prisma.$disconnect());

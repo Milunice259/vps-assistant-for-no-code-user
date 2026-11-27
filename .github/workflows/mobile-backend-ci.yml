@@ -1,0 +1,71 @@
+name: Mobile backend checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/mobile-*.ts'
+      - 'src/app/api/mobile/**'
+      - 'src/components/settings/MobileDevices.tsx'
+      - 'src/app/(panel)/settings/page.tsx'
+      - 'src/middleware.ts'
+      - 'src/lib/notification-checks.ts'
+      - 'src/lib/ssh/**'
+      - 'src/lib/stats.ts'
+      - 'prisma/schema.prisma'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tests/mobile-*.test.*'
+      - 'scripts/check-*.cjs'
+      - 'scripts/mobile-revoke-restored.cjs'
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
+      - '.github/workflows/mobile-backend-ci.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mobile-backend-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact tested merge commit
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Validate types and observation parsers
+        run: |
+          npx --no-install prisma generate
+          npx --no-install tsc --noEmit
+          node --experimental-strip-types tests/mobile-snapshot-view.test.mjs
+          node --experimental-strip-types tests/mobile-observation.test.mjs
+      - name: Check additive schema and isolated database lifecycle
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d /tmp/vps-mobile-ci-XXXXXX)"
+          trap 'rm -rf "$dir"' EXIT
+          export DATABASE_URL="file:$dir/fixture.db"
+          git fetch --depth=1 origin "$BASE_SHA"
+          git show "$BASE_SHA:prisma/schema.prisma" > "$dir/baseline.prisma"
+          npx --no-install prisma db push --schema "$dir/baseline.prisma" --skip-generate
+          npx --no-install prisma db push --skip-generate
+          node scripts/monitoring-worker.cjs --build
+          node tests/mobile-snapshot-store.test.cjs
+          node tests/mobile-devices.test.cjs
+          node tests/mobile-input.test.cjs
+          node tests/mobile-restore.test.cjs
+          TMPDIR=/tmp node scripts/check-conf3-regressions.cjs
+          NEXT_TELEMETRY_DISABLED=1 npm run build -- --webpack
+          MOBILE_TEST_PRODUCTION=1 node tests/mobile-http.test.cjs
+      # No cache or artifact, no deployment or secrets.

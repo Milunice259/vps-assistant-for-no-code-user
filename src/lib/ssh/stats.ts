@@ -4,15 +4,16 @@
 
 import type SSH2Promise from "ssh2-promise";
 import { executeCommand, executeCommandSafe } from "./connection";
+import { parseRemoteObservation, type ResourceObservation } from "../mobile-observation";
 
 /**
  * Fetch system stats from a remote VPS via SSH.
  * All 6 commands run in parallel for minimal latency.
  */
-export async function getRemoteStats(ssh: SSH2Promise) {
+export async function getRemoteStats(ssh: SSH2Promise, observe?: (value:ResourceObservation)=>void) {
   const [cpuRaw, memRaw, diskRaw, uptimeRaw, hostnameRaw, osRaw] =
     await Promise.all([
-      executeCommand(ssh, "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"),
+      executeCommand(ssh, observe ? "LC_ALL=C top -bn1 | grep 'Cpu(s)'" : "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"),
       executeCommand(ssh, "free -b | awk 'NR==2{printf \"%s %s %s\", $2, $3, $7}'"),
       executeCommand(ssh, "df -B1 / | awk 'NR==2{printf \"%s %s %s\", $2, $3, $4}'"),
       executeCommand(ssh, "uptime -p 2>/dev/null || uptime"),
@@ -20,6 +21,8 @@ export async function getRemoteStats(ssh: SSH2Promise) {
       executeCommand(ssh, "cat /etc/os-release 2>/dev/null | head -1 | cut -d'\"' -f2 || uname -s"),
     ]);
 
+  if (observe) observe(parseRemoteObservation(cpuRaw, memRaw, diskRaw));
+  const legacyCpu = observe ? /(?:^|[\s,])(\d+(?:\.\d+)?)\s*us(?:\s|,|$)/.exec(cpuRaw)?.[1] ?? "" : cpuRaw;
   const [memTotal, memUsed, memAvailable] = memRaw.split(" ").map(Number);
   const [diskTotal, diskUsed, diskAvailable] = diskRaw.split(" ").map(Number);
 
@@ -27,7 +30,7 @@ export async function getRemoteStats(ssh: SSH2Promise) {
     hostname: hostnameRaw,
     platform: osRaw,
     uptime: uptimeRaw,
-    cpu: { usagePercent: parseFloat(cpuRaw) || 0 },
+    cpu: { usagePercent: parseFloat(legacyCpu) || 0 },
     memory: {
       total: memTotal || 0,
       used: memUsed || 0,

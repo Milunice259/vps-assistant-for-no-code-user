@@ -5,6 +5,12 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const root = path.join(__dirname, '../src/lib');
 function load(name, mocks) {
+  // Snapshot persistence has its own real-DB suite. Keep legacy alert fixtures isolated;
+  // use the actual pure observation parser and explicitly mock only snapshot storage.
+  if (name === 'notification-checks') mocks = { ...mocks,
+    '@/lib/mobile-observation': load('mobile-observation', {}),
+    '@/lib/mobile-snapshot-store': { LOCAL_MOBILE_REVISION: 'fixture-local', mobileServerRevision: () => 'fixture-mobile', publishMobileSnapshot: async () => {}, pruneMobileSnapshots: async () => {} },
+  };
   const exports = {};
   let source = fs.readFileSync(path.join(root, name + '.ts'), 'utf8');
   if (name === 'notification-checks' && process.env.MON5_OBSERVATION_NEGATIVE === 'zero') source = source.replaceAll('...(appDown !== undefined ? { app_down: appDown } : {})', 'app_down: appDown ?? 0');

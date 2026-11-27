@@ -19,7 +19,7 @@
     "jose": "^5.0.0",
     "js-yaml": "^4.3.0",
     "lucide-react": "^0.500.0",
-    "next": "^16.2.10",
+    "next": "16.4.6",
     "prisma": "^6.19.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -30,7 +30,11 @@
     "baseline-browser-mapping": "2.11.27",
     "source-map-js": "1.2.2",
     "@prisma/config": {
-      "deepmerge-ts": "8.0.2"
+      "deepmerge-ts": "8.0.2",
+      "effect": "3.22.5"
+    },
+    "eslint-plugin-react-hooks": {
+      "zod": "4.6.7"
     }
   },
   "devDependencies": {

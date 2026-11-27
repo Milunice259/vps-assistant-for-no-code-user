@@ -1,0 +1,89 @@
+name: Android widget QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android/app/**'
+      - '.github/workflows/android-widget.yml'
+permissions:
+  contents: read
+concurrency:
+  group: widget-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  sdk-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      ANDROID_AVD_HOME: /tmp/widget-avd
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - name: Check out exact tested merge commit
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: JVM policy tests and SDK-only APK build
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/widget-jvm
+          javac -d /tmp/widget-jvm android/app/src/com/vpscontrol/widget/Policy.java android/app/tests/PolicyTest.java
+          java -cp /tmp/widget-jvm PolicyTest
+          bash android/app/build.sh qa
+      - name: Prepare free hosted Android emulator
+        env:
+          API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" "system-images;android-$API;default;x86_64" "emulator" "platform-tools" >/dev/null || test "${PIPESTATUS[1]}" = 0
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          mkdir -p "$ANDROID_AVD_HOME/WidgetQA.avd"
+          printf '%s\n' "path=$ANDROID_AVD_HOME/WidgetQA.avd" "target=android-$API" > "$ANDROID_AVD_HOME/WidgetQA.ini"
+          printf '%s\n' 'AvdId=WidgetQA' 'abi.type=x86_64' 'hw.cpu.arch=x86_64' 'hw.cpu.ncore=2' 'hw.ramSize=2048' 'hw.lcd.width=720' 'hw.lcd.height=1280' 'hw.lcd.density=240' 'disk.dataPartition.size=1536M' "image.sysdir.1=$sdk/system-images/android-$API/default/x86_64/" > "$ANDROID_AVD_HOME/WidgetQA.avd/config.ini"
+      - name: Install and exercise Keystore, HTTPS and widget layouts
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          export PATH="$sdk/platform-tools:$PATH"
+          "$sdk/emulator/emulator" -avd WidgetQA -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > /tmp/widget-emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            kill -0 "$emulator_pid" || { tail -40 /tmp/widget-emulator.log; exit 1; }
+            if [[ "$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then ready=1; break; fi
+            sleep 3
+          done
+          test "$ready" = 1
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82
+          adb install android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+          adb install android/app/build/vps-widget-tests.apk
+          adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.Smoke | tee /tmp/widget-tests.txt
+          mkdir -p /tmp/widget-evidence
+          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa/files/qa /tmp/widget-evidence || true
+          cp /tmp/widget-tests.txt /tmp/widget-evidence/
+          adb logcat -d -s AndroidRuntime:E > /tmp/widget-evidence/crashes.txt
+          grep -q 'PASS:' /tmp/widget-tests.txt
+      - name: One-time requested APK handoff
+        if: ${{ always() && matrix.api == 35 && contains(github.event.pull_request.title, '[APK handoff]') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-widget-qa-handoff
+          path: |
+            android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+            android/app/build/vps-control-v1.0.0-unsigned.apk
+            /tmp/widget-evidence/
+          retention-days: 1
+          if-no-files-found: error
+      # Upload is off unless the owner-requested handoff marker is present; remove marker after delivery.
+      # No release signing key, cache, deployment or paid runner.

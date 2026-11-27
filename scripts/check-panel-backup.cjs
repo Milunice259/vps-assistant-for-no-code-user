@@ -21,7 +21,7 @@ function loadBackup(filesystem = fs) {
   return loaded.exports;
 }
 const backup = loadBackup();
-const root = fs.mkdtempSync('/root/.hermes/cache/scratch/check-panel-backup-');
+const root = fs.mkdtempSync(path.join(process.env.TMPDIR || require('node:os').tmpdir(), 'check-panel-backup-'));
 const livePath = path.join(root, 'panel.db');
 const client = new PrismaClient({ datasourceUrl: `file:${livePath}` });
 let writer;

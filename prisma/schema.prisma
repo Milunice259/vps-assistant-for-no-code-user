@@ -30,6 +30,7 @@ model User {
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   serverAccess UserServerAccess[]
+  mobileDevices MobileDevice[]
 
   @@map("users")
 }
@@ -244,4 +245,45 @@ enum AppStatus {
   RESTARTING
   UNHEALTHY
   UNKNOWN
+}
+
+
+// Bounded latest host observation (virtual local has no Server foreign key).
+model MobileServerSnapshot {
+  serverId             String   @id @map("server_id")
+  revision             String
+  observedAt           DateTime @map("observed_at")
+  reachability         String
+  cpuPercent           Float?   @map("cpu_percent")
+  memoryPercent        Float?   @map("memory_percent")
+  diskPercent          Float?   @map("disk_percent")
+  stoppedContainers    Int?     @map("stopped_containers")
+  failedServices       Int?     @map("failed_services")
+  expiringCertificates Int?     @map("expiring_certificates")
+  backupStale          Boolean? @map("backup_stale")
+
+  @@map("mobile_server_snapshots")
+}
+
+
+// Pairing and device credential share a bounded, owner-scoped lifecycle.
+model MobileDevice {
+  id                 String    @id @default(cuid())
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label              String
+  serverIds          String    @map("server_ids")
+  pairingHash        String?   @unique @map("pairing_hash")
+  pairingExpiresAt   DateTime  @map("pairing_expires_at")
+  tokenHash          String?   @unique @map("token_hash")
+  tokenExpiresAt     DateTime? @map("token_expires_at")
+  forceLogoutVersion Int       @map("force_logout_version")
+  passwordRevision   String    @map("password_revision")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  pairedAt           DateTime? @map("paired_at")
+  lastAccessAt       DateTime? @map("last_access_at")
+  revokedAt          DateTime? @map("revoked_at")
+
+  @@index([userId])
+  @@map("mobile_devices")
 }

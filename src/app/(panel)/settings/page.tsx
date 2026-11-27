@@ -9,6 +9,7 @@ import {
   Settings, Database
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { MobileDevices } from "@/components/settings/MobileDevices";
 import { useSafeMode } from "@/contexts/SafeModeContext";
 import { PermissionGate } from "@/components/ui/PermissionGate";
 import { useAuth } from "@/hooks/useAuth";
@@ -300,7 +301,7 @@ export default function SettingsPage() {
   );
 
   if (!authLoading && !isAdmin) {
-    return <PermissionGate minimum="MANAGER"><div className="max-w-4xl">{smartCheck}<p className="text-sm text-gray-400">Checks cover your assigned servers only and do not send global channel alerts.</p></div></PermissionGate>;
+    return <div className="space-y-8 max-w-4xl"><PermissionGate minimum="VIEWER"><MobileDevices /></PermissionGate>{can(user?.role,"MANAGER") && <>{smartCheck}<p className="text-sm text-gray-400">Checks cover your assigned servers only and do not send global channel alerts.</p></>}</div>;
   }
 
   if (loading || authLoading) {
@@ -310,6 +311,7 @@ export default function SettingsPage() {
   return (
     <PermissionGate minimum="ADMIN">
     <div className="space-y-8 max-w-4xl">
+      <MobileDevices />
       {/* ── Notifications Section ── */}
       <section>
         <div className="flex items-center justify-between mb-4">

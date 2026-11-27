@@ -1,0 +1,22 @@
+const assert=require('node:assert/strict');
+assert.match(process.env.DATABASE_URL||'',/^file:\/tmp\/vps-mobile-ci-[^/]+\/fixture\.db$/);
+const {mobileBody,mobileRate,mobileFailure}=require('../scripts/monitoring-runtime/lib/mobile-http.js');
+const {prisma}=require('../scripts/monitoring-runtime/lib/db.js');
+(async()=>{
+ const request=(body,headers={})=>new Request('https://fixture.invalid/api/mobile/v1/pair',{method:'POST',headers:{'Content-Type':'application/json',...headers},body});
+ await assert.rejects(()=>mobileBody(request('[]')),e=>e.status===400);
+ await assert.rejects(()=>mobileBody(request('null')),e=>e.status===400);
+ await assert.rejects(()=>mobileBody(request('{')),e=>e.status===400);
+ await assert.rejects(()=>mobileBody(request('{}',{'Content-Type':'text/plain'})),e=>e.status===415);
+ await assert.rejects(()=>mobileBody(request('{}',{'Content-Length':'999999'})),e=>e.status===413);
+ let cancelled=false;
+ const stream=new ReadableStream({start(c){c.enqueue(new Uint8Array(700));c.enqueue(new Uint8Array(700));},cancel(){cancelled=true;}});
+ const req=new Request('https://fixture.invalid/api/mobile/v1/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:stream,duplex:'half'});
+ await assert.rejects(()=>mobileBody(req,1024),e=>e.status===413);await new Promise(r=>setImmediate(r));assert.equal(cancelled,true);
+ assert.deepEqual(await mobileBody(request('{"code":"fixture"}')),{code:'fixture'});
+ for(let i=0;i<30;i++)mobileRate('redeem');assert.throws(()=>mobileRate('redeem'),e=>e.status===429);
+ mobileRate('snapshot');mobileRate('manage');
+ const res=mobileFailure(new Error('PRIVATE CREDENTIAL MUST NEVER LEAK'));
+ assert.equal(res.status,503);assert.equal((await res.text()).includes('PRIVATE'),false);assert.match(res.headers.get('cache-control'),/no-store/);
+ console.log('Mobile streamed byte limits, malformed input, rate buckets and error redaction: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>prisma.$disconnect());

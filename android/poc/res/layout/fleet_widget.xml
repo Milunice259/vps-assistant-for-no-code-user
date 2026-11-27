@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+ android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+ android:background="@drawable/card_bg" android:orientation="vertical" android:padding="12dp">
+ <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="VPS CONTROL · DEMO" android:textSize="11sp" android:textStyle="bold" android:textColor="#B5C5D6" android:maxLines="1"/>
+ <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="3/4" android:textSize="30sp" android:textStyle="bold" android:textColor="#36D6AE"/>
+ <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Online · 1 offline" android:textSize="12sp" android:textColor="#F0F4F8"/>
+ <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CPU 24% · RAM 62%" android:textSize="11sp" android:textColor="#B5C5D6" android:maxLines="1"/>
+ <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Sample data · Tap to open" android:textSize="10sp" android:textColor="#F7C566" android:maxLines="1"/>
+</LinearLayout>

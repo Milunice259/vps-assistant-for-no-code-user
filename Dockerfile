@@ -58,6 +58,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts/monitoring-worker.cjs ./scripts/monitoring-worker.cjs
 COPY --from=builder /app/scripts/monitoring-runtime ./scripts/monitoring-runtime
 
+# Dormant operator recovery tool; isolated restored copy only. Never invoked by entrypoint.
+COPY --from=builder /app/scripts/mobile-revoke-restored.cjs ./scripts/mobile-revoke-restored.cjs
+
 # Copy entrypoint
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh

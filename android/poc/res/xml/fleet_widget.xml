@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+ android:minWidth="110dp" android:minHeight="110dp"
+ android:minResizeWidth="100dp" android:minResizeHeight="100dp"
+ android:targetCellWidth="2" android:targetCellHeight="2"
+ android:initialLayout="@layout/fleet_widget"
+ android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0"
+ android:widgetCategory="home_screen"/>

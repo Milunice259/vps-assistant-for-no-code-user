@@ -97,3 +97,6 @@ public/uploads/
 *.log
 .turbo
 
+
+# Generated monitoring runtime
+/scripts/monitoring-runtime/

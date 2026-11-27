@@ -17,7 +17,7 @@ async function request(url,status,{method="GET",headers={},body}={}){
  const b=await prisma.server.create({data:{name:"HTTP forbidden",host:"example.invalid",username:"mock"}});
  const password="Fixture-only-password-42!";
  await prisma.user.create({data:{username:"mobile-http-viewer",passwordHash:await bcrypt.hash(password,4),role:"VIEWER",serverAccessMode:"SELECTED",serverAccess:{create:{serverId:a.id}}}});
- child=spawn(process.execPath,["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port","3199"],{stdio:["ignore","ignore","ignore"],env:{...process.env,NEXT_TELEMETRY_DISABLED:"1",JWT_SECRET:"mobile-ci-fixture-only-no-production-secret"}});
+ child=spawn(process.execPath,["node_modules/next/dist/bin/next",process.env.MOBILE_TEST_PRODUCTION==="1"?"start":"dev","--hostname","127.0.0.1","--port","3199"],{stdio:["ignore","ignore","ignore"],env:{...process.env,NEXT_TELEMETRY_DISABLED:"1",JWT_SECRET:"mobile-ci-fixture-only-no-production-secret"}});
  let ready=false;
  for(let i=0;i<45;i++){
    if(child.exitCode!==null)throw Error("Fixture web server exited");

@@ -1,0 +1,69 @@
+name: Android widget QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android/app/**'
+      - '.github/workflows/android-widget.yml'
+permissions:
+  contents: read
+concurrency:
+  group: widget-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  sdk-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - name: Check out exact tested merge commit
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: JVM policy tests and SDK-only APK build
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/widget-jvm
+          javac -d /tmp/widget-jvm android/app/src/com/vpscontrol/widget/Policy.java android/app/tests/PolicyTest.java
+          java -cp /tmp/widget-jvm PolicyTest
+          bash android/app/build.sh qa
+      - name: Prepare free hosted Android emulator
+        env:
+          API: ${{ matrix.api }}
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" "system-images;android-$API;default;x86_64" "emulator" "platform-tools" >/dev/null || test "${PIPESTATUS[1]}" = 0
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n WidgetQA -k "system-images;android-$API;default;x86_64" --force
+      - name: Install and exercise Keystore, HTTPS and widget layouts
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          export PATH="$sdk/platform-tools:$PATH"
+          "$sdk/emulator/emulator" -avd WidgetQA -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > /tmp/widget-emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            kill -0 "$emulator_pid" || { tail -40 /tmp/widget-emulator.log; exit 1; }
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then ready=1; break; fi
+            sleep 3
+          done
+          test "$ready" = 1
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell input keyevent 82
+          adb install android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+          adb install android/app/build/vps-widget-tests.apk
+          adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.Smoke | tee /tmp/widget-tests.txt
+          grep -q 'PASS:' /tmp/widget-tests.txt
+      # No release signing key, cache, upload, deployment or paid runner.

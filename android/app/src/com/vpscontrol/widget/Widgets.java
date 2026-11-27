@@ -32,7 +32,7 @@ public class Widgets extends AppWidgetProvider {
    m.updateAppWidget(id,new RemoteViews(sizes));
   }else m.updateAppWidget(id,render(c,id,single,w,h,snapshot));
  }
- public static String time(long value){return value<=0?"—":DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(value));}
+ public static String time(Context c,long value){return value<=0?"—":DateFormat.getTimeInstance(DateFormat.SHORT,Store.vi(c)?Locale.forLanguageTag("vi-VN"):Locale.ENGLISH).format(new Date(value));}
  public static String stateLabel(Context c,String state){
   if(state.equals("online"))return Store.tr(c,"Có kết nối","Online");
   if(state.equals("offline"))return Store.tr(c,"Không truy cập được","Unreachable");
@@ -67,21 +67,21 @@ public class Widgets extends AppWidgetProvider {
   v.removeAllViews(R.id.rows);if(!wide)v.setViewVisibility(R.id.bars,View.GONE);
   List<Snapshot.Server> servers=selection(c,id,data);boolean connected=Store.session(c)!=null;
   v.setTextViewText(R.id.title,compact?"VPS":"VPS CONTROL");
-  String status=Store.error(c);String stamp=Store.tr(c,"Quan sát ","Observed ")+time(data==null?0:data.generatedAt);
-  if(!status.isEmpty())stamp=Store.tr(c,"Lỗi cập nhật · lưu cũ ","Refresh error · cached ")+time(Store.received(c));
-  else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
+  String status=Store.error(c);String stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Quan sát"," · Observed");
+  if(!status.isEmpty())stamp=time(c,Store.received(c))+(compact?Store.tr(c," · Lưu cũ"," · Cached"):Store.tr(c," · Lỗi cập nhật, lưu cũ"," · Refresh error, cached"));
+  else if(Sync.busy())stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Đang cập nhật…"," · Refreshing…");
   if(!connected){v.setTextViewText(R.id.headline,Store.tr(c,"Kết nối","Connect"));v.setTextColor(R.id.headline,muted);v.setTextViewText(R.id.summary,Store.tr(c,"Mở ứng dụng để ghép nối","Open app to pair"));stamp=Store.tr(c,"Chỉ đọc · HTTPS","Read only · HTTPS");}
   else if(data==null){v.setTextViewText(R.id.headline,"—");v.setTextColor(R.id.headline,muted);v.setTextViewText(R.id.summary,Store.tr(c,"Chưa có dữ liệu","No data yet"));}
   else if(single){
    Snapshot.Server s=servers.isEmpty()?null:servers.get(0);
    if(s==null){v.setTextViewText(R.id.headline,"—");v.setTextViewText(R.id.summary,Store.tr(c,"Chạm tiêu đề để chọn VPS","Tap title to select VPS"));}
-   else{String state=s.state(data);v.setTextViewText(R.id.title,s.name);v.setTextViewText(R.id.headline,stateLabel(c,state));v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,compact?14:width<200?17:height>250?30:24);v.setTextColor(R.id.headline,color(c,state));v.setTextViewText(R.id.summary,"CPU "+percent(state.equals("online")?s.cpu:null)+" · RAM "+percent(state.equals("online")?s.memory:null)+"\nDisk "+percent(state.equals("online")?s.disk:null));if(height>=200&&state.equals("online")){v.setViewVisibility(R.id.bars,View.VISIBLE);int[] bars={R.id.cpu_bar,R.id.ram_bar,R.id.disk_bar};Double[] values={s.cpu,s.memory,s.disk};for(int i=0;i<bars.length;i++){v.setViewVisibility(bars[i],values[i]==null?View.GONE:View.VISIBLE);if(values[i]!=null)v.setProgressBar(bars[i],100,(int)Math.round(values[i]),false);}}stamp=Store.tr(c,"Quan sát ","Observed ")+time(s.observed)+(status.isEmpty()?"":Store.tr(c," · lỗi cập nhật"," · refresh error"));}
+   else{String state=s.state(data);v.setTextViewText(R.id.title,s.name);v.setTextViewText(R.id.headline,stateLabel(c,state));v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,compact?14:width<200?17:height>250?30:24);v.setTextColor(R.id.headline,color(c,state));v.setTextViewText(R.id.summary,"CPU "+percent(state.equals("online")?s.cpu:null)+" · RAM "+percent(state.equals("online")?s.memory:null)+"\nDisk "+percent(state.equals("online")?s.disk:null));if(height>=200&&state.equals("online")){v.setViewVisibility(R.id.bars,View.VISIBLE);int[] bars={R.id.cpu_bar,R.id.ram_bar,R.id.disk_bar};Double[] values={s.cpu,s.memory,s.disk};for(int i=0;i<bars.length;i++){v.setViewVisibility(bars[i],values[i]==null?View.GONE:View.VISIBLE);if(values[i]!=null)v.setProgressBar(bars[i],100,(int)Math.round(values[i]),false);}}stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(status.isEmpty()?"":Store.tr(c," · lỗi cập nhật"," · refresh error"));}
   }else{
    int online=0,offline=0,other=0;for(Snapshot.Server s:servers){String st=s.state(data);if(st.equals("online"))online++;else if(st.equals("offline"))offline++;else other++;}
    v.setTextViewText(R.id.headline,online+"/"+servers.size());v.setTextColor(R.id.headline,other+offline==0&&online>0?color(c,"online"):color(c,"unknown"));
    v.setTextViewText(R.id.summary,compact?offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"):wide?Store.tr(c,"Có kết nối\n","Online\n")+offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"):Store.tr(c,"Có kết nối","Online")+" · "+offline+Store.tr(c," lỗi · "," down · ")+other+Store.tr(c," khác"," other"));
    int rows=Policy.rows(width,height,false),show=Math.min(rows,servers.size());
-   if(show<servers.size()&&rows>0)show=Math.max(0,show-1);
+   if(show<servers.size()&&rows>0)show=Math.max(1,show-1);
    for(int n=0;n<show;n++){
     Snapshot.Server s=servers.get(n);String state=s.state(data);RemoteViews row=new RemoteViews(c.getPackageName(),wide?R.layout.widget_row_compact:R.layout.widget_row);
     row.setTextViewText(R.id.row_name,s.name+" · "+stateLabel(c,state));row.setTextColor(R.id.row_name,color(c,state));row.setTextViewText(R.id.row_metrics,metrics(data,s));row.setTextColor(R.id.row_metrics,muted);

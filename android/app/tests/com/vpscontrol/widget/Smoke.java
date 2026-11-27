@@ -50,7 +50,7 @@ public final class Smoke extends Instrumentation {
   for(String language:new String[]{"vi","en"})for(String theme:new String[]{"dark","light"}){
    Store.putSetting(c,"language",language);Store.putSetting(c,"theme",theme);
    final Snapshot snapshot=data;
-   for(final int[] size:new int[][]{{110,110},{160,160},{280,180},{280,320},{350,440}}){
+   for(final int[] size:new int[][]{{110,110},{160,160},{250,110},{280,180},{280,320},{350,440}}){
     for(final boolean single:new boolean[]{false,true})runOnMainSync(new Runnable(){public void run(){RemoteViews rv=Widgets.render(c,42,single,size[0],size[1],snapshot);View view=rv.apply(c,new FrameLayout(c));int w=(int)(size[0]*c.getResources().getDisplayMetrics().density),h=(int)(size[1]*c.getResources().getDisplayMetrics().density);view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h);check(view.findViewById(R.id.headline)!=null,"RemoteViews inflation");TextView stamp=(TextView)view.findViewById(R.id.stamp);check(stamp.getMeasuredHeight()>0&&stamp.getBottom()<=h-view.getPaddingBottom(),"Timestamp fits "+size[0]+"x"+size[1]);
     try {Bitmap rendered=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(new android.graphics.Canvas(rendered));File dir=new File(c.getExternalFilesDir(null),"qa");dir.mkdirs();String name=(Store.vi(c)?"vi":"en")+"-"+(Store.dark(c)?"dark":"light")+"-"+(single?"single":"fleet")+"-"+size[0]+"x"+size[1]+".png";try(FileOutputStream out=new FileOutputStream(new File(dir,name))){rendered.compress(Bitmap.CompressFormat.PNG,100,out);}rendered.recycle();}catch(Exception e){throw new RuntimeException(e);}
 }});

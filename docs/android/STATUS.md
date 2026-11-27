@@ -18,3 +18,9 @@ Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS;
 - GitHub Actions probe run 45951454552 passed: Ubuntu 24.04, JDK 17, Gradle, Android API 34/35/36, build tools and ADB available via SDK path. KVM not readable in probe; emulator remains unverified.
 - Signing key: owner-controlled encrypted vault and offline backup; no real signing key in public CI/repository. Use ephemeral separate test key for PoC only.
 - Public repository: retain only sanitized evidence here; operational host paths, resource metrics, image identifiers and recovery locations stay out of Git history.
+
+## Phase 1 initial PoC
+- Java/RemoteViews offline demonstration under android/poc, package com.vpscontrol.widget.poc, Android 10+ (min 29), sample labels, no INTERNET or real connection. Separate disposable demo signing key, not upgrade-compatible with future production package.
+- Initial build uses existing Android SDK CLI directly (aapt2, javac, d8, zipalign, apksigner) rather than adding AGP or Gradle downloads for this isolated PoC; release build tooling to be finalized in later gates. No R8 shrink claim yet.
+- CI run 45955946777 on standard Ubuntu; Build in progress; result not verified.
+- No artifact uploaded, no cache and no production access. Billing storage allowance not verified. UI render/install/resize remain untested; KVM unavailable in earlier probe. Phase 1 remains in progress.

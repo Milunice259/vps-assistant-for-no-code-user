@@ -81,11 +81,13 @@ jobs:
           grep -q 'PASS: updater checks' /tmp/widget-evidence/update-checks.txt
           adb shell appops set com.vpscontrol.widget.qa3 REQUEST_INSTALL_PACKAGES allow
           adb shell am instrument -w -e mode stage com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-cancel-stage.txt
+          adb logcat -d -s VPSUpdate:E
           grep -q 'PASS: updater stage' /tmp/widget-evidence/update-cancel-stage.txt
           python3 android/app/tests/install-ui.py cancel /tmp/widget-evidence
           adb shell am instrument -w -e mode cancel com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-cancel.txt
           grep -q 'PASS: updater cancel' /tmp/widget-evidence/update-cancel.txt
           adb shell am instrument -w -e mode stage com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-install-stage.txt
+          adb logcat -d -s VPSUpdate:E
           grep -q 'PASS: updater stage' /tmp/widget-evidence/update-install-stage.txt
           python3 android/app/tests/install-ui.py install /tmp/widget-evidence
           adb shell am instrument -w -e mode after com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-after.txt

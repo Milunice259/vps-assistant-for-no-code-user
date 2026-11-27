@@ -5,7 +5,7 @@ TOOLS = (
  ('jdk.tar.gz','https://aka.ms/download-jdk/microsoft-jdk-21.0.13.1-linux-x64.tar.gz','103575ed91ff84647f9f5630b94bc5d172faf95432633e77d54343f13bbd0362'),
  ('buildtools.zip','https://dl.google.com/android/repository/build-tools_r35_linux.zip','bd3a4966912eb8b30ed0d00b0cda6b6543b949d5ffe00bea54c04c81e1561d88'),
 )
-PUBLISHER_SHA='628cbb09a1eb13713cb8ef5bed0953acda8205e7dedb684a49a487907d8656bb'
+PUBLISHER_SHAS={'628cbb09a1eb13713cb8ef5bed0953acda8205e7dedb684a49a487907d8656bb', 'e8e2aa2f5e0d83577cb544d7d3eababedb7ef40d5adf8e3027377fabe3a9d9a8'}
 def destination(root, name):
     target=(root/name).resolve()
     if not target.is_relative_to(root.resolve()):
@@ -55,14 +55,14 @@ def unpack(path, root):
                     os.link(link,target)
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__)
+    p=argparse.ArgumentParser(description=__doc__,allow_abbrev=False)
     p.add_argument('--verify-tools-only',action='store_true')
     p.add_argument('--publisher',type=pathlib.Path)
     args,forward=p.parse_known_args()
     if not args.verify_tools_only:
         assert not os.getenv('GITHUB_ACTIONS') and not os.getenv('CI'),'Publishing is an operator operation, not public CI'
         assert args.publisher and args.publisher.is_file(),'Provide the exact reviewed publisher script'
-        assert hashlib.sha256(args.publisher.read_bytes()).hexdigest()==PUBLISHER_SHA,'Publisher source differs from reviewed Android 1.1.0'
+        assert hashlib.sha256(args.publisher.read_bytes()).hexdigest() in PUBLISHER_SHAS,'Publisher source differs from reviewed Android 1.1.0'
         assert shutil.which('gh') and shutil.which('git'),'Existing authenticated gh/git required; no system packages will be installed'
     with tempfile.TemporaryDirectory(prefix='vps-public-apk-tools-') as temp:
         root=pathlib.Path(temp)

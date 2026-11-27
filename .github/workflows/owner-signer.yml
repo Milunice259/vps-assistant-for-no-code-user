@@ -5,6 +5,8 @@ on:
     paths:
       - 'android/owner-signer/**'
       - '.github/workflows/owner-signer.yml'
+      - 'android/app/sign-release.sh'
+      - 'android/app/publish-release.py'
 permissions:
   contents: read
 concurrency:
@@ -47,5 +49,7 @@ jobs:
           git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout --detach FETCH_HEAD
+      - name: Release-tool regressions with mocked GitHub and synthetic metadata
+        run: python3 -B android/owner-signer/test-release-tools.py
       - name: Verify temporary Linux tools without signing or publishing
         run: python3 android/owner-signer/verify-publish-portable.py --verify-tools-only

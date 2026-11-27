@@ -9,6 +9,24 @@ def run(args, **kw):
 def gh_api(path, method='GET', payload=None):
     cmd = ['gh', 'api', path, '--method', method]
     return json.loads(run(cmd + (['--input', '-'] if payload is not None else []), input=json.dumps(payload) if payload is not None else None, stderr=subprocess.PIPE))
+def verify_release_tag(tag, source):
+    path=f'repos/{REPO}/git/ref/tags/{tag}'
+    try:
+        tag_info=gh_api(path)['object']
+    except subprocess.CalledProcessError as e:
+        if 'HTTP 404' not in str(getattr(e, 'stderr', '')):
+            raise
+        # A draft release does not necessarily create its Git tag.
+        try:
+            gh_api(f'repos/{REPO}/git/refs', 'POST', {'ref':f'refs/tags/{tag}', 'sha':source})
+        except subprocess.CalledProcessError as race:
+            if 'HTTP 422' not in str(getattr(race, 'stderr', '')):
+                raise
+        tag_info=gh_api(path)['object']
+    if tag_info['type']=='tag':
+        tag_info=gh_api(f'repos/{REPO}/git/tags/{tag_info["sha"]}')['object']
+    assert tag_info['type']=='commit' and tag_info['sha']==source, 'Release tag points to another source'
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk', required=True, type=pathlib.Path)
@@ -77,10 +95,7 @@ def main():
         run(['gh', 'release', 'download', tag, '--repo', REPO, '--pattern', name, '--pattern', 'stable.json', '--dir', temp])
         assert hashlib.sha256((pathlib.Path(temp)/name).read_bytes()).hexdigest() == digest, 'Published APK bytes differ'
         assert json.loads((pathlib.Path(temp)/'stable.json').read_text()) == manifest, 'Published metadata differs'
-    tag_info = gh_api(f'repos/{REPO}/git/ref/tags/{tag}')['object']
-    if tag_info['type'] == 'tag':
-        tag_info = gh_api(f'repos/{REPO}/git/tags/{tag_info["sha"]}')['object']
-    assert tag_info['type'] == 'commit' and tag_info['sha'] == args.source, 'Release tag points to another source'
+    verify_release_tag(tag, args.source)
     run(['gh', 'release', 'edit', tag, '--repo', REPO, '--draft=false', '--latest=false'])
     data = dict(message=f'Publish Android update feed for {tag}', branch='main', content=base64.b64encode((output/'stable.json').read_bytes()).decode())
     if current:

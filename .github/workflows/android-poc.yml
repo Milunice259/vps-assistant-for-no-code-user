@@ -26,11 +26,4 @@ jobs:
       - name: Compile, sign and verify offline demonstration APK
         shell: bash
         run: bash android/poc/build.sh
-      - name: Upload small offline demo for device acceptance
-        uses: actions/upload-artifact@v4
-        with:
-          name: vps-widget-poc
-          path: android/poc/build/vps-widget-poc.apk
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
+      # Artifact handoff is enabled only for explicitly requested builds to avoid recurring storage use.

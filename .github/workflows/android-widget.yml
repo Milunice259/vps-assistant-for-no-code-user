@@ -35,6 +35,7 @@ jobs:
           javac -d /tmp/widget-jvm android/app/src/com/vpscontrol/widget/Policy.java android/app/tests/PolicyTest.java
           java -cp /tmp/widget-jvm PolicyTest
           bash android/app/build.sh qa
+          bash android/app/build.sh unsigned
       - name: Prepare free hosted Android emulator
         env:
           API: ${{ matrix.api }}
@@ -66,11 +67,11 @@ jobs:
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
           adb shell input keyevent 82
-          adb install android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+          adb install android/app/build/VPS-Control-Widget-1.0.0-rc.2.apk
           adb install android/app/build/vps-widget-tests.apk
           adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.Smoke | tee /tmp/widget-tests.txt
           mkdir -p /tmp/widget-evidence
-          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa/files/qa /tmp/widget-evidence || true
+          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa2/files/qa /tmp/widget-evidence || true
           cp /tmp/widget-tests.txt /tmp/widget-evidence/
           adb logcat -d -s AndroidRuntime:E > /tmp/widget-evidence/crashes.txt
           grep -q 'PASS:' /tmp/widget-tests.txt
@@ -80,7 +81,7 @@ jobs:
         with:
           name: vps-widget-qa-handoff
           path: |
-            android/app/build/VPS-Control-Widget-1.0.0-rc.1.apk
+            android/app/build/VPS-Control-Widget-1.0.0-rc.2.apk
             android/app/build/vps-control-v1.0.0-unsigned.apk
             /tmp/widget-evidence/
           retention-days: 1

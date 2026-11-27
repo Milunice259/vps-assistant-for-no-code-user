@@ -12,7 +12,7 @@ out="$(mktemp -d)";trap 'rm -rf "$out"' EXIT
 mkdir -p "$out/gen" "$out/classes" "$out/dex" build
 cp AndroidManifest.xml "$out/AndroidManifest.xml"
 if [[ "$mode" == qa ]]; then
-  sed -i 's/package="com.vpscontrol.widget"/package="com.vpscontrol.widget.qa"/;s/android:label="VPS Control"/android:label="VPS Control · Test"/;s/android:versionName="1.0.0"/android:versionName="1.0.0-rc.1"/' "$out/AndroidManifest.xml"
+  sed -i 's/package="com.vpscontrol.widget"/package="com.vpscontrol.widget.qa2"/;s/android:label="VPS Control"/android:label="VPS Control · RC2"/;s/android:versionName="1.0.0"/android:versionName="1.0.0-rc.2"/' "$out/AndroidManifest.xml"
 fi
 "$bt/aapt2" compile --dir res -o "$out/res.zip"
 "$bt/aapt2" link -I "$platform" --manifest "$out/AndroidManifest.xml" --custom-package com.vpscontrol.widget --java "$out/gen" -o "$out/resources.apk" "$out/res.zip"
@@ -21,11 +21,13 @@ jar cf "$out/classes.jar" -C "$out/classes" .
 "$bt/d8" --release --min-api 29 --lib "$platform" --output "$out/dex" "$out/classes.jar"
 cp "$out/resources.apk" "$out/unsigned.apk"
 zip -q -j "$out/unsigned.apk" "$out/dex/classes.dex"
-"$bt/zipalign" -p -f 4 "$out/unsigned.apk" build/vps-control-v1.0.0-unsigned.apk
+unsigned=build/vps-control-v1.0.0-unsigned.apk
+if [[ "$mode" == qa ]]; then unsigned=build/vps-control-rc2-qa-unsigned.apk; fi
+"$bt/zipalign" -p -f 4 "$out/unsigned.apk" "$unsigned"
 if [[ "$mode" == qa ]]; then
  keytool -genkeypair -keystore "$out/qa.p12" -storetype PKCS12 -storepass qa-build-only -keypass qa-build-only -alias qa -keyalg RSA -keysize 2048 -validity 365 -dname 'CN=VPS Control QA ONLY' -noprompt >/dev/null 2>&1
- "$bt/apksigner" sign --ks "$out/qa.p12" --ks-pass pass:qa-build-only --key-pass pass:qa-build-only --out build/VPS-Control-Widget-1.0.0-rc.1.apk build/vps-control-v1.0.0-unsigned.apk
- "$bt/apksigner" verify --verbose --print-certs build/VPS-Control-Widget-1.0.0-rc.1.apk
+ "$bt/apksigner" sign --ks "$out/qa.p12" --ks-pass pass:qa-build-only --key-pass pass:qa-build-only --out build/VPS-Control-Widget-1.0.0-rc.2.apk "$unsigned"
+ "$bt/apksigner" verify --verbose --print-certs build/VPS-Control-Widget-1.0.0-rc.2.apk
  # Use the same disposable key for the separate on-device instrumentation APK.
  if [[ -f tests/AndroidManifest.xml ]]; then
   mkdir -p "$out/testclasses" "$out/testdex"
@@ -38,9 +40,9 @@ if [[ "$mode" == qa ]]; then
   "$bt/apksigner" sign --ks "$out/qa.p12" --ks-pass pass:qa-build-only --key-pass pass:qa-build-only --out build/vps-widget-tests.apk "$out/test-aligned.apk"
  fi
 fi
-"$bt/zipalign" -c 4 build/vps-control-v1.0.0-unsigned.apk
-"$bt/aapt2" dump badging build/vps-control-v1.0.0-unsigned.apk
-"$bt/aapt2" dump permissions build/vps-control-v1.0.0-unsigned.apk
-if unzip -Z1 build/vps-control-v1.0.0-unsigned.apk | grep -q '^lib/'; then echo 'Unexpected native runtime';exit 1;fi
-bytes="$(wc -c < build/vps-control-v1.0.0-unsigned.apk)";test "$bytes" -le 500000
+"$bt/zipalign" -c 4 "$unsigned"
+"$bt/aapt2" dump badging "$unsigned"
+"$bt/aapt2" dump permissions "$unsigned"
+if unzip -Z1 "$unsigned" | grep -q '^lib/'; then echo 'Unexpected native runtime';exit 1;fi
+bytes="$(wc -c < "$unsigned")";test "$bytes" -le 500000
 sha256sum build/*.apk

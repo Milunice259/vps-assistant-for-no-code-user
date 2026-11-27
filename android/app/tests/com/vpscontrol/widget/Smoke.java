@@ -18,6 +18,7 @@ public final class Smoke extends Instrumentation {
  private static int status=200;
  private static String response="{}",authorization,method;
  private static boolean redirects;
+ private static int requests,delayMs;
  private static ByteArrayOutputStream posted;
  private void check(boolean condition,String message){checks++;if(!condition)throw new AssertionError(message);}
  public void onCreate(Bundle args){super.onCreate(args);start();}
@@ -50,14 +51,21 @@ public final class Smoke extends Instrumentation {
    Store.putSetting(c,"language",language);Store.putSetting(c,"theme",theme);
    final Snapshot snapshot=data;
    for(final int[] size:new int[][]{{110,110},{160,160},{280,180},{280,320},{350,440}}){
-    for(final boolean single:new boolean[]{false,true})runOnMainSync(new Runnable(){public void run(){RemoteViews rv=Widgets.render(c,42,single,size[0],size[1],snapshot);View view=rv.apply(c,new FrameLayout(c));int w=(int)(size[0]*c.getResources().getDisplayMetrics().density),h=(int)(size[1]*c.getResources().getDisplayMetrics().density);view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h);check(view.findViewById(R.id.headline)!=null,"RemoteViews inflation");TextView stamp=(TextView)view.findViewById(R.id.stamp);check(stamp.getBottom()<=h-view.getPaddingBottom(),"Timestamp fits "+size[0]+"x"+size[1]);
+    for(final boolean single:new boolean[]{false,true})runOnMainSync(new Runnable(){public void run(){RemoteViews rv=Widgets.render(c,42,single,size[0],size[1],snapshot);View view=rv.apply(c,new FrameLayout(c));int w=(int)(size[0]*c.getResources().getDisplayMetrics().density),h=(int)(size[1]*c.getResources().getDisplayMetrics().density);view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h);check(view.findViewById(R.id.headline)!=null,"RemoteViews inflation");TextView stamp=(TextView)view.findViewById(R.id.stamp);check(stamp.getMeasuredHeight()>0&&stamp.getBottom()<=h-view.getPaddingBottom(),"Timestamp fits "+size[0]+"x"+size[1]);
     try {Bitmap rendered=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(new android.graphics.Canvas(rendered));File dir=new File(c.getExternalFilesDir(null),"qa");dir.mkdirs();String name=(Store.vi(c)?"vi":"en")+"-"+(Store.dark(c)?"dark":"light")+"-"+(single?"single":"fleet")+"-"+size[0]+"x"+size[1]+".png";try(FileOutputStream out=new FileOutputStream(new File(dir,name))){rendered.compress(Bitmap.CompressFormat.PNG,100,out);}rendered.recycle();}catch(Exception e){throw new RuntimeException(e);}
 }});
    }
   }
+  Store.putSetting(c,"widget.42","[\"server0\"]");Store.putSetting(c,"widget.43","[\"server1\"]");
+  check(Widgets.selection(c,42,data).size()==1&&Widgets.selection(c,42,data).get(0).id.equals("server0"),"First widget selection");
+  check(Widgets.selection(c,43,data).size()==1&&Widgets.selection(c,43,data).get(0).id.equals("server1"),"Independent second widget selection");
+  Store.putSetting(c,"widget.42","");Store.putSetting(c,"widget.43","");
+  Snapshot old=new Snapshot(fixture(System.currentTimeMillis()-1800000));check(old.servers.get(0).state(old).equals("stale"),"Cached online observation expires locally");check(Widgets.metrics(old,old.servers.get(0)).contains("—"),"Stale numeric metrics are unavailable");
   Store.putSetting(c,"language","vi");Store.putSetting(c,"theme","dark");Store.snapshot(c,data,Store.generation());
   final LinearLayout[] gallery=new LinearLayout[1];runOnMainSync(new Runnable(){public void run(){LinearLayout list=new LinearLayout(c);list.setOrientation(1);for(int[] size:new int[][]{{170,170},{440,210},{440,340}}){View v=Widgets.render(c,42,false,size[0],size[1],Store.snapshot(c)).apply(c,list);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams((int)(size[0]*c.getResources().getDisplayMetrics().density),(int)(size[1]*c.getResources().getDisplayMetrics().density));p.bottomMargin=12;list.addView(v,p);}gallery[0]=list;}});
   final Activity main=startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();capture("overview-vi-dark.png");runOnMainSync(new Runnable(){public void run(){main.setContentView(gallery[0]);}});waitForIdleSync();capture("widgets-vi-dark.png");runOnMainSync(new Runnable(){public void run(){main.finish();}});
+  // Two simultaneous refresh requests share one fetch; service errors preserve the cache.
+  Thread.sleep(10500);status=503;response="{}";delayMs=150;int beforeRequests=requests;final java.util.concurrent.CountDownLatch errors=new java.util.concurrent.CountDownLatch(2);Runnable finished=new Runnable(){public void run(){errors.countDown();}};Sync.request(c,finished);Sync.request(c,finished);check(errors.await(20,java.util.concurrent.TimeUnit.SECONDS),"Coalesced callbacks complete");check(requests-beforeRequests==1,"Concurrent refresh coalesced to one fetch");check(Store.session(c)!=null&&Store.snapshot(c)!=null&&Store.error(c).equals("server"),"Service failure preserves permitted cache");delayMs=0;
   // Actual lifecycle: rejected credentials remove both session and all cached metrics.
   Thread.sleep(10500);status=401;response="{}";final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);Sync.request(c,new Runnable(){public void run(){latch.countDown();}});check(latch.await(20,java.util.concurrent.TimeUnit.SECONDS),"Sync completion");check(Store.session(c)==null&&Store.snapshot(c)==null,"401 clears token and snapshot");
   Sync.schedule(c);check(((JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE)).getPendingJob(27101)==null,"Disconnect cancels job");
@@ -67,7 +75,7 @@ public final class Smoke extends Instrumentation {
   Fake(URL url){super(url);posted=new ByteArrayOutputStream();}
   public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
   public String getCipherSuite(){return "TLS_TEST";}public java.security.cert.Certificate[] getLocalCertificates(){return null;}public java.security.cert.Certificate[] getServerCertificates(){return new java.security.cert.Certificate[0];}
-  public int getResponseCode(){authorization=getRequestProperty("Authorization");Smoke.method=getRequestMethod();redirects=getInstanceFollowRedirects();return status;}
+  public int getResponseCode(){requests++;if(delayMs>0)try{Thread.sleep(delayMs);}catch(InterruptedException ignored){}authorization=getRequestProperty("Authorization");Smoke.method=getRequestMethod();redirects=getInstanceFollowRedirects();return status;}
   public String getContentType(){return "application/json";}public long getContentLengthLong(){return -1;}
   public InputStream getInputStream()throws IOException{return new ByteArrayInputStream(response.getBytes("UTF-8"));}
   public OutputStream getOutputStream(){return posted;}

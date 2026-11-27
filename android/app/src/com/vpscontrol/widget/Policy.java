@@ -18,5 +18,5 @@ public final class Policy {
   if(!worker||now<generated-60000||now-observed>staleAfter(interval)) return "stale";
   return state;
  }
- public static int rows(int width,int height,boolean single) {return single||width<230?0:Math.min(8,Math.max(0,(height-132)/46));}
+ public static int rows(int width,int height,boolean single) {return single||width<230?0:Math.min(8,Math.max(0,height<230?(height-55)/34:(height-132)/46));}
 }

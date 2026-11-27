@@ -42,3 +42,5 @@ Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS;
 - UX finding: expanded widget uses a fixed compact layout, small typography and large unused area. Phase 3 must deliver responsive layout and retest on real device. Do not mistake sample numbers for real VPS data.
 - Phase 2 started: docs/android/MOBILE-API.md defines proposed snapshot lifecycle, scoped device authorization, exact endpoint boundaries and tests. src/lib/mobile-snapshot-view.ts pure observation projection and tests/mobile-snapshot-view.test.mjs added; not connected to worker or HTTP routes yet. No DB changes, live endpoint or production access.
 - Production remains blocked pending later QA and explicit deployment authorization. All work remains on draft PR #1; no paid runner or artifact upload added.
+
+- Local Node 22.16.0 test of exact GitHub source/test blobs passed (git hash-object matched both remote blob SHAs); isolated TypeScript strict no-emit check passed. This verifies only the pure projection, not collector, auth, database or API integration. No CI artifact uploaded.

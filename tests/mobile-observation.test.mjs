@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {parseRemoteObservation, observedRatio, connectionReachability, observedCount} from "../src/lib/mobile-observation.ts";
+assert.deepEqual(parseRemoteObservation("%Cpu(s):  5.0 us, 3.0 sy, 92.0 id, 0.0 wa","100 62 38","1000 450 550"),{cpuPercent:8,memoryPercent:62,diskPercent:45});
+assert.deepEqual(parseRemoteObservation("","", "1000 450 bad"),{cpuPercent:null,memoryPercent:null,diskPercent:null});
+assert.deepEqual(parseRemoteObservation("%Cpu(s): 100.0 id","100 0 100","100 100 0"),{cpuPercent:0,memoryPercent:0,diskPercent:100});
+assert.equal(observedRatio(0,0),null);assert.equal(observedRatio(100,101),null);
+assert.equal(connectionReachability(new Error("authentication failed")),"unknown");
+assert.equal(connectionReachability(Object.assign(new Error("unreachable"),{code:"EHOSTUNREACH"})),"offline");
+assert.equal(observedCount(0),0);assert.equal(observedCount(-1),null);
+console.log("Mobile observation parser: PASS");

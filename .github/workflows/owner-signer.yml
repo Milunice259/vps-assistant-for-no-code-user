@@ -1,0 +1,51 @@
+name: Owner Windows signing setup verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android/owner-signer/**'
+      - '.github/workflows/owner-signer.yml'
+permissions:
+  contents: read
+concurrency:
+  group: owner-signer-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  windows-tools:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact merge source
+        shell: pwsh
+        run: |
+          git init .
+          git remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$env:GITHUB_SHA"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Verify Windows PowerShell 5.1 safeguards
+        shell: powershell
+        run: |
+          & android/owner-signer/Test-OwnerSigner.ps1
+      - name: Download pinned tools and exercise actual Windows binaries
+        shell: powershell
+        run: |
+          & android/owner-signer/OwnerSigner.ps1 -VerifyToolsOnly
+      # Standard free runner on this public repository only. No key creation/signing,
+      # owner credential, upload artifact, cache, release or production access.
+
+  linux-public-verifier:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact merge source
+        run: |
+          git init .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Verify temporary Linux tools without signing or publishing
+        run: python3 android/owner-signer/verify-publish-portable.py --verify-tools-only

@@ -1,6 +1,6 @@
 # Android Widget V1.0 — Phase 0 status
 
-Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS; Phase 1 mock-only work authorized by approved roadmap. Production release remains BLOCKED.
+Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS; Phase 1 build/signature PASS, installation/handoff pending. Production release remains BLOCKED pending QA and authorization.
 - Source baseline: f3540b92573a7c9ebf0a3717e432f30c799883d6, confirmed as PR #1 base. No open PR was returned before creation.
 - Feature branch: feature/android-widget. Draft PR: #1. Roadmap committed as bd1a7ef261371e2304c996edda164e6ead31d6f7.
 - Repository public, connector admin/push/pull confirmed; workflow-file write, PR creation and Actions scheduling/log retrieval proven. No merge or production mutation.
@@ -9,7 +9,7 @@ Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS;
 - Local sandbox has JDK 21, Node 22, no Android SDK/Gradle/ADB; direct git DNS failed. Build fallback is already-owned machine via Hermes.
 - Source review confirms server-level CPU/RAM/disk exists inside notification-checks; return value omits these fields. Plan bounded latest snapshot only from scheduler, without added SSH calls. Existing catch-all remote check labels any error offline: distinguish reachability from collection failure in mobile projection. Preserve current alert behavior until separate tests justify changes. App counts only if observation supports them. Docker exclusion and additive SQLite compatibility tests required.
 - Release signing decision: stable owner-controlled key generated/kept on owner-controlled machine, never public source or chat; test-only key distinct from release. No production keys generated in Phase 0.
-- Remaining before production: verified consistent backup, protected configuration/key custody and isolated rollback rehearsal; exact running image provenance; explicit release authorization. Before APK handoff: artifact cost/transfer and emulator or device validation.
+- Remaining before production: refresh verified backup near deployment, exact new image provenance, QA and explicit release authorization. Before APK handoff: artifact cost/transfer and emulator or device validation.
 
 ## Production read-only preflight (operator-reported, 2026-11-27)
 - Source checkout matches pinned main baseline; no tracked modifications reported. Running image revision label absent, so exact image provenance remains unproven. Selected runtime files match source. Service and worker operational; read-only SQLite quick_check ok. This evidence is operator-reported, not directly re-executed by ChatGPT.
@@ -22,5 +22,12 @@ Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS;
 ## Phase 1 initial PoC
 - Java/RemoteViews offline demonstration under android/poc, package com.vpscontrol.widget.poc, Android 10+ (min 29), sample labels, no INTERNET or real connection. Separate disposable demo signing key, not upgrade-compatible with future production package.
 - Initial build uses existing Android SDK CLI directly (aapt2, javac, d8, zipalign, apksigner) rather than adding AGP or Gradle downloads for this isolated PoC; release build tooling to be finalized in later gates. No R8 shrink claim yet.
-- CI run 45955946777 on standard Ubuntu: resource compilation and source checkout passed, javac failed on lambda metafactory with SDK stubs. Replaced lambda with explicit OnClickListener (8a74952b27df1bf700d53454af49a62a5ab2255c). Rebuild pending verification. No APK size or signature verified yet.
+- CI run 45955946777 on standard Ubuntu: resource compilation and source checkout passed, javac failed on lambda metafactory with SDK stubs. Replaced lambda with explicit OnClickListener (8a74952b27df1bf700d53454af49a62a5ab2255c). Next run 45956005816 cancelled by concurrency when the docs commit advanced the PR. Successful run 45956020818 on head f4e766a3ffc0795a4eeaea0a490e310f909b1301 (tested merge 6605e29098092bcf9655dabb18fdde84d66bfb19), job 140362587998: APK 17,090 bytes; apksigner verify PASS (v3), zipalign PASS, minSdk 29, targetSdk 35, app-widget component present, no INTERNET permission or native lib entries. SHA-256 0973aab865641a54740b4d8b7c678873ed64bcf3ca338239b61eed800985394a. This ephemeral test APK is not a production release; binary not retained.
 - No artifact uploaded, no cache and no production access. Billing storage allowance not verified. UI render/install/resize remain untested; KVM unavailable in earlier probe. Phase 1 remains in progress.
+
+## Backup and recovery checkpoint (operator-reported, 2026-11-27)
+- Operator reports consistent read-only-source VACUUM INTO panel snapshot, integrity and FK checks passed; current image preserved by distinct rollback tag and independent image archive with matching config; configuration and key material secured locally; recovery manifest and hashes verified.
+- Isolated restore: no network, Docker socket, host PID, privileged flag or exposed port; clone startup, protected table fingerprints, HTTP auth boundary, signed session and worker heartbeat passed. Encryption canary passed; no real stored ciphertext available for test. Password login, real remote integration and archive docker load not exercised.
+- Current production service unchanged per operator; backup resides on same host, not a disaster-recovery copy. Recommend encrypted owner-controlled off-host copy with no added service cost. Refresh backup and validate exact candidate release image at Phase 5; rollback never overwrites live DB or discards post-backup data without explicit approval.
+- Production recovery preparation accepted conditionally on operator evidence, not independently re-executed. No actual host paths, production image identifiers, secret details or database checksum committed to public source.
+- Phase 1 gate still requires real install/render test and APK delivery. No artifact storage enabled; account billing settings not exposed through GitHub connector.

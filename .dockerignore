@@ -33,3 +33,5 @@ docker-compose.yml
 *.tgz
 .turbo
 .pnp*
+
+android/

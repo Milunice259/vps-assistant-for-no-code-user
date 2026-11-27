@@ -57,4 +57,5 @@ jobs:
           node scripts/monitoring-worker.cjs --build
           node tests/mobile-snapshot-store.test.cjs
           node tests/mobile-devices.test.cjs
+          node tests/mobile-http.test.cjs
       # No cache or artifact, no deployment or secrets.

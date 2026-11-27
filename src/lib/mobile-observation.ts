@@ -1,4 +1,4 @@
-import { percent } from "./mobile-snapshot-view";
+const percent = (v:number):number|null => Number.isFinite(v) && v>=0 && v<=100 ? v : null;
 export type ResourceObservation = {
   cpuPercent: number | null;
   memoryPercent: number | null;

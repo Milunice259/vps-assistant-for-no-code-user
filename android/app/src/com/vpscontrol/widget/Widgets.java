@@ -53,12 +53,12 @@ public class Widgets extends AppWidgetProvider {
  }
  static PendingIntent activity(Context c,int id,boolean setup){Intent i=new Intent(c,setup?WidgetSetupActivity.class:MainActivity.class).setData(android.net.Uri.parse("vpswidget://local/"+id+(setup?"/setup":"/overview"))).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);return PendingIntent.getActivity(c,id+(setup?10000:0),i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}
  public static RemoteViews render(Context c,int id,boolean single,int width,int height,Snapshot data){
-  RemoteViews v=new RemoteViews(c.getPackageName(),R.layout.widget);Visuals palette=new Visuals(c);boolean compact=height<145,small=width<180;
+  RemoteViews v=new RemoteViews(c.getPackageName(),height<125?R.layout.widget_tiny:R.layout.widget);Visuals palette=new Visuals(c);boolean compact=height<145,small=width<180;
   int pad=compact||small?10:18;
   v.setInt(R.id.root,"setBackgroundResource",Store.dark(c)?R.drawable.card_bg:R.drawable.card_light);
-  v.setViewPadding(R.id.root,dp(c,pad),dp(c,compact?7:14),dp(c,pad),dp(c,compact?7:14));
+  v.setViewPadding(R.id.root,dp(c,pad),dp(c,compact?7:12),dp(c,pad),dp(c,compact?7:12));
   v.setTextColor(R.id.title,palette.muted);v.setTextColor(R.id.headline,palette.ink);v.setTextColor(R.id.stamp,palette.muted);v.setTextColor(R.id.summary,palette.green);
-  v.setTextViewText(R.id.title,small?"VPS":"VPS CONTROL");v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,compact||small?18:26);
+  v.setTextViewText(R.id.title,small?"VPS":"VPS CONTROL");v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,height<125?16:compact||small?18:24);
   v.setTextViewTextSize(R.id.summary,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:12);v.setTextViewTextSize(R.id.stamp,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:11);
   v.setImageViewBitmap(R.id.refresh,Visuals.icon(c,"refresh",palette.accent));
   v.setOnClickPendingIntent(R.id.root,activity(c,id,false));v.setOnClickPendingIntent(R.id.title,activity(c,id,true));
@@ -68,8 +68,8 @@ public class Widgets extends AppWidgetProvider {
   String status=Store.error(c),stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Đã cập nhật"," · Updated");
   if(!status.isEmpty())stamp=time(c,Store.received(c))+Store.tr(c," · Lưu cũ, lỗi cập nhật"," · Cached, refresh error");
   else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
-  boolean tiny=height<125;v.setViewVisibility(R.id.summary,tiny?View.GONE:View.VISIBLE);
-  int bodyW=Math.max(1,width-pad*2),bodyH=Math.max(1,height-(tiny?67:compact?82:101));
+  boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny?View.GONE:View.VISIBLE);
+  Double[] focused=null;boolean fleet=false;
   v.setViewVisibility(R.id.visual,View.VISIBLE);
   if(!connected||data==null||servers.isEmpty()){
    v.setTextViewText(R.id.headline,!connected?Store.tr(c,"Kết nối VPS","Connect VPS"):Store.tr(c,"Chưa có dữ liệu","No data yet"));
@@ -80,15 +80,23 @@ public class Widgets extends AppWidgetProvider {
    Snapshot.Server s=servers.get(0);String state=s.state(data);boolean online=state.equals("online");
    v.setTextViewText(R.id.headline,s.name);v.setTextViewText(R.id.summary,"● "+stateLabel(c,state));v.setTextColor(R.id.summary,palette.state(state));
    Double[] values=online?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
-   v.setImageViewBitmap(R.id.visual,Visuals.metrics(c,bodyW,bodyH,values));v.setContentDescription(R.id.visual,metrics(data,s));
+   focused=values;v.setContentDescription(R.id.visual,metrics(data,s));
    stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
   }else{
    int online=0,down=0,other=0;for(Snapshot.Server s:servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
    v.setTextViewText(R.id.headline,online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
    v.setTextViewText(R.id.summary,down+Store.tr(c," mất kết nối · "," unreachable · ")+other+Store.tr(c," cần kiểm tra"," to review"));v.setTextColor(R.id.summary,down>0?palette.red:other>0?palette.amber:palette.muted);
-   v.setImageViewBitmap(R.id.visual,Visuals.fleet(c,bodyW,bodyH,servers,data));StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.state(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
+   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.state(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
   }
-  v.setTextViewText(R.id.stamp,stamp);return v;
+  v.setTextViewText(R.id.stamp,stamp);
+  if(focused!=null||fleet){
+   // Measure the same native layout first: font scale and actual launcher bounds determine the chart area.
+   View measured=v.apply(c,new android.widget.FrameLayout(c));measured.measure(View.MeasureSpec.makeMeasureSpec(dp(c,width),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(dp(c,height),View.MeasureSpec.EXACTLY));measured.layout(0,0,measured.getMeasuredWidth(),measured.getMeasuredHeight());
+   View visual=measured.findViewById(R.id.visual);float density=c.getResources().getDisplayMetrics().density;
+   int bodyW=Math.max(1,Math.round((visual.getMeasuredWidth()-visual.getPaddingLeft()-visual.getPaddingRight())/density));int bodyH=Math.max(1,Math.round((visual.getMeasuredHeight()-visual.getPaddingTop()-visual.getPaddingBottom())/density));
+   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused):Visuals.fleet(c,bodyW,bodyH,servers,data));
+  }
+  return v;
  }
  private static int dp(Context c,int value){return Math.round(value*c.getResources().getDisplayMetrics().density);}
  static PendingIntent browser(Context c,int code,String id){

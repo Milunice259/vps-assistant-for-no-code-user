@@ -1,6 +1,6 @@
 # Android Widget V1.0 — Phase 0 status
 
-Updated 2026-11-27. State: IN PROGRESS (preflight gate not yet passed).
+Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS; Phase 1 mock-only work authorized by approved roadmap. Production release remains BLOCKED.
 - Source baseline: f3540b92573a7c9ebf0a3717e432f30c799883d6, confirmed as PR #1 base. No open PR was returned before creation.
 - Feature branch: feature/android-widget. Draft PR: #1. Roadmap committed as bd1a7ef261371e2304c996edda164e6ead31d6f7.
 - Repository public, connector admin/push/pull confirmed; workflow-file write, PR creation and Actions scheduling/log retrieval proven. No merge or production mutation.
@@ -9,4 +9,12 @@ Updated 2026-11-27. State: IN PROGRESS (preflight gate not yet passed).
 - Local sandbox has JDK 21, Node 22, no Android SDK/Gradle/ADB; direct git DNS failed. Build fallback is already-owned machine via Hermes.
 - Source review confirms server-level CPU/RAM/disk exists inside notification-checks; return value omits these fields. Plan bounded latest snapshot only from scheduler, without added SSH calls. Existing catch-all remote check labels any error offline: distinguish reachability from collection failure in mobile projection. Preserve current alert behavior until separate tests justify changes. App counts only if observation supports them. Docker exclusion and additive SQLite compatibility tests required.
 - Release signing decision: stable owner-controlled key generated/kept on owner-controlled machine, never public source or chat; test-only key distinct from release. No production keys generated in Phase 0.
-- Remaining: confirm production commit/image and host build fallback via Hermes read-only preflight; finish SDK probe or use free fallback; verify artifact handoff/storage before use; actual emulator/install tests in Phase 1/4. No APK built yet.
+- Remaining before production: verified consistent backup, protected configuration/key custody and isolated rollback rehearsal; exact running image provenance; explicit release authorization. Before APK handoff: artifact cost/transfer and emulator or device validation.
+
+## Production read-only preflight (operator-reported, 2026-11-27)
+- Source checkout matches pinned main baseline; no tracked modifications reported. Running image revision label absent, so exact image provenance remains unproven. Selected runtime files match source. Service and worker operational; read-only SQLite quick_check ok. This evidence is operator-reported, not directly re-executed by ChatGPT.
+- No verified recoverable panel backup or distinct rollback image found. BLOCK production deployment until consistent backup, protected configuration/key recovery and isolated rollback evidence exist. Keep current running image intact. No production intervention for mock APK.
+- Production host has no Android toolchain. Do not install it there. Free hosted CI is primary. If needed, use an existing non-production workstation, not a new paid service.
+- GitHub Actions probe run 45951454552 passed: Ubuntu 24.04, JDK 17, Gradle, Android API 34/35/36, build tools and ADB available via SDK path. KVM not readable in probe; emulator remains unverified.
+- Signing key: owner-controlled encrypted vault and offline backup; no real signing key in public CI/repository. Use ephemeral separate test key for PoC only.
+- Public repository: retain only sanitized evidence here; operational host paths, resource metrics, image identifiers and recovery locations stay out of Git history.

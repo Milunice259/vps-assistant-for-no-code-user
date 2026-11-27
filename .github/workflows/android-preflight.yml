@@ -1,0 +1,27 @@
+name: Android preflight (free runner)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Check preinstalled build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          command -v gradle
+          command -v adb
+          sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk"
+          test -d "$sdk/platforms"
+          ls -1 "$sdk/platforms"
+          ls -1 "$sdk/build-tools"
+          if test -r /dev/kvm; then echo "KVM readable"; else echo "KVM not readable"; fi
+          echo "Preflight only: no checkout, cache, artifact or deployment."

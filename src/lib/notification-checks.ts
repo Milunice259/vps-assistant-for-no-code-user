@@ -4,7 +4,9 @@ import { prisma } from "@/lib/db";
 import { execLocal, getLocalServerInfo, getLocalServices, isLocalServer } from "@/lib/local-server";
 import { closeSSH, executeCommand, getRemoteServices, getRemoteStats } from "@/lib/ssh";
 import { connectToServer } from "@/lib/server-ssh";
-import { getHostStats } from "@/lib/stats";
+import { getHostStats, sampleCpuObservation } from "@/lib/stats";
+import { connectionReachability, emptyResources, observedRatio, type ResourceObservation } from "@/lib/mobile-observation";
+import { LOCAL_MOBILE_REVISION, mobileServerRevision, publishMobileSnapshot, pruneMobileSnapshots, type MobileSample } from "@/lib/mobile-snapshot-store";
 import { evaluateAlertRules } from "@/lib/notifications";
 import type { ServerInfo } from "@/types";
 import type { SessionPayload } from "@/lib/auth";
@@ -34,14 +36,16 @@ const IMPORTANT_SERVICES = new Set(["docker", "nginx", "traefik", "ssh", "sshd"]
 const SSL_WARN_DAYS = 14;
 const BACKUP_STALE_DAYS = 7;
 
-async function listServers(actor?: SessionPayload): Promise<ServerInfo[]> {
+type CheckServer = ServerInfo & {mobileRevision?:string};
+async function listServers(actor?: SessionPayload): Promise<CheckServer[]> {
   const where = actor ? await scopedServerWhere(actor.sub, actor.role) : {};
   const localAllowed = !actor || await canAccessServer(actor.sub, actor.role, "local");
   const rows = await prisma.server.findMany({ where, orderBy: { createdAt: "desc" } });
   return [
-    ...(localAllowed ? [getLocalServerInfo()] : []),
+    ...(localAllowed ? [{...getLocalServerInfo(), ...(!actor ? {mobileRevision:LOCAL_MOBILE_REVISION} : {})}] : []),
     ...rows.map((s) => ({
       id: s.id,
+      ...(!actor && s.isActive ? {mobileRevision:mobileServerRevision(s)} : {}),
       name: s.name,
       host: s.host,
       port: s.port,
@@ -132,15 +136,26 @@ async function observeStoppedContainers(server: ServerInfo, run: (command: strin
   } catch { return undefined; }
 }
 
-async function checkServer(server: ServerInfo, deliver: boolean): Promise<NotificationCheckResult> {
+async function checkServer(server: CheckServer, deliver: boolean): Promise<NotificationCheckResult> {
   const apps = await prisma.app.findMany({ where: { serverId: server.id }, select: { domain: true } });
   const domains = uniqueDomains(apps);
   const backupStale = isLocalServer(server.id) ? await backupIsStale() : 0;
   const alerts: string[] = [];
   let stats: Stats;
+  let observedAt = new Date();
+  let resources: ResourceObservation = emptyResources();
+  const publish = async (sample: MobileSample) => {
+    if (!server.mobileRevision) return;
+    try { await publishMobileSnapshot(server.id, server.mobileRevision, sample); }
+    catch { console.error("[monitor] Mobile snapshot unavailable"); }
+  };
 
   if (isLocalServer(server.id)) {
     const host = getHostStats();
+    if (server.mobileRevision && host.hostname !== "unknown" && host.memory.total > 0) {
+      observedAt = new Date();
+      resources = {cpuPercent:sampleCpuObservation(), memoryPercent:observedRatio(host.memory.total,host.memory.used), diskPercent:observedRatio(host.disk.total,host.disk.used)};
+    }
     const appDown = await observeStoppedContainers(server, async command => execLocal(command));
     const { services, available } = getLocalServices();
     const sslExpiring = await countExpiringSsl(domains, async domain => execLocal(`echo | openssl s_client -servername ${domain} -connect ${domain}:443 2>/dev/null | openssl x509 -noout -dates 2>/dev/null`, 15_000));
@@ -156,10 +171,12 @@ async function checkServer(server: ServerInfo, deliver: boolean): Promise<Notifi
     };
   } else {
     let ssh: Awaited<ReturnType<typeof import("@/lib/ssh").createSSHConnection>> | null = null;
+    let transportConnected = false;
     try {
       const connected = await connectToServer(server.id);
+      transportConnected = true;
       ssh = connected.ssh;
-      const [host, appDown, services] = await Promise.all([getRemoteStats(ssh), observeStoppedContainers(server, command => executeCommand(ssh!, command)), getRemoteServices(ssh).catch(() => undefined)]);
+      const [host, appDown, services] = await Promise.all([getRemoteStats(ssh, server.mobileRevision ? value => { resources = value; observedAt = new Date(); } : undefined), observeStoppedContainers(server, command => executeCommand(ssh!, command)), getRemoteServices(ssh).catch(() => undefined)]);
       const sslExpiring = await countExpiringSsl(domains, domain => executeCommand(ssh!, `echo | openssl s_client -servername ${domain} -connect ${domain}:443 2>/dev/null | openssl x509 -noout -dates 2>/dev/null`, 15_000));
       stats = {
         cpu: host.cpu.usagePercent,
@@ -170,7 +187,8 @@ async function checkServer(server: ServerInfo, deliver: boolean): Promise<Notifi
         ...(sslExpiring !== undefined ? { ssl_expiring: sslExpiring } : {}),
         offline: 0,
       };
-    } catch {
+    } catch (error) {
+      await publish({ ...emptyResources(), observedAt:new Date(), reachability:transportConnected ? "unknown" : connectionReachability(error) });
       if (deliver) await evaluateAlertRules({ offline: 1 }, server.name, server.id);
       return { serverId: server.id, serverName: server.name, status: "offline", alerts: ["offline"] };
     } finally {
@@ -181,6 +199,8 @@ async function checkServer(server: ServerInfo, deliver: boolean): Promise<Notifi
   for (const metric of ["app_down", "service_down", "ssl_expiring", "backup_stale"] as const) {
     if ((stats[metric] ?? 0) > 0) alerts.push(metric);
   }
+  const validHost = Object.values(resources).some(value => value !== null);
+  await publish({ ...resources, observedAt, reachability:validHost ? "online" : "unknown", stoppedContainers:stats.app_down, failedServices:stats.service_down, expiringCertificates:stats.ssl_expiring, backupStale:stats.backup_stale });
   if (deliver) await evaluateAlertRules(stats, server.name, server.id);
   return { serverId: server.id, serverName: server.name, status: "checked", alerts };
 }
@@ -190,6 +210,10 @@ export async function runNotificationChecks(actor?: SessionPayload): Promise<Not
   if (actor !== undefined && (!actor || roleRank[normalizeRole(actor.role)] < roleRank.MANAGER)) throw new Error("Insufficient permissions");
   const deliver = !actor || adminRoles.has(normalizeRole(actor.role));
   const servers = await listServers(actor);
+  if (!actor) {
+    try { await pruneMobileSnapshots(); }
+    catch { console.error("[monitor] Mobile snapshot cleanup unavailable"); }
+  }
   const results: NotificationCheckResult[] = [];
   // ponytail: two concurrent server checks; process deadline bounds the whole cycle.
   for (let i = 0; i < servers.length; i += 2) {

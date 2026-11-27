@@ -11,3 +11,16 @@ The wizard downloads portable Microsoft OpenJDK 21 and Google Android Build Tool
 `KET-QUA-GUI-HERMES.zip` contains only the signed APK, public DER certificate and signed-release metadata. Send that ZIP to the operator, who verifies its package/version/signature/hash then runs the existing publisher from the exact tested app source. Do not send `keys`, encrypted-key backups or the password. The wizard makes no GitHub release/feed write. Publishing and actual Samsung stable acceptance remain later steps.
 
 The native application is not rebuilt by this setup. APK source stays `7695a4e1893624cb3eccf18e41c59276d4ea3348` (merged as `2c09761f83e2a2487233a5fca4282583b7c0e757`). Do not substitute the disposable QA APK or its key. An imported P12 must contain the private key under the provided alias and use the same store/key password; other formats need a controlled conversion outside this wizard.
+
+
+## Operator verification without a host SDK
+
+Hermes does not need the owner's private key. After receiving the public handoff, use the existing authenticated gh/git and Python 3.9+ on Linux. `verify-publish-portable.py` fetches pinned portable Java/Build Tools into a private temporary directory, caps the verifier JVM heap at 128 MiB, runs only the exact reviewed publisher and removes its tool directory afterward. It makes no system package installation, service or production configuration change. Keep the owner key on Windows; never copy it into this verifier environment. Temporary free space must be at least 1.2 GiB.
+
+Copy/download the helper from this setup revision to a separate path. Check out the original exact tested app source, then prepare:
+
+```
+python3 /absolute/verify-publish-portable.py --publisher /exact-app-checkout/android/app/publish-release.py --apk /absolute/owner-signed.apk --source 7695a4e1893624cb3eccf18e41c59276d4ea3348 --cert-sha256 OWNER_PUBLIC_CERT_HASH --notes-file /absolute/notes.txt
+```
+
+After review, repeat with the publisher's `--publish` argument. Verify the owner's signed APK hash, public certificate fingerprint and input unsigned digest from the handoff first. No stable key is involved in this operation. The helper refuses publishing in CI, checks the publisher's own source hash, verifies both official tool archives, and its CI mode exercises binaries only. Its Python process needs the existing gh account authorization to perform the already authorized GitHub release; no VPS runtime credential is used.

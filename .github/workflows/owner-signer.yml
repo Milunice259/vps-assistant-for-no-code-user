@@ -35,3 +35,17 @@ jobs:
           & android/owner-signer/OwnerSigner.ps1 -VerifyToolsOnly
       # Standard free runner on this public repository only. No key creation/signing,
       # owner credential, upload artifact, cache, release or production access.
+
+  linux-public-verifier:
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact merge source
+        run: |
+          git init .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+      - name: Verify temporary Linux tools without signing or publishing
+        run: python3 android/owner-signer/verify-publish-portable.py --verify-tools-only

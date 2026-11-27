@@ -1,4 +1,15 @@
 {
   "schema": 1,
-  "release": null
+  "release": {
+    "packageName": "com.vpscontrol.widget",
+    "versionCode": 10100,
+    "versionName": "1.1.0",
+    "minSdk": 29,
+    "size": 67039,
+    "sha256": "a51213c8a44b23ac389bed7d206acacf578e0abd9903e7bd2e4cdf6f7798635c",
+    "certSha256": "512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0",
+    "source": "7695a4e1893624cb3eccf18e41c59276d4ea3348",
+    "url": "https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/download/android-v1.1.0/VPS-Control-Widget-1.1.0.apk",
+    "notes": "VPS Control 1.1.0\n\nGiao diện Overview và widget rõ ràng hơn. Kiểm tra cập nhật từ GitHub, tải APK có xác minh SHA-256 và cùng khóa ký; Android luôn yêu cầu xác nhận cài đặt.\n\nBản stable đầu tiên: cài com.vpscontrol.widget, ghép nối lại trong Settings → Mobile Devices. Các bản stable sau giữ pairing và thiết lập khi cập nhật cùng khóa. Lịch refresh phụ thuộc Android/Doze; nghiệm thu Samsung thực tế do chủ dự án thực hiện."
+  }
 }

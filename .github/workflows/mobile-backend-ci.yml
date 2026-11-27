@@ -4,6 +4,10 @@ on:
     branches: [main]
     paths:
       - 'src/lib/mobile-*.ts'
+      - 'src/app/api/mobile/**'
+      - 'src/components/settings/MobileDevices.tsx'
+      - 'src/app/(panel)/settings/page.tsx'
+      - 'src/middleware.ts'
       - 'src/lib/notification-checks.ts'
       - 'src/lib/ssh/**'
       - 'src/lib/stats.ts'
@@ -52,4 +56,5 @@ jobs:
           npx --no-install prisma db push --skip-generate
           node scripts/monitoring-worker.cjs --build
           node tests/mobile-snapshot-store.test.cjs
+          node tests/mobile-devices.test.cjs
       # No cache or artifact, no deployment or secrets.

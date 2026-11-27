@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.vpscontrol.widget" android:versionCode="10001" android:versionName="1.0.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.vpscontrol.widget" android:versionCode="10100" android:versionName="1.1.0">
  <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35"/>
  <uses-permission android:name="android.permission.INTERNET"/>
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+ <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
  <application android:label="VPS Control" android:icon="@drawable/ic_launcher" android:allowBackup="false" android:fullBackupContent="@xml/backup_rules" android:dataExtractionRules="@xml/extraction_rules" android:usesCleartextTraffic="false" android:networkSecurityConfig="@xml/network_security" android:theme="@android:style/Theme.Material.NoActionBar">
   <activity android:name="com.vpscontrol.widget.MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
@@ -11,6 +12,7 @@
   <activity android:name="com.vpscontrol.widget.WidgetSetupActivity" android:exported="true" android:theme="@android:style/Theme.Material.NoActionBar">
    <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/></intent-filter>
   </activity>
+  <activity android:name="com.vpscontrol.widget.Updates$InstallActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.NoActionBar"/>
   <receiver android:name="com.vpscontrol.widget.Widgets$Fleet" android:label="VPS · Fleet 2×2" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_fleet"/></receiver>
   <receiver android:name="com.vpscontrol.widget.Widgets$Single" android:label="VPS · Server 2×2" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_single"/></receiver>
   <receiver android:name="com.vpscontrol.widget.Widgets$Wide" android:label="VPS · Fleet 4×2" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_wide"/></receiver>

@@ -18,10 +18,11 @@ public final class MainActivity extends Activity {
  private Visuals palette;
  private boolean pairing,registered;
  private EditText origin,code;
- private final BroadcastReceiver updates=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(tab==0||tab==1&&Store.session(c)!=null)render();}};
+ private final BroadcastReceiver updates=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(Updates.CHANGED.equals(i.getAction())){if(tab!=1)render();Updates.resume(MainActivity.this);}else if(tab==0||tab==1&&Store.session(c)!=null)render();}};
  public void onCreate(Bundle state){super.onCreate(state);if(state!=null)tab=state.getInt("tab",0);render();Sync.schedule(this);}
+ public void onStart(){super.onStart();Updates.check(this);}
  public void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putInt("tab",tab);}
- public void onResume(){super.onResume();IntentFilter filter=new IntentFilter(Sync.CHANGED);if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(updates,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,filter);registered=true;render();Sync.schedule(this);if(Store.session(this)!=null)Sync.request(this,null);}
+ public void onResume(){super.onResume();IntentFilter filter=new IntentFilter(Sync.CHANGED);filter.addAction(Updates.CHANGED);if(android.os.Build.VERSION.SDK_INT>=33)registerReceiver(updates,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,filter);registered=true;render();Updates.resume(this);Sync.schedule(this);if(Store.session(this)!=null)Sync.request(this,null);}
  public void onPause(){if(registered){unregisterReceiver(updates);registered=false;}super.onPause();}
  private String tr(String vi,String en){return Store.tr(this,vi,en);}
  private int dp(int n){return Visuals.dp(this,n);}
@@ -49,6 +50,7 @@ public final class MainActivity extends Activity {
   setContentView(root);root.requestApplyInsets();
  }
  private void overview(){
+  if(Updates.candidate!=null||Updates.busy()||Updates.phase.equals("permission"))updatesCard();
   Store.Session session=Store.session(this);Snapshot data=Store.snapshot(this);
   if(session==null){LinearLayout c=card();ImageView glyph=icon("server",palette.accent);c.addView(glyph,new LinearLayout.LayoutParams(dp(56),dp(56)));gap(c,18);c.addView(heading(tr("VPS trong tầm tay","Your servers, at a glance"),27,ink));c.addView(text(Store.error(this).equals("auth")?tr("Quyền thiết bị đã hết hạn hoặc bị thu hồi. Ghép nối lại để tiếp tục.","Device access expired or was revoked. Pair again to continue."):tr("Theo dõi tài nguyên và trạng thái máy chủ ngay trên điện thoại và màn hình chính.","Keep server status and resources close, on your phone and home screen."),15,muted));primary(button(c,tr("Ghép nối thiết bị","Pair your phone"),new View.OnClickListener(){public void onClick(View v){tab=1;render();}}));return;}
   int online=0,down=0,other=0;if(data!=null)for(Snapshot.Server s:data.servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
@@ -89,13 +91,23 @@ public final class MainActivity extends Activity {
   }});
  }
  private void settings(){
+  updatesCard();
   TextView section=heading(tr("CÁ NHÂN HÓA","PERSONALIZE"),11,muted);section.setPadding(dp(6),dp(6),0,dp(12));content.addView(section);LinearLayout c=card();
   choice(c,tr("Ngôn ngữ","Language"),"language",new String[]{"system","vi","en"},new String[]{tr("Theo hệ thống","System"),"Tiếng Việt","English"});
   choice(c,tr("Giao diện","Appearance"),"theme",new String[]{"system","light","dark"},new String[]{tr("Theo hệ thống","System"),tr("Sáng","Light"),tr("Tối","Dark")});
   choice(c,tr("Làm mới dữ liệu","Refresh interval"),"interval",new String[]{"15","30","60"},new String[]{tr("15 phút","15 minutes"),tr("30 phút","30 minutes"),tr("60 phút","60 minutes")});
   gap(c,12);c.addView(text(tr("Android có thể trì hoãn cập nhật khi tiết kiệm pin hoặc mất mạng. Chạm nút làm mới để cập nhật thủ công.","Android may delay updates while saving battery or offline. Tap refresh for a manual update."),12,muted));
   LinearLayout w=card();w.addView(heading(tr("Widget của anh","Your widgets"),21,ink));w.addView(text(tr("Chọn một VPS để xem tài nguyên chi tiết, hoặc nhiều VPS để xem tổng quan. Bố cục tự đổi khi anh kéo giãn widget.","Choose one server for resource details, or several for a fleet overview. The layout adapts as you resize."),14,muted));primary(button(w,tr("Thêm widget vào màn hình chính","Add home-screen widget"),new View.OnClickListener(){public void onClick(View v){pickWidget();}}));gap(w,6);w.addView(text(tr("Chạm tiêu đề widget để chọn lại máy chủ.","Tap a widget title to change its servers."),12,muted));
-  TextView version=text("VPS Control · 1.0.0 RC2",12,muted);version.setGravity(Gravity.CENTER);content.addView(version);
+  TextView version=text("VPS Control · "+Updates.versionName(this),12,muted);version.setGravity(Gravity.CENTER);content.addView(version);
+ }
+ private void updatesCard(){
+  LinearLayout c=card();c.setTag("updates-card");c.addView(heading(tr("Cập nhật ứng dụng","App updates"),20,ink));c.addView(text(tr("Đang dùng ","Installed ")+Updates.versionName(this),12,muted));c.addView(text(Updates.message(this),14,Updates.phase.equals("error")?palette.amber:palette.accent));
+  if(Updates.candidate!=null&&!Updates.candidate.notes.isEmpty())c.addView(text(Updates.candidate.notes,13,muted));
+  String phase=Updates.phase;
+  if(phase.equals("available")){primary(button(c,tr("Tải và cập nhật","Download and update"),new View.OnClickListener(){public void onClick(View v){Updates.download(MainActivity.this);}}));}
+  else if(phase.equals("ready")||phase.equals("permission")){primary(button(c,tr("Tiếp tục cài đặt","Continue installation"),new View.OnClickListener(){public void onClick(View v){Updates.install(MainActivity.this);}}));}
+  else if(phase.equals("downloading")){button(c,tr("Hủy tải","Cancel download"),new View.OnClickListener(){public void onClick(View v){Updates.cancel(MainActivity.this);}});}
+  else if(!Updates.busy()&&!phase.equals("checking")){button(c,tr("Kiểm tra trên GitHub","Check GitHub"),new View.OnClickListener(){public void onClick(View v){Updates.check(MainActivity.this);}});}
  }
  private void choice(LinearLayout parent,final String title,final String name,final String[] values,final String[] labels){String current=Store.setting(this,name,name.equals("interval")?"15":"system");int selected=0;for(int i=0;i<values.length;i++)if(values[i].equals(current))selected=i;final int checked=selected;
   LinearLayout row=new LinearLayout(this);row.setPadding(0,dp(9),0,dp(9));row.setGravity(Gravity.CENTER_VERTICAL);LinearLayout copy=vertical();copy.addView(heading(title,16,ink));copy.addView(text(labels[selected],13,muted));row.addView(copy,new LinearLayout.LayoutParams(0,-2,1));TextView arrow=text("›",26,palette.accent);row.addView(arrow);parent.addView(row,new LinearLayout.LayoutParams(-1,-2));row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){dialog().setTitle(title).setSingleChoiceItems(labels,checked,new DialogInterface.OnClickListener(){public void onClick(DialogInterface d,int index){Store.putSetting(MainActivity.this,name,values[index]);Sync.schedule(MainActivity.this);Widgets.updateAll(MainActivity.this);d.dismiss();render();}}).setNegativeButton(tr("Hủy","Cancel"),null).show();}});row.setContentDescription(title+": "+labels[selected]);View divider=new View(this);divider.setBackgroundColor(palette.line);parent.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));}

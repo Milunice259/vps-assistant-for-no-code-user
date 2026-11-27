@@ -1,12 +1,12 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
+// Validate isolated fixture before importing DB (which sets WAL mode).
+assert.match(process.env.DATABASE_URL||"", /^file:\/tmp\/vps-mobile-ci-[^/]+\/fixture\.db$/);
 const root = path.resolve(__dirname,"../scripts/monitoring-runtime/lib");
 const {prisma} = require(path.join(root,"db.js"));
 const {publishMobileSnapshot,pruneMobileSnapshots,mobileServerRevision,LOCAL_MOBILE_REVISION} = require(path.join(root,"mobile-snapshot-store.js"));
 const {readMobileSnapshot} = require(path.join(root,"mobile-snapshot-read.js"));
 (async()=>{
-  // Isolated CI fixture only; explicitly require test DB path.
-  assert.match(process.env.DATABASE_URL||"", /^file:\/tmp\/vps-mobile-ci-[^/]+\/fixture\.db$/);
   const a=await prisma.server.create({data:{name:"Mock A",host:"example.invalid",username:"test"}});
   const b=await prisma.server.create({data:{name:"Mock B",host:"example.invalid",username:"test"}});
   const now=Date.now();

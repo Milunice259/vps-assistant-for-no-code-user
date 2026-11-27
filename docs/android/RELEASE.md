@@ -1,11 +1,21 @@
 # VPS Control Widget V1.0 — release and installation
 
+## Current stable delivery — 2026-11-28 (Vietnam)
+
+Android **1.1.0 / 10100 is published** as [android-v1.1.0](https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/tag/android-v1.1.0). Exact app source/tag target is `7695a4e1893624cb3eccf18e41c59276d4ea3348`; the original unsigned APK was signed without rebuilding or substituting QA. APK: **67,039 bytes**, SHA-256 `a51213c8a44b23ac389bed7d206acacf578e0abd9903e7bd2e4cdf6f7798635c`. Public certificate SHA-256: `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`.
+
+The public release and main feed were read back; APK downloaded independently and verified for bytes/SHA-256, v3 signature/certificate, stable package/version, SDK 29/35 and zip alignment. Future stable releases must preserve this package/certificate and increase versionCode. The phone now has an active stable update channel; first installation from the RC packages still requires installing stable, re-pairing and adding its widgets.
+
+The owner delegated key custody to Hermes on the existing owner VPS, superseding the earlier Windows signing-host gate. Operator [checkpoint 7225024194](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/2#issuecomment-7225024194) reports a durable protected key, encrypted backup with separate unlock custody, restored-copy signing verification, and unchanged backend/proxy/runtime keys. Key and backup remain on the same VPS: **off-host recovery is not yet established**. Actual owner Samsung install, resize/background/reboot acceptance remains pending; do not close all V1.0 gates from the release alone.
+
+The operational workarounds reported at release (aapt2 SIGPIPE, a missing draft tag and argparse --publish abbreviation) are covered by the release-tool maintenance regression tests. They do not alter the published 1.1.0 APK/tag/feed. Historical candidate/setup procedures below remain for subsequent releases.
+
 ## Packages and signing
 - `com.vpscontrol.widget.poc`: old offline demo 0.1; may be removed independently.
 - `com.vpscontrol.widget.qa`: installable `1.0.0-rc.1` acceptance candidate. Disposable test signing identity; not the stable production update channel. Test builds signed with different disposable keys require uninstalling the earlier QA app, which erases its local pairing/cache. Revoke the old device in web Settings before re-pairing. The QA app contains no sample data or instrumentation hooks; mock tests are a separate APK.
 - `com.vpscontrol.widget.qa2`: UI refresh `1.0.0-rc.2` (VPS Control · RC2), versionCode 10001. Installs alongside RC1 and leaves its pairing/cache intact. Pair RC2 separately and add widgets from the RC2 app. The disposable RC1 key was not retained; this is not an in-place RC1 update. After accepting RC2, remove old RC1 widgets and revoke its device from web Settings before uninstalling. No synthetic data or test hooks in the delivered app.
 - `com.vpscontrol.widget.qa3`: update-flow QA candidate `1.1.0-rc.3`, versionCode 10100. Its disposable key/package is isolated from the stable update channel. Real same-certificate upgrade/cancellation is exercised using separately signed test archives.
-- `com.vpscontrol.widget`: stable candidate `1.1.0`, versionCode 10100. Sign only with the owner's stable Android release key. Never sign with a newly invented substitute key to bypass owner custody. Keep an encrypted off-repository/off-CI backup under owner control; future updates must retain the same certificate and increment versionCode.
+- `com.vpscontrol.widget`: stable released `1.1.0`, versionCode 10100. Sign only with the owner's stable Android release key. Never sign with a newly invented substitute key to bypass owner custody. Keep an encrypted off-repository/off-CI backup under owner control; future updates must retain the same certificate and increment versionCode.
 
 Build without downloading Gradle/plugins: `bash android/app/build.sh unsigned`. The SDK must contain Android 35, build-tools 35.0.0 and JDK 17+ on a non-production machine. `bash android/app/build.sh qa` additionally signs a separate test package and compiles the instrumentation APK. The QA command writes `vps-control-rc3-qa-unsigned.apk`; this must never be passed to stable signing. Run the unsigned command separately for `vps-control-v1.1.0-unsigned.apk` with the stable package. No runtime dependencies or native libraries.
 

@@ -137,9 +137,15 @@ export async function createSSHConnection(
   // ssh2-promise caches by username/host/port, which would bypass a fresh policy.
   const ssh = new SSH2Promise(sshConfig, true);
   try { await ssh.connect(); return ssh; }
-  catch {
+  catch (error) {
     await closeSSH(ssh);
-    throw new Error(rejectedIdentity ? "SSH host key changed or verification failed. Do not retry until the fingerprint is checked." : "SSH connection or authentication failed. Check the connection settings.");
+    const safe = new Error(rejectedIdentity ? "SSH host key changed or verification failed. Do not retry until the fingerprint is checked." : "SSH connection or authentication failed. Check the connection settings.");
+    // Keep the public message sanitized. Preserve only explicit transport codes for mobile monitoring.
+    const code = error instanceof Error ? (error as Error & {code?:unknown}).code : undefined;
+    if (!rejectedIdentity && typeof code === "string" && ["ECONNREFUSED","ETIMEDOUT","EHOSTUNREACH","ENETUNREACH","ENOTFOUND","ECONNRESET"].includes(code)) {
+      Object.assign(safe, { code });
+    }
+    throw safe;
   }
 }
 

@@ -27,7 +27,7 @@ public final class Updates {
  public static final class Candidate {
   public final long code,size;public final int min;public final String name,pkg,url,sha,notes;
   public Candidate(JSONObject o)throws Exception{
-   code=integer(o,"versionCode");size=integer(o,"size");min=(int)integer(o,"minSdk");name=string(o,"versionName",32);pkg=string(o,"packageName",128);url=string(o,"url",512);sha=string(o,"sha256",64);notes=string(o,"notes",1200);
+   code=integer(o,"versionCode");size=integer(o,"size");long minimum=integer(o,"minSdk");if(minimum<29||minimum>100)throw new Exception("format");min=(int)minimum;name=string(o,"versionName",32);pkg=string(o,"packageName",128);url=string(o,"url",512);sha=string(o,"sha256",64);notes=string(o,"notes",1200);
    if(code<=0||code>2100000000||size<=0||size>UpdatePolicy.MAX_APK||min<29||min>100||!UpdatePolicy.version(name)||!UpdatePolicy.digest(sha)||!UpdatePolicy.artifact(url)||!url.endsWith("/VPS-Control-Widget-"+name+".apk")||!url.contains("/android-v"+name+"/"))throw new Exception("format");
   }
  }

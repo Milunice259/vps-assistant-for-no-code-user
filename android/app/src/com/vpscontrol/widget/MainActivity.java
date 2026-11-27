@@ -105,7 +105,7 @@ public final class MainActivity extends Activity {
   if(Updates.candidate!=null&&!Updates.candidate.notes.isEmpty())c.addView(text(Updates.candidate.notes,13,muted));
   String phase=Updates.phase;
   if(phase.equals("available")){primary(button(c,tr("Tải và cập nhật","Download and update"),new View.OnClickListener(){public void onClick(View v){Updates.download(MainActivity.this);}}));}
-  else if(phase.equals("ready")||phase.equals("permission")){primary(button(c,tr("Tiếp tục cài đặt","Continue installation"),new View.OnClickListener(){public void onClick(View v){Updates.install(MainActivity.this);}}));}
+  else if(phase.equals("ready")||phase.equals("permission")){primary(button(c,tr("Tiếp tục cài đặt","Continue installation"),new View.OnClickListener(){public void onClick(View v){Updates.install(MainActivity.this);}}));button(c,tr("Hủy cập nhật","Cancel update"),new View.OnClickListener(){public void onClick(View v){Updates.cancel(MainActivity.this);}});}
   else if(phase.equals("downloading")){button(c,tr("Hủy tải","Cancel download"),new View.OnClickListener(){public void onClick(View v){Updates.cancel(MainActivity.this);}});}
   else if(!Updates.busy()&&!phase.equals("checking")){button(c,tr("Kiểm tra trên GitHub","Check GitHub"),new View.OnClickListener(){public void onClick(View v){Updates.check(MainActivity.this);}});}
  }

@@ -69,12 +69,12 @@ public class Widgets extends AppWidgetProvider {
   if(!status.isEmpty())stamp=time(c,Store.received(c))+Store.tr(c," · Lưu cũ, lỗi cập nhật"," · Cached, refresh error");
   else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
   boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny?View.GONE:View.VISIBLE);
-  Double[] focused=null;boolean fleet=false;
+  Double[] focused=null;boolean fleet=false,empty=false;
   v.setViewVisibility(R.id.visual,View.VISIBLE);
   if(!connected||data==null||servers.isEmpty()){
    v.setTextViewText(R.id.headline,!connected?Store.tr(c,"Kết nối VPS","Connect VPS"):Store.tr(c,"Chưa có dữ liệu","No data yet"));
    v.setTextViewText(R.id.summary,!connected?Store.tr(c,"Chạm để ghép nối","Tap to pair"):Store.tr(c,"Chọn VPS hoặc cập nhật","Select servers or refresh"));
-   v.setTextColor(R.id.summary,palette.muted);v.setViewVisibility(R.id.visual,View.INVISIBLE);
+   v.setTextColor(R.id.summary,palette.muted);empty=true;
    if(!connected)stamp=Store.tr(c,"Chỉ đọc · Kết nối an toàn","Read only · Secure access");
   }else if(single||servers.size()==1){
    Snapshot.Server s=servers.get(0);String state=s.state(data);boolean online=state.equals("online");
@@ -82,6 +82,7 @@ public class Widgets extends AppWidgetProvider {
    Double[] values=online?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
    focused=values;v.setContentDescription(R.id.visual,metrics(data,s));
    stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
+   if(tiny){stamp=time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
   }else{
    int online=0,down=0,other=0;for(Snapshot.Server s:servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
    v.setTextViewText(R.id.headline,online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
@@ -89,12 +90,12 @@ public class Widgets extends AppWidgetProvider {
    fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.state(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
   }
   v.setTextViewText(R.id.stamp,stamp);
-  if(focused!=null||fleet){
+  if(focused!=null||fleet||empty){
    // Measure the same native layout first: font scale and actual launcher bounds determine the chart area.
    View measured=v.apply(c,new android.widget.FrameLayout(c));measured.measure(View.MeasureSpec.makeMeasureSpec(dp(c,width),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(dp(c,height),View.MeasureSpec.EXACTLY));measured.layout(0,0,measured.getMeasuredWidth(),measured.getMeasuredHeight());
    View visual=measured.findViewById(R.id.visual);float density=c.getResources().getDisplayMetrics().density;
    int bodyW=Math.max(1,Math.round((visual.getMeasuredWidth()-visual.getPaddingLeft()-visual.getPaddingRight())/density));int bodyH=Math.max(1,Math.round((visual.getMeasuredHeight()-visual.getPaddingTop()-visual.getPaddingBottom())/density));
-   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused):Visuals.fleet(c,bodyW,bodyH,servers,data));
+   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused):fleet?Visuals.fleet(c,bodyW,bodyH,servers,data):Visuals.placeholder(c,bodyW,bodyH));
   }
   return v;
  }

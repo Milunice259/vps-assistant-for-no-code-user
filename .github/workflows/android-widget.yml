@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     env:
-      ANDROID_AVD_HOME: ${{ runner.temp }}/widget-avd
+      ANDROID_AVD_HOME: /tmp/widget-avd
     strategy:
       fail-fast: false
       matrix:

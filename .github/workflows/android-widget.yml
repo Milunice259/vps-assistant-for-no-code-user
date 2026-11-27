@@ -14,6 +14,8 @@ jobs:
   sdk-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
+    env:
+      ANDROID_AVD_HOME: ${{ runner.temp }}/widget-avd
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +44,9 @@ jobs:
           yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" "system-images;android-$API;default;x86_64" "emulator" "platform-tools" >/dev/null || test "${PIPESTATUS[1]}" = 0
           test -e /dev/kvm
           sudo chmod a+rw /dev/kvm
-          echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n WidgetQA -k "system-images;android-$API;default;x86_64" --force
+          mkdir -p "$ANDROID_AVD_HOME/WidgetQA.avd"
+          printf '%s\n' "path=$ANDROID_AVD_HOME/WidgetQA.avd" "target=android-$API" > "$ANDROID_AVD_HOME/WidgetQA.ini"
+          printf '%s\n' 'AvdId=WidgetQA' 'abi.type=x86_64' 'hw.cpu.arch=x86_64' 'hw.cpu.ncore=2' 'hw.ramSize=2048' 'hw.lcd.width=720' 'hw.lcd.height=1280' 'hw.lcd.density=240' 'disk.dataPartition.size=1536M' "image.sysdir.1=$sdk/system-images/android-$API/default/x86_64/" > "$ANDROID_AVD_HOME/WidgetQA.avd/config.ini"
       - name: Install and exercise Keystore, HTTPS and widget layouts
         run: |
           set -euo pipefail
@@ -54,7 +58,7 @@ jobs:
           ready=0
           for i in $(seq 1 120); do
             kill -0 "$emulator_pid" || { tail -40 /tmp/widget-emulator.log; exit 1; }
-            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then ready=1; break; fi
+            if [[ "$(timeout 10 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then ready=1; break; fi
             sleep 3
           done
           test "$ready" = 1

@@ -13,6 +13,7 @@ export async function GET(request:Request) {
     // Recheck permission changes/revocation during the read before returning.
     const last=await authorizeMobileBearer(bearer);
     if(first.deviceId!==last.deviceId||first.serverIds.length!==last.serverIds.length||first.serverIds.some(id=>!last.serverIds.includes(id))) throw new MobileError(401,"Device authorization changed");
+    if(Buffer.byteLength(JSON.stringify(data),"utf8")>131072) throw new Error("Mobile response limit exceeded");
     return mobileJson(data);
   } catch(error) {return mobileFailure(error);}
 }

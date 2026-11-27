@@ -50,5 +50,30 @@ const rejects=(fn,status)=>assert.rejects(fn,e=>e.status===status);
  const audits=await prisma.auditLog.findMany({where:{userId:user.id}});
  assert.equal(JSON.stringify(audits).includes(token),false);
  assert.equal(JSON.stringify(audits).includes(p.code),false);
+ // Partial scope reduction removes only the unauthorized server.
+ await prisma.appSetting.update({where:{key:"security"},data:{value:JSON.stringify({forceLogoutVersion:0})}});
+ await prisma.userServerAccess.create({data:{userId:user.id,serverId:b.id}});
+ const partial=await issue([a.id,b.id]);const partialToken=(await redeemMobilePairing(partial.code)).token;
+ const beforeAccess=(await prisma.mobileDevice.findUnique({where:{id:partial.id}})).lastAccessAt;
+ assert.equal(beforeAccess,null);
+ assert.equal((await authorizeMobileBearer("Bearer "+partialToken)).serverIds.length,2);
+ const accessed=(await prisma.mobileDevice.findUnique({where:{id:partial.id}})).lastAccessAt;
+ await authorizeMobileBearer("Bearer "+partialToken);
+ assert.equal((await prisma.mobileDevice.findUnique({where:{id:partial.id}})).lastAccessAt.getTime(),accessed.getTime());
+ await prisma.userServerAccess.deleteMany({where:{userId:user.id,serverId:b.id}});
+ assert.deepEqual((await authorizeMobileBearer("Bearer "+partialToken)).serverIds,[a.id]);
+ await prisma.mobileDevice.update({where:{id:partial.id},data:{tokenExpiresAt:new Date(0)}});
+ await rejects(()=>authorizeMobileBearer("Bearer "+partialToken),401);
+ // Current role/scope is checked instead of trusting role at pairing time.
+ const ownerPair=await issueMobilePairing(other.id,0,"Owner phone",["local",b.id]);
+ const ownerToken=(await redeemMobilePairing(ownerPair.code)).token;
+ await prisma.user.update({where:{id:other.id},data:{role:"VIEWER",serverAccessMode:"SELECTED"}});
+ await rejects(()=>authorizeMobileBearer("Bearer "+ownerToken),401);
+ // Bound device storage; active pending rows count towards the same 10-device limit.
+ await prisma.userServerAccess.create({data:{userId:other.id,serverId:a.id}});
+ await revokeMobileDevice(other.id,ownerPair.id,0);
+ for(let i=0;i<10;i++)await issueMobilePairing(other.id,0,"Limited phone",[a.id]);
+ await rejects(()=>issueMobilePairing(other.id,0,"Overflow",[a.id]),409);
+ assert.equal(await prisma.mobileDevice.count({where:{userId:other.id}}),10);
  console.log("Mobile pairing, replay, scope, revoke and session invalidation: PASS");
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>prisma.$disconnect());

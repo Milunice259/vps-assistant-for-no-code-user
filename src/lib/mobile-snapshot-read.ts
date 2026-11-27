@@ -19,6 +19,7 @@ export async function readMobileSnapshot(allowedIds: readonly string[], now = Da
     ...(ids.includes("local")?[{id:"local",name:"This Server",active:true,revision:LOCAL_MOBILE_REVISION}]:[]),
     ...remote.map(s=>({id:s.id,name:s.name,active:s.isActive,revision:mobileServerRevision(s)})),
   ];
+  if (fleet.some(s=>s.name.length>256)) throw new Error("Mobile server name limit exceeded");
   return {version:1 as const,generatedAt:now,worker,servers:fleet.map(s=>{
     const row = byId.get(s.id);
     const current = row?.revision===s.revision ? row : null;

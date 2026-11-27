@@ -59,6 +59,7 @@ jobs:
           node scripts/monitoring-worker.cjs --build
           node tests/mobile-snapshot-store.test.cjs
           node tests/mobile-devices.test.cjs
+          node tests/mobile-input.test.cjs
           NEXT_TELEMETRY_DISABLED=1 npm run build -- --webpack
           MOBILE_TEST_PRODUCTION=1 node tests/mobile-http.test.cjs
       # No cache or artifact, no deployment or secrets.

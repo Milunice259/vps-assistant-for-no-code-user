@@ -10,7 +10,7 @@ public final class Sync {
  private static final List<Runnable> callbacks=new ArrayList<Runnable>();
  private static boolean running;
  private static long lastAttempt;
- private static final int JOB=27101;
+ private static final int JOB=27101, STALE_JOB=27102;
  public static synchronized boolean busy(){return running;}
  public static void request(final Context context,Runnable done){
   final Context c=context.getApplicationContext();
@@ -27,7 +27,7 @@ public final class Sync {
     Store.Session session;
     synchronized(Store.LOCK){session=Store.session(c);generation=Store.generation();}
     if(session==null)return;
-    try{Snapshot data=new Snapshot(Api.call(session.base,"/api/mobile/v1/snapshot",session.token,null));Store.snapshot(c,data,generation);}
+    try{Snapshot data=new Snapshot(Api.call(session.base,"/api/mobile/v1/snapshot",session.token,null));Store.snapshot(c,data,generation);scheduleStale(c,data);}
     catch(Exception e){String kind=e instanceof Api.Failure?((Api.Failure)e).kind:e instanceof javax.net.ssl.SSLException?"tls":"network";
      synchronized(Store.LOCK){if(Store.generation()==generation){if(kind.equals("auth"))Store.clear(c,"auth");else Store.error(c,kind,generation);}}
     }
@@ -38,16 +38,22 @@ public final class Sync {
  public static void changed(Context c){c.sendBroadcast(new Intent(CHANGED).setPackage(c.getPackageName()));}
  public static void schedule(Context c){
   JobScheduler scheduler=(JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-  if(Store.session(c)==null){scheduler.cancel(JOB);return;}
+  if(Store.session(c)==null){scheduler.cancel(JOB);scheduler.cancel(STALE_JOB);return;}
   long minutes;try{minutes=Long.parseLong(Store.setting(c,"interval","15"));}catch(Exception e){minutes=15;}
   if(minutes!=15&&minutes!=30&&minutes!=60)minutes=15;
   JobInfo current=scheduler.getPendingJob(JOB);long interval=minutes*60000L;
   if(current!=null&&current.getIntervalMillis()==interval)return;
   scheduler.schedule(new JobInfo.Builder(JOB,new ComponentName(c,RefreshJob.class)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(interval).setPersisted(true).build());
  }
+ private static void scheduleStale(Context c,Snapshot data){
+  long next=Long.MAX_VALUE,now=System.currentTimeMillis();
+  for(Snapshot.Server server:data.servers)if(server.state(data).equals("online")){long deadline=server.observed+Policy.staleAfter(data.interval)-now+1000;if(deadline>0)next=Math.min(next,deadline);}
+  JobScheduler scheduler=(JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE);scheduler.cancel(STALE_JOB);
+  if(next!=Long.MAX_VALUE)scheduler.schedule(new JobInfo.Builder(STALE_JOB,new ComponentName(c,RefreshJob.class)).setMinimumLatency(next).build());
+ }
  public static final class RefreshJob extends JobService {
   private final AtomicBoolean active=new AtomicBoolean();
-  public boolean onStartJob(final JobParameters parameters){active.set(true);request(this,new Runnable(){public void run(){if(active.getAndSet(false))jobFinished(parameters,false);}});return true;}
+  public boolean onStartJob(final JobParameters parameters){if(parameters.getJobId()==STALE_JOB){Widgets.updateAll(this);return false;}active.set(true);request(this,new Runnable(){public void run(){if(active.getAndSet(false))jobFinished(parameters,false);}});return true;}
   public boolean onStopJob(JobParameters parameters){active.set(false);return true;}
  }
  public static final class RefreshReceiver extends BroadcastReceiver {

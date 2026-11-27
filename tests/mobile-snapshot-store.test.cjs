@@ -9,6 +9,10 @@ const {readMobileSnapshot} = require(path.join(root,"mobile-snapshot-read.js"));
 (async()=>{
   const a=await prisma.server.create({data:{name:"Mock A",host:"example.invalid",username:"test"}});
   const b=await prisma.server.create({data:{name:"Mock B",host:"example.invalid",username:"test"}});
+  // A mobile read must remain DB-only even when a host execution path would fail.
+  const cp=require("node:child_process");
+  const oldExec=cp.exec, oldExecSync=cp.execSync;
+  cp.exec=cp.execSync=()=>{throw new Error("HOST COMMAND FORBIDDEN DURING MOBILE READ")};
   const now=Date.now();
   await prisma.appSetting.upsert({where:{key:"monitoring.heartbeat"},create:{key:"monitoring.heartbeat",value:JSON.stringify({at:now})},update:{value:JSON.stringify({at:now})}});
   const sample={observedAt:new Date(now-1000),reachability:"online",cpuPercent:24,memoryPercent:62,diskPercent:45,stoppedContainers:1};
@@ -37,5 +41,8 @@ const {readMobileSnapshot} = require(path.join(root,"mobile-snapshot-read.js"));
   await pruneMobileSnapshots();
   assert.equal(await prisma.mobileServerSnapshot.count(),1);
   assert.equal((await readMobileSnapshot([b.id],now)).servers.length,0);
+  const longName=await prisma.server.create({data:{name:"X".repeat(257),host:"example.invalid",username:"test"}});
+  await assert.rejects(()=>readMobileSnapshot([longName.id],now),/name limit/);
+  cp.exec=oldExec;cp.execSync=oldExecSync;
   console.log("Mobile snapshot DB lifecycle and projection: PASS");
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>prisma.$disconnect());

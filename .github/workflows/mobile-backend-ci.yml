@@ -15,7 +15,10 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tests/mobile-*.test.*'
-      - 'scripts/check-mon5-observations.cjs'
+      - 'scripts/check-*.cjs'
+      - 'scripts/mobile-revoke-restored.cjs'
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
       - '.github/workflows/mobile-backend-ci.yml'
 permissions:
   contents: read
@@ -61,9 +64,8 @@ jobs:
           node tests/mobile-snapshot-store.test.cjs
           node tests/mobile-devices.test.cjs
           node tests/mobile-input.test.cjs
-          node scripts/check-mon5-observations.cjs
-          node scripts/check-mon5-integration.cjs
-          node scripts/check-monitoring-lifecycle.cjs
+          node tests/mobile-restore.test.cjs
+          TMPDIR=/tmp node scripts/check-conf3-regressions.cjs
           NEXT_TELEMETRY_DISABLED=1 npm run build -- --webpack
           MOBILE_TEST_PRODUCTION=1 node tests/mobile-http.test.cjs
       # No cache or artifact, no deployment or secrets.

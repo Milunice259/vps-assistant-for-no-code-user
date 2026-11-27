@@ -2,11 +2,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useTranslation } from "@/lib/i18n";
 
 type Device = {id:string;label:string;serverIds:string[];pairedAt:string|null;pairingExpiresAt:string;tokenExpiresAt:string|null;lastAccessAt:string|null;revokedAt:string|null};
 type Server = {id:string;name:string};
 const endpoint="/api/mobile/v1/devices";
 export function MobileDevices(){
+  const { formatDate } = useTranslation();
   const [devices,setDevices]=useState<Device[]>([]);
   const [servers,setServers]=useState<Server[]>([]);
   const [selected,setSelected]=useState<string[]>([]);
@@ -52,10 +54,10 @@ export function MobileDevices(){
         {servers.map(s=><label key={s.id} className="flex items-center gap-2 text-sm text-gray-200"><input type="checkbox" checked={selected.includes(s.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,s.id]:old.filter(id=>id!==s.id))}/>{s.name}</label>)}
       </div>
       <div className="flex flex-wrap gap-2"><Button variant="primary" size="sm" disabled={!loaded||busy||!label.trim()||!selected.length} onClick={()=>void change("POST",{label,serverIds:selected})}>Generate pairing code</Button><Button variant="secondary" size="sm" disabled={busy} onClick={()=>void refresh()}>Refresh</Button></div>
-      {code&&<div className="rounded border border-brand-500/40 p-3 space-y-2"><p className="text-xs text-gray-400">One-time code. Copy directly into the Android app; do not share it. Expires {new Date(code.expiresAt).toLocaleTimeString()}.</p><code className="block break-all select-all text-brand-400">{code.code}</code><Button variant="secondary" size="sm" onClick={()=>void navigator.clipboard.writeText(code.code).then(()=>setMessage("Copied")).catch(()=>setMessage("Select and copy the code manually."))}>Copy code</Button><Button variant="ghost" size="sm" onClick={()=>setCode(null)}>Hide</Button></div>}
+      {code&&<div className="rounded border border-brand-500/40 p-3 space-y-2"><p className="text-xs text-gray-400">One-time code. Copy directly into the Android app; do not share it. Expires {formatDate(code.expiresAt, { timeStyle: "short" })}.</p><code className="block break-all select-all text-brand-400">{code.code}</code><Button variant="secondary" size="sm" onClick={()=>void navigator.clipboard.writeText(code.code).then(()=>setMessage("Copied")).catch(()=>setMessage("Select and copy the code manually."))}>Copy code</Button><Button variant="ghost" size="sm" onClick={()=>setCode(null)}>Hide</Button></div>}
       {message&&<p role="status" className="text-sm text-gray-300">{message}</p>}
     </div>
-    {devices.map(d=><div key={d.id} className="rounded-lg border border-gray-700 p-3 flex flex-wrap items-center justify-between gap-2"><div><div className="text-sm text-white">{d.label}</div><div className="text-xs text-gray-400">{d.revokedAt?"Revoked":d.pairedAt?(Date.parse(d.tokenExpiresAt||"")<=Date.now()?"Expired":"Paired"):(Date.parse(d.pairingExpiresAt)<=Date.now()?"Expired":"Awaiting pairing")} · {d.serverIds.length} selected · Last access: {d.lastAccessAt?new Date(d.lastAccessAt).toLocaleString():"—"}</div></div>{!d.revokedAt&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>{if(confirm("Revoke this device?"))void change("DELETE",{id:d.id});}}>Revoke</Button>}</div>)}
+    {devices.map(d=><div key={d.id} className="rounded-lg border border-gray-700 p-3 flex flex-wrap items-center justify-between gap-2"><div><div className="text-sm text-white">{d.label}</div><div className="text-xs text-gray-400">{d.revokedAt?"Revoked":d.pairedAt?(Date.parse(d.tokenExpiresAt||"")<=Date.now()?"Expired":"Paired"):(Date.parse(d.pairingExpiresAt)<=Date.now()?"Expired":"Awaiting pairing")} · {d.serverIds.length} selected · Last access: {d.lastAccessAt?formatDate(d.lastAccessAt):"—"}</div></div>{!d.revokedAt&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>{if(confirm("Revoke this device?"))void change("DELETE",{id:d.id});}}>Revoke</Button>}</div>)}
     {loaded&&!devices.length&&<p className="text-sm text-gray-400">No mobile devices yet.</p>}
   </section>;
 }

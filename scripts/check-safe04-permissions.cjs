@@ -54,6 +54,13 @@ const mocks = {
   '@/lib/notifications': { sendNotification: async () => { record('delivery'); return true; }, evaluateAlertRules: async (...args) => record('evaluate', args) },
   '@/lib/deployment-state': { readDeploymentDefinition: async () => { throw Error('No deployment fixture expected'); } },
   '@/lib/local-server': { execLocal: command => { record('local-exec', command); assert(command.includes('MON5_DOCKER_OK')); return 'MON5_DOCKER_OK'; }, getLocalServerInfo: () => { record('local-info'); return { id: 'local', name: 'Local' }; }, isLocalServer: id => id === 'local', getLocalContainers: () => { record('local-exec'); return []; }, getLocalServices: () => ({ services: [] }) },
+  // Mobile snapshot storage is a separate real-DB suite. Observe this boundary to
+  // prove authenticated manual checks never publish/prune scheduler snapshots.
+  '@/lib/mobile-snapshot-store': {
+    LOCAL_MOBILE_REVISION: 'fixture-local', mobileServerRevision: () => 'fixture-mobile',
+    publishMobileSnapshot: async (...args) => record('mobile-publish', args),
+    pruneMobileSnapshots: async () => record('mobile-prune'),
+  },
   '@/lib/stats': { getHostStats: () => stats },
   '@/lib/server-ssh': { connectToServer: async id => { record('ssh', id); if (remoteOffline) throw Error('synthetic offline'); return { ssh: id }; } },
   '@/lib/ssh': { executeCommand: async (id, command) => { record('remote-exec', id); assert(command.includes('MON5_DOCKER_OK')); return 'MON5_DOCKER_OK'; }, getRemoteStats: async () => stats, getRemoteContainers: async () => [], getRemoteServices: async () => [], closeSSH: async () => {}, executeCommandSafe: async () => { throw Error('SSL execution not expected'); } },
@@ -242,6 +249,7 @@ async function main() {
     assert.equal(calls.filter(([kind]) => kind === 'local-exec').length, scope.includes('local') ? 1 : 0, 'authorized Local uses canonical inventory executor');
     assert.equal(calls.filter(([kind]) => kind === 'remote-exec').length, scope.includes('server-a') && !offline ? 1 : 0, 'authorized online Remote uses canonical inventory executor');
     assert(calls.filter(([kind]) => kind === 'deployment-read').every(([, q]) => q.where.serverId === null ? scope.includes('local') : scope.includes(q.where.serverId)), 'retention reads remain scoped');
+    assert(!calls.some(([kind]) => kind.startsWith('mobile-')), 'manual scoped checks never publish/prune mobile snapshots');
     assert(!calls.some(([kind]) => kind === 'evaluate' || kind === 'delivery'), 'Manager checks must never run global rules or cooldown/delivery mutations');
     assert(!calls.some(([kind]) => kind.startsWith('local-')) || scope.includes('local'));
     assert.deepEqual(calls.find(([kind]) => kind === 'server-read')[1].where, { id: { in: scope.filter(id => id !== 'local') } });
@@ -253,9 +261,12 @@ async function main() {
   for (const role of ['ADMIN', 'OWNER']) {
     reset(role); assert.equal((await (await checks.POST()).json()).data.checked, 3);
     assert.equal(calls.filter(([kind]) => kind === 'evaluate').length, 3, 'Admin/Owner retain global checks and rule delivery');
+    assert(!calls.some(([kind]) => kind.startsWith('mobile-')), 'manual admin checks do not publish/prune scheduler snapshots');
   }
   reset(); await service.runNotificationChecks();
   assert.equal(calls.filter(([kind]) => kind === 'evaluate').length, 3, 'actorless scheduler remains global');
+  assert.equal(calls.filter(([kind]) => kind === 'mobile-prune').length, 1, 'actorless scheduler prunes mobile snapshots once');
+  assert(calls.some(([kind]) => kind === 'mobile-publish'), 'actorless scheduler retains mobile publish boundary');
   await sqliteOwnerConcurrency(users);
   console.log('SAFE-04: real middleware/handlers, channel CRUD/test positives, unchanged roles/hierarchy/last Owner, secret-free grant/revoke audit, scoped Local/Remote/offline/ALL Manager checks and global scheduler passed');
 }

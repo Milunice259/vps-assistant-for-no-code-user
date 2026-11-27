@@ -18,7 +18,13 @@ function load(name, extra = {}) {
   if (process.env.MON5_ALERT_NEGATIVE === 'ssl') source = source.replace('Number.isFinite(expiresAt) && expiresAt - Date.now()', 'Number.isFinite(expiresAt) && expiresAt >= Date.now() && expiresAt - Date.now()');
   if (process.env.MON5_ALERT_NEGATIVE === 'cooldown') source = source.replace('saved === 1 && delivered && triggered', 'saved === 1 && triggered');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const mocks = { '@/lib/db': { get prisma() { return db; } }, './general-settings': { getGeneralSettings: async () => ({ applicationName: 'Fixture' }) }, ...extra };
+  // This suite exercises real backup/alert state in SQLite. Mobile persistence
+  // belongs to its own suite and must not open an unmocked database/executor here.
+  const mobile = name === 'notification-checks' ? {
+    '@/lib/mobile-observation': load('mobile-observation'),
+    '@/lib/mobile-snapshot-store': new Proxy({}, { get: () => () => { throw Error('Unexpected mobile persistence in alert fixture'); } }),
+  } : {};
+  const mocks = { ...mobile, '@/lib/db': { get prisma() { return db; } }, './general-settings': { getGeneralSettings: async () => ({ applicationName: 'Fixture' }) }, ...extra };
   vm.runInNewContext(code, { exports, require: id => id in mocks ? mocks[id] : require(id), Date: Clock, Error, AbortSignal, console: { error: (...args) => logs.push(args.join(' ')), assert }, fetch: async (url, options) => {
     assert.equal(url, 'https://fixture.invalid/webhook');
     deliveries.push(JSON.parse(options.body));

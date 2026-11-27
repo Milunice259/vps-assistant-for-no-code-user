@@ -67,7 +67,7 @@ assert.match(profile, /value=\{locale\}[\s\S]*setLocale\(e\.target\.value/, 'rea
 assert.match(profile, /value=\{timeZone\}[\s\S]*setTimeZone\(e\.target\.value/, 'real profile timezone control uses provider');
 assert.match(profile, /preferenceError[\s\S]*role="alert"/, 'language/timezone persistence failure is visible');
 assert.match(fs.readFileSync(path.join(root, 'src/app/(panel)/layout.tsx'), 'utf8'), /<I18nProvider>[\s\S]*<PanelContent>/, 'provider wraps actual panel consumers');
-for (const consumer of ['src/components/apps/AppHealthCheck.tsx', 'src/components/servers/ServerAuditLog.tsx', 'src/components/deploy/DeployLog.tsx', 'src/app/(panel)/audit/page.tsx', 'src/app/(panel)/backup/page.tsx']) {
+for (const consumer of ['src/components/settings/MobileDevices.tsx', 'src/components/apps/AppHealthCheck.tsx', 'src/components/servers/ServerAuditLog.tsx', 'src/components/deploy/DeployLog.tsx', 'src/app/(panel)/audit/page.tsx', 'src/app/(panel)/backup/page.tsx']) {
   const text = fs.readFileSync(path.join(root, consumer), 'utf8');
   assert.match(text, /const \{ formatDate(?:, timeZone)? \} = useTranslation\(\)/, `provider connection: ${consumer}`);
   assert.match(text, /\{formatDate\(/, `rendered timestamp: ${consumer}`);

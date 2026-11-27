@@ -24,6 +24,7 @@ const checks = [
   'safe12-remote-check', 'sec01-cron-terminal-backup-check', 'test-advanced-safety',
 ].map(name => name + '.cjs');
 const excluded = {
+  'mobile-revoke-restored.cjs': 'ISOLATED-ONLY operator recovery tool; explicit restored-copy path and apply acknowledgement; never auto-run against a default/live DB',
   'check-mon5-readiness-runtime.cjs': 'Privileged nested Engine and actual HTTP/container mutations; explicit isolated runtime authorization required',
   'check-mon5-runtime.cjs': 'Privileged nested Engine, SSH/HTTP receiver, worker and SQLite runtime mutations; parent-owned',
   'check-mon5-scheduler.cjs': 'Real supervised worker/child processes and 120-second hard-kill lifecycle; outside offline mock scope',

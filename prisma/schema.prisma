@@ -245,3 +245,21 @@ enum AppStatus {
   UNHEALTHY
   UNKNOWN
 }
+
+
+// Bounded latest host observation (virtual local has no Server foreign key).
+model MobileServerSnapshot {
+  serverId             String   @id @map("server_id")
+  revision             String
+  observedAt           DateTime @map("observed_at")
+  reachability         String
+  cpuPercent           Float?   @map("cpu_percent")
+  memoryPercent        Float?   @map("memory_percent")
+  diskPercent          Float?   @map("disk_percent")
+  stoppedContainers    Int?     @map("stopped_containers")
+  failedServices       Int?     @map("failed_services")
+  expiringCertificates Int?     @map("expiring_certificates")
+  backupStale          Boolean? @map("backup_stale")
+
+  @@map("mobile_server_snapshots")
+}

@@ -37,12 +37,14 @@ public final class MainActivity extends Activity {
         root.addView(info);
         Button pin = new Button(this);
         pin.setText("Add home-screen widget");
-        pin.setOnClickListener(v -> {
-            AppWidgetManager manager = AppWidgetManager.getInstance(this);
-            if (manager.isRequestPinAppWidgetSupported()) {
-                boolean requested = manager.requestPinAppWidget(new ComponentName(this, FleetWidget.class), null, null);
-                if (!requested) showPickerHint();
-            } else showPickerHint();
+        pin.setOnClickListener(new android.view.View.OnClickListener() {
+            @Override public void onClick(android.view.View view) {
+                AppWidgetManager manager = AppWidgetManager.getInstance(MainActivity.this);
+                if (manager.isRequestPinAppWidgetSupported()) {
+                    boolean requested = manager.requestPinAppWidget(new ComponentName(MainActivity.this, FleetWidget.class), null, null);
+                    if (!requested) showPickerHint();
+                } else showPickerHint();
+            }
         });
         root.addView(pin, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);

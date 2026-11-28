@@ -5,7 +5,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.text.TextUtils;
 import java.util.*;
-/** Native drawing shared by the dashboard and RemoteViews. Only current observations. */
+/** Native drawing shared by the dashboard and RemoteViews; historical observations are explicitly muted. */
 public final class Visuals {
  public final int bg,surface,inset,ink,muted,accent,green,red,amber,line;
  public final int[] metric;

@@ -92,7 +92,8 @@ public class Widgets extends AppWidgetProvider {
    int online=0,down=0,other=0,cached=0;for(Snapshot.Server s:servers){String state=s.displayState(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else if(state.equals("cached"))cached++;else other++;}
    v.setTextViewText(R.id.headline,cached==servers.size()?servers.size()+Store.tr(c," VPS · Đã lưu"," servers · Cached"):online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
    v.setTextViewText(R.id.summary,(cached>0?cached+Store.tr(c," dữ liệu lưu · "," cached · "):"")+down+Store.tr(c," mất kết nối · "," unreachable · ")+other+Store.tr(c," cần kiểm tra"," to review"));v.setTextColor(R.id.summary,down>0?palette.red:other>0?palette.amber:palette.muted);
-   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.displayState(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
+   if(cached>0){long oldest=Long.MAX_VALUE;for(Snapshot.Server s:servers)if(s.cached(data))oldest=Math.min(oldest,s.observed);stamp=time(c,oldest)+Store.tr(c," · Đã lưu, cũ nhất"," · Oldest cached")+(Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");}
+   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.displayState(data))).append(", ").append(metrics(data,s)).append(", ").append(time(c,s.observed)).append(". ");v.setContentDescription(R.id.visual,description.toString());
   }
   v.setTextViewText(R.id.stamp,stamp);
   if(focused!=null||fleet||empty){

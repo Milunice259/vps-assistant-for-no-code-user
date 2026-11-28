@@ -1,0 +1,16 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent">
+ <ImageView android:id="@+id/backdrop" android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/card_bg" android:scaleType="fitXY" android:importantForAccessibility="no"/>
+ <LinearLayout android:id="@+id/body" android:orientation="horizontal" android:gravity="center_vertical" android:layout_width="match_parent" android:layout_height="match_parent">
+  <LinearLayout android:orientation="vertical" android:gravity="center_vertical" android:layout_width="84dp" android:layout_height="match_parent">
+   <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone"/>
+   <TextView android:id="@+id/headline" android:text="VPS CONTROL" android:textColor="#F4F5FC" android:textSize="14sp" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+   <TextView android:id="@+id/summary" android:text="CPU · RAM · Disk" android:textColor="#B2B9CD" android:textSize="9sp" android:layout_width="match_parent" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+   <TextView android:id="@+id/stamp" android:text="—" android:textColor="#B2B9CD" android:textSize="9sp" android:layout_width="match_parent" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+  </LinearLayout>
+  <ImageView android:id="@+id/visual" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_marginLeft="6dp" android:layout_marginRight="6dp" android:scaleType="fitCenter" android:importantForAccessibility="yes"/>
+  <LinearLayout android:orientation="vertical" android:gravity="center" android:layout_width="24dp" android:layout_height="match_parent">
+   <ImageView android:id="@+id/refresh" android:layout_width="24dp" android:layout_height="24dp" android:padding="3dp" android:scaleType="fitCenter" android:contentDescription="Refresh"/>
+   <ImageView android:id="@+id/configure" android:layout_width="24dp" android:layout_height="24dp" android:padding="3dp" android:scaleType="fitCenter" android:contentDescription="Widget settings"/>
+  </LinearLayout>
+ </LinearLayout>
+</FrameLayout>

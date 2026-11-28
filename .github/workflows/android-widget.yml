@@ -69,17 +69,20 @@ jobs:
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
           adb shell input keyevent 82
-          adb install android/app/build/VPS-Control-Widget-1.1.0-rc.3.apk
+          adb install android/app/build/VPS-Control-Widget-1.2.0-rc.1.apk
           adb install android/app/build/vps-widget-tests.apk
           adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.Smoke | tee /tmp/widget-tests.txt
           mkdir -p /tmp/widget-evidence
-          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa3/files/qa /tmp/widget-evidence || true
+          adb shell appwidget grantbind --package com.vpscontrol.widget.qa4 --user 0
+          adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.WidgetOptionsSmoke | tee /tmp/widget-evidence/widget-options.txt
+          adb pull /sdcard/Android/data/com.vpscontrol.widget.qa4/files/qa /tmp/widget-evidence || true
+          grep -q 'PASS: widget options' /tmp/widget-evidence/widget-options.txt
           cp /tmp/widget-tests.txt /tmp/widget-evidence/
           adb logcat -d -s AndroidRuntime:E > /tmp/widget-evidence/crashes.txt
           grep -q 'PASS:' /tmp/widget-tests.txt
           adb shell am instrument -w -e mode checks com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-checks.txt
           grep -q 'PASS: updater checks' /tmp/widget-evidence/update-checks.txt
-          adb shell appops set com.vpscontrol.widget.qa3 REQUEST_INSTALL_PACKAGES allow
+          adb shell appops set com.vpscontrol.widget.qa4 REQUEST_INSTALL_PACKAGES allow
           adb shell am instrument -w -e mode stage com.vpscontrol.widget.tests/com.vpscontrol.widget.UpdateSmoke | tee /tmp/widget-evidence/update-cancel-stage.txt
           adb logcat -d -s VPSUpdate:E
           grep -q 'PASS: updater stage' /tmp/widget-evidence/update-cancel-stage.txt
@@ -98,8 +101,8 @@ jobs:
         with:
           name: vps-widget-qa-handoff
           path: |
-            android/app/build/VPS-Control-Widget-1.1.0-rc.3.apk
-            android/app/build/vps-control-v1.1.0-unsigned.apk
+            android/app/build/VPS-Control-Widget-1.2.0-rc.1.apk
+            android/app/build/vps-control-v1.2.0-unsigned.apk
             /tmp/widget-evidence/
           retention-days: 1
           if-no-files-found: error

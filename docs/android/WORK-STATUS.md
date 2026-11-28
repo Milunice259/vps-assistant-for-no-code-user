@@ -1,3 +1,11 @@
+## 2026-11-28 — 1.2.0 widget customization candidate (not published)
+
+- Owner requested per-widget background transparency, softer daylight appearance, horizontal bars and more display choices. Existing stable 1.1.0 remains the public release/feed until an approved signed 1.2.0 asset is available.
+- Candidate: stable package unchanged, version 1.2.0 / 10200. Separate QA4 package/key is disposable and must never replace a stable update.
+- Per-instance draft editor: live native preview, app/light/dark theme, 0–100% background transparency, four accent colors, auto/gauges/bars/numbers, comfortable/compact fleet density and independent server selection. Gear on each widget and app Settings entries open its editor; Save commits appearance/selection together, Cancel discards, Reset changes appearance only. A dedicated 4×1 strip (minimum 250×72dp, resize width ≥230dp) supplies an actual low horizontal widget; launcher resize controls the outer shape, and small sizes simplify content.
+- Old selectors migrate with defaults; text remains opaque, observation timestamps remain visible, stale/unavailable data remains unavailable. No network/permission/backend/worker change. Existing pairing/cache and style preferences must survive same-certificate updates.
+- Native emulator QA and final screenshot review are pending for this candidate. Signing/publishing must use Hermes' existing stable certificate `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`; no replacement key. Owner Samsung acceptance and off-host key backup remain open.
+
 # Work implementation checkpoint — 2026-11-27
 
 Continues HANDOVER.md on feature/android-widget. No merge, production modification, new paid service or stable signing key generated.

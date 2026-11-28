@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.vpscontrol.widget.tests">
  <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35"/>
  <application android:label="VPS Widget QA tests"/>
- <instrumentation android:name="com.vpscontrol.widget.Smoke" android:targetPackage="com.vpscontrol.widget.qa3" android:functionalTest="true"/>
- <instrumentation android:name="com.vpscontrol.widget.UpdateSmoke" android:targetPackage="com.vpscontrol.widget.qa3" android:functionalTest="true"/>
+ <instrumentation android:name="com.vpscontrol.widget.Smoke" android:targetPackage="com.vpscontrol.widget.qa4" android:functionalTest="true"/>
+ <instrumentation android:name="com.vpscontrol.widget.UpdateSmoke" android:targetPackage="com.vpscontrol.widget.qa4" android:functionalTest="true"/>
+ <instrumentation android:name="com.vpscontrol.widget.WidgetOptionsSmoke" android:targetPackage="com.vpscontrol.widget.qa4" android:functionalTest="true"/>
 </manifest>

@@ -22,7 +22,7 @@ for attempt in range(20):
         run('shell', 'input', 'tap', str((points[0]+points[2])//2), str((points[1]+points[3])//2))
         for _ in range(30):
             time.sleep(.5)
-            if mode == 'cancel' or b'versionCode=10101' in run('shell', 'dumpsys', 'package', 'com.vpscontrol.widget.qa3'):
+            if mode == 'cancel' or b'versionCode=10201' in run('shell', 'dumpsys', 'package', 'com.vpscontrol.widget.qa4'):
                 print('Android confirmation:', mode)
                 time.sleep(1)
                 sys.exit(0)

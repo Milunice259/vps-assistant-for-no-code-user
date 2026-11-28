@@ -1,4 +1,6 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/card_bg">
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent">
+ <ImageView android:id="@+id/backdrop" android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/card_bg" android:scaleType="fitXY" android:importantForAccessibility="no"/>
+ <LinearLayout android:id="@+id/body" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent">
  <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone"/>
  <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center_vertical">
   <TextView android:id="@+id/headline" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
@@ -6,5 +8,9 @@
  </LinearLayout>
  <TextView android:id="@+id/summary" android:layout_width="match_parent" android:layout_height="0dp" android:visibility="gone"/>
  <ImageView android:id="@+id/visual" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:scaleType="fitCenter" android:paddingTop="4dp" android:paddingBottom="5dp" android:importantForAccessibility="yes"/>
- <TextView android:id="@+id/stamp" android:layout_width="match_parent" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+ <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="22dp" android:gravity="center_vertical">
+ <TextView android:id="@+id/stamp" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"/>
+ <ImageView android:id="@+id/configure" android:layout_width="22dp" android:layout_height="match_parent" android:padding="2dp" android:scaleType="fitCenter" android:contentDescription="Widget settings"/>
+ </LinearLayout>
 </LinearLayout>
+</FrameLayout>

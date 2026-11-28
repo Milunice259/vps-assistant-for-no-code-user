@@ -47,6 +47,7 @@ public final class Store {
  public static void error(Context c,String error,long expected){synchronized(LOCK){if(generation==expected)prefs(c).edit().putString("error",error).commit();}}
  public static String setting(Context c,String name,String fallback){return prefs(c).getString(name,fallback);}
  public static void putSetting(Context c,String name,String value){prefs(c).edit().putString(name,value).apply();}
+ public static boolean saveWidget(Context c,int id,String selection,String style){synchronized(LOCK){return prefs(c).edit().putString("widget."+id,selection).putString("widget.style."+id,style).commit();}}
  public static boolean vi(Context c){String l=setting(c,"language","system");return l.equals("vi")||l.equals("system")&&c.getResources().getConfiguration().getLocales().get(0).getLanguage().equals("vi");}
  public static boolean dark(Context c){String t=setting(c,"theme","system");return t.equals("dark")||t.equals("system")&&(c.getResources().getConfiguration().uiMode&48)==32;}
  public static String tr(Context c,String vi,String en){return vi(c)?vi:en;}

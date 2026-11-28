@@ -60,7 +60,7 @@ public final class Smoke extends Instrumentation {
   check(Widgets.selection(c,42,data).size()==1&&Widgets.selection(c,42,data).get(0).id.equals("server0"),"First widget selection");
   check(Widgets.selection(c,43,data).size()==1&&Widgets.selection(c,43,data).get(0).id.equals("server1"),"Independent second widget selection");
   Store.putSetting(c,"widget.42","");Store.putSetting(c,"widget.43","");
-  Snapshot old=new Snapshot(fixture(System.currentTimeMillis()-1800000));check(old.servers.get(0).state(old).equals("stale"),"Cached online observation expires locally");check(Widgets.metrics(old,old.servers.get(0)).contains("—"),"Stale numeric metrics are unavailable");
+  Snapshot old=new Snapshot(fixture(System.currentTimeMillis()-1800000));check(old.servers.get(0).state(old).equals("stale"),"Cached online observation expires locally");check(Widgets.metrics(old,old.servers.get(0)).contains("24%")&&old.servers.get(0).displayState(old).equals("cached"),"Locally aged good observations remain explicitly cached");
   Store.putSetting(c,"language","vi");Store.putSetting(c,"theme","dark");Store.snapshot(c,data,Store.generation());
   final Snapshot focus=onlyOne(data);Store.snapshot(c,focus,Store.generation());response=focus.raw;
   final Activity main=startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();capture("overview-vi-dark.png");

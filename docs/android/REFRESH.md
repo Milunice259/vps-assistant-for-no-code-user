@@ -25,3 +25,4 @@ Candidate target: stable package com.vpscontrol.widget, version1.3.0/code10300, 
 - https://developer.android.com/develop/ui/views/appwidgets/advanced
 
 Status: implementation and native validation in progress; no 1.3.0 publication claimed.
+

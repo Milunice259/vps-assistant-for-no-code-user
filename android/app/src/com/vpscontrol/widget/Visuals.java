@@ -20,7 +20,7 @@ public final class Visuals {
   int track=d?0xFF424B64:0xFFACB7CD;line=widget?(track&0x00FFFFFF)|(Math.max(75,alpha*2/3)<<24):(d?0xFF30364B:0xFFE5E7F1);
   metric=new int[]{accent,d?0xFF83B8FF:0xFF3978CB,green};
  }
- public int state(String s){return s.equals("online")?green:s.equals("offline")?red:s.equals("stale")?amber:muted;}
+ public int state(String s){return s.equals("online")?green:s.equals("offline")?red:(s.equals("stale")||s.equals("cached"))?amber:muted;}
  public static int dp(Context c,float n){return Math.round(n*c.getResources().getDisplayMetrics().density);}
  public static GradientDrawable shape(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(radius);return d;}
  private static final Typeface MEDIUM=Typeface.create("sans-serif-medium",Typeface.NORMAL),REGULAR=Typeface.create("sans-serif",Typeface.NORMAL);
@@ -43,7 +43,9 @@ public final class Visuals {
  }
  private static Bitmap bitmap(int width,int height){int w=Math.max(1,width),h=Math.max(1,height);float scale=Math.min(2f,(float)Math.sqrt(180000.0/(w*(double)h)));return Bitmap.createBitmap(Math.max(1,(int)(w*scale)),Math.max(1,(int)(h*scale)),Bitmap.Config.ARGB_8888);}
  public static Bitmap metrics(Context c,int w,int h,Double[] values){return metrics(c,w,h,values,null);}
- public static Bitmap metrics(Context c,int width,int height,Double[] values,WidgetStyle style){int w=Math.max(1,width),h=Math.max(1,height);Bitmap b=bitmap(w,h);Canvas cv=new Canvas(b);cv.scale(b.getWidth()/(float)w,b.getHeight()/(float)h);drawMetrics(c,cv,w,h,values,style==null?new Visuals(c):style.palette(c),style==null?"auto":style.layout);return b;}
+ public static Bitmap metrics(Context c,int width,int height,Double[] values,WidgetStyle style){return metrics(c,width,height,values,style,false);}
+ public static Bitmap metrics(Context c,int width,int height,Double[] values,WidgetStyle style,boolean historical){int w=Math.max(1,width),h=Math.max(1,height);Bitmap b=bitmap(w,h);Canvas cv=new Canvas(b);cv.scale(b.getWidth()/(float)w,b.getHeight()/(float)h);drawMetrics(c,cv,w,h,values,metricPalette(c,style,historical),style==null?"auto":style.layout);return b;}
+ private static Visuals metricPalette(Context c,WidgetStyle style,boolean historical){Visuals p=style==null?new Visuals(c):style.palette(c);if(historical)Arrays.fill(p.metric,p.muted);return p;}
  static void drawMetrics(Context c,Canvas cv,float w,float h,Double[] values){drawMetrics(c,cv,w,h,values,new Visuals(c),"auto");}
  private static void mini(Context context,Canvas c,float w,float h,Double[] values,Visuals v,boolean tracks){String[] names={"CPU","RAM",Store.tr(context,"Ổ đĩa","Disk")};float fs=Math.min(1.18f,context.getResources().getConfiguration().fontScale),col=w/3;for(int i=0;i<3;i++){float x=i*col,valueSize=Math.min(Math.min(23,col*.46f)*fs,h*.43f);number(c,Widgets.percent(values[i]),x+col/2,Math.max(valueSize*.95f,h*.42f),valueSize,col-5,values[i]==null?v.muted:v.metric[i]);smallLabel(c,names[i],x+col/2,Math.min(h-(tracks&&h>=36?7:3),Math.max(27,h*.8f)),Math.min(10*fs,h*.26f),col-4,v.muted);if(tracks&&h>=36)bar(c,x+5,h-4,col-10,3,values[i],v.metric[i],v.line);}}
  private static void drawMetrics(Context context,Canvas c,float w,float h,Double[] values,Visuals v,String layout){
@@ -61,20 +63,21 @@ public final class Visuals {
  public static Bitmap fleet(Context c,int w,int h,List<Snapshot.Server> servers,Snapshot data){return fleet(c,w,h,servers,data,null);}
  public static Bitmap fleet(Context context,int width,int height,List<Snapshot.Server> servers,Snapshot data,WidgetStyle style){
   int w=Math.max(1,width),h=Math.max(1,height);Bitmap b=bitmap(w,h);Canvas c=new Canvas(b);c.scale(b.getWidth()/(float)w,b.getHeight()/(float)h);Visuals v=style==null?new Visuals(context):style.palette(context);String layout=style==null?"auto":style.layout;boolean compact=style!=null&&style.density.equals("compact");
-  if(h<55||w<150){int online=0;for(Snapshot.Server s:servers)if(s.state(data).equals("online"))online++;Paint p=paint(v.green);c.drawCircle(7,h/2,4,p);fit(c,online+Store.tr(context," đang kết nối"," online"),20,h/2+5,w-22,13,v.ink,true);return b;}
+  if(h<55||w<150){int online=0,cached=0;for(Snapshot.Server s:servers){String state=s.displayState(data);if(state.equals("online"))online++;else if(state.equals("cached"))cached++;}boolean historical=online==0&&cached>0;Paint p=paint(historical?v.amber:v.green);c.drawCircle(7,h/2,4,p);fit(c,(historical?cached+Store.tr(context," dữ liệu lưu"," cached"):online+Store.tr(context," đang kết nối"," online")),20,h/2+5,w-22,13,v.ink,true);return b;}
   int target=layout.equals("rings")?(compact?88:108):layout.equals("numbers")?(compact?56:70):(compact?60:80);
   int count=Math.min(servers.size(),Math.max(1,h/target));boolean overflow=count<servers.size();if(overflow)count=Math.max(1,Math.min(count,(h-22)/target));float row=Math.min(target,(h-(overflow?22:0))/(float)Math.max(1,count));
-  for(int i=0;i<count;i++){Snapshot.Server s=servers.get(i);String state=s.state(data);float y=i*row;Paint p=paint(v.inset);c.drawRoundRect(0,y+2,w,y+row-4,14,14,p);float titleY=y+(row<62?18:24);fit(c,s.name,12,titleY,w*.55f-12,compact?13:14,v.ink,true);fit(c,Widgets.stateLabel(context,state),w*.58f,titleY-1,w*.42f-12,10,v.state(state),false);Double[] values=state.equals("online")?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
-   if(layout.equals("rings")&&row>=82){c.save();c.translate(12,y+29);drawMetrics(context,c,w-24,row-34,values,v,"rings");c.restore();}
-   else if(row>=46){String[] names={"CPU","RAM",Store.tr(context,"Đĩa","Disk")};float baseline=row<62?y+row-9:y+44;for(int j=0;j<3;j++){float x=12+j*(w-24)/3;fit(c,names[j]+" "+Widgets.percent(values[j]),x,baseline,(w-24)/3-4,compact?10:11,v.muted,false);if(!layout.equals("numbers")&&row>=62)bar(c,x,y+row-13,(w-24)/3-10,3,values[j],v.metric[j],v.line);}}
+  for(int i=0;i<count;i++){Snapshot.Server s=servers.get(i);String state=s.displayState(data);boolean historical=state.equals("cached");Visuals rowColors=historical?metricPalette(context,style,true):v;float y=i*row;Paint p=paint(v.inset);c.drawRoundRect(0,y+2,w,y+row-4,14,14,p);float titleY=y+(row<62?18:24);fit(c,s.name,12,titleY,w*.55f-12,compact?13:14,v.ink,true);fit(c,Widgets.stateLabel(context,state),w*.58f,titleY-1,w*.42f-12,10,v.state(state),false);Double[] values=s.values(data);
+   if(layout.equals("rings")&&row>=82){c.save();c.translate(12,y+29);drawMetrics(context,c,w-24,row-34,values,rowColors,"rings");c.restore();}
+   else if(row>=46){String[] names={"CPU","RAM",Store.tr(context,"Đĩa","Disk")};float baseline=row<62?y+row-9:y+44;for(int j=0;j<3;j++){float x=12+j*(w-24)/3;fit(c,names[j]+" "+Widgets.percent(values[j]),x,baseline,(w-24)/3-4,compact?10:11,v.muted,false);if(!layout.equals("numbers")&&row>=62)bar(c,x,y+row-13,(w-24)/3-10,3,values[j],rowColors.metric[j],v.line);}}
   }
   if(overflow)label(c,"+"+(servers.size()-count)+Store.tr(context," VPS · mở ứng dụng"," servers · open app"),3,h-3,11,v.muted,false);return b;
  }
  public static Bitmap placeholder(Context c,int w,int h){return placeholder(c,w,h,null);}
  public static Bitmap placeholder(Context context,int width,int height,WidgetStyle style){int w=Math.max(1,width),h=Math.max(1,height);Bitmap b=bitmap(w,h);Canvas c=new Canvas(b);c.scale(b.getWidth()/(float)w,b.getHeight()/(float)h);Visuals v=style==null?new Visuals(context):style.palette(context);float size=Math.min(80,Math.min(w*.6f,h*.75f));Paint p=paint(v.inset);c.drawRoundRect((w-size)/2,(h-size)/2,(w+size)/2,(h+size)/2,size/3,size/3,p);Bitmap icon=icon(context,"server",v.accent);c.drawBitmap(icon,null,new RectF((w-size*.65f)/2,(h-size*.65f)/2,(w+size*.65f)/2,(h+size*.65f)/2),paint(v.accent));icon.recycle();return b;}
  public static final class Meter extends View {
-  private final Double[] values;
-  public Meter(Context c,Double[] value){super(c);values=value;setContentDescription("CPU "+Widgets.percent(value[0])+", RAM "+Widgets.percent(value[1])+", "+Store.tr(c,"Ổ đĩa ","Disk ")+Widgets.percent(value[2]));setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);}
-  protected void onDraw(Canvas c){float d=getResources().getDisplayMetrics().density;c.save();c.scale(d,d);drawMetrics(getContext(),c,getWidth()/d,getHeight()/d,values);c.restore();}
+  private final Double[] values;private final boolean historical;
+  public Meter(Context c,Double[] value){this(c,value,false);}
+  public Meter(Context c,Double[] value,boolean saved){super(c);values=value;historical=saved;setContentDescription((historical?Store.tr(c,"Số liệu đã lưu, ","Cached readings, "):"")+"CPU "+Widgets.percent(value[0])+", RAM "+Widgets.percent(value[1])+", "+Store.tr(c,"Ổ đĩa ","Disk ")+Widgets.percent(value[2]));setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);}
+  protected void onDraw(Canvas c){float d=getResources().getDisplayMetrics().density;c.save();c.scale(d,d);drawMetrics(getContext(),c,getWidth()/d,getHeight()/d,values,metricPalette(getContext(),null,historical),"auto");c.restore();}
  }
 }

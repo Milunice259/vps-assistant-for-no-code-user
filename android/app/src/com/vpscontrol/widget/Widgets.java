@@ -18,7 +18,7 @@ public class Widgets extends AppWidgetProvider {
  private static final Class<?>[] TYPES={Fleet.class,Single.class,Wide.class,Large.class};
  public void onUpdate(Context c,AppWidgetManager m,int[] ids){for(int id:ids)update(c,m,id);Sync.schedule(c);Sync.request(c,null);}
  public void onAppWidgetOptionsChanged(Context c,AppWidgetManager m,int id,Bundle options){update(c,m,id);}
- public void onDeleted(Context c,int[] ids){for(int id:ids){Store.putSetting(c,"widget."+id,"");WidgetStyle.clear(c,id);}}
+ public void onDeleted(Context c,int[] ids){for(int id:ids){Store.putSetting(c,"widget."+id,"");WidgetStyle.clear(c,id);}Sync.schedule(c);}
  public static void updateAll(Context c){AppWidgetManager m=AppWidgetManager.getInstance(c);for(Class<?> type:TYPES)for(int id:m.getAppWidgetIds(new ComponentName(c,type)))update(c,m,id);}
  public static int[] installed(Context c){AppWidgetManager m=AppWidgetManager.getInstance(c);List<Integer> ids=new ArrayList<Integer>();for(Class<?> type:TYPES)for(int id:m.getAppWidgetIds(new ComponentName(c,type)))ids.add(id);Collections.sort(ids);int[] result=new int[ids.size()];for(int i=0;i<result.length;i++)result[i]=ids.get(i);return result;}
  static void update(Context c,AppWidgetManager m,int id){
@@ -38,13 +38,15 @@ public class Widgets extends AppWidgetProvider {
  public static String stateLabel(Context c,String state){
   if(state.equals("online"))return Store.tr(c,"Có kết nối","Online");
   if(state.equals("offline"))return Store.tr(c,"Không truy cập được","Unreachable");
+  if(state.equals("cached"))return Store.tr(c,"Dữ liệu lưu","Cached reading");
   if(state.equals("stale"))return Store.tr(c,"Dữ liệu cũ","Stale");
   if(state.equals("disabled"))return Store.tr(c,"Đã tắt giám sát","Disabled");
   return Store.tr(c,"Chưa xác định","Unknown");
  }
  public static int color(Context c,String state){return new Visuals(c).state(state);}
  public static String percent(Double value){return value==null?"—":String.format(Locale.ROOT,"%.0f%%",value);}
- public static String metrics(Snapshot data,Snapshot.Server s){boolean online=s.state(data).equals("online");return "CPU "+percent(online?s.cpu:null)+" · RAM "+percent(online?s.memory:null)+" · Disk "+percent(online?s.disk:null);}
+ public static String metrics(Snapshot data,Snapshot.Server s){Double[] values=s.values(data);return "CPU "+percent(values[0])+" · RAM "+percent(values[1])+" · Disk "+percent(values[2]);}
+
  public static List<Snapshot.Server> selection(Context c,int id,Snapshot data){
   List<Snapshot.Server> result=new ArrayList<Snapshot.Server>();if(data==null)return result;
   String saved=Store.setting(c,"widget."+id,"");
@@ -71,7 +73,7 @@ public class Widgets extends AppWidgetProvider {
   if(!status.isEmpty())stamp=time(c,Store.received(c))+Store.tr(c," · Lưu cũ, lỗi cập nhật"," · Cached, refresh error");
   else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
   boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny&&!strip?View.GONE:View.VISIBLE);
-  Double[] focused=null;boolean fleet=false,empty=false;
+  Double[] focused=null;boolean historical=false,fleet=false,empty=false;
   v.setViewVisibility(R.id.visual,View.VISIBLE);
   if(!connected||data==null||servers.isEmpty()){
    v.setTextViewText(R.id.headline,!connected?Store.tr(c,"Kết nối VPS","Connect VPS"):Store.tr(c,"Chưa có dữ liệu","No data yet"));
@@ -79,17 +81,17 @@ public class Widgets extends AppWidgetProvider {
    v.setTextColor(R.id.summary,palette.muted);empty=true;
    if(!connected)stamp=Store.tr(c,"Chỉ đọc · Kết nối an toàn","Read only · Secure access");
   }else if(single||servers.size()==1){
-   Snapshot.Server s=servers.get(0);String state=s.state(data);boolean online=state.equals("online");
+   Snapshot.Server s=servers.get(0);String state=s.displayState(data);boolean online=state.equals("online");historical=state.equals("cached");
    v.setTextViewText(R.id.headline,s.name);v.setTextViewText(R.id.summary,"● "+stateLabel(c,state));v.setTextColor(R.id.summary,palette.state(state));
-   Double[] values=online?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
-   focused=values;v.setContentDescription(R.id.visual,metrics(data,s));
-   stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
-   if(tiny){stamp=strip?time(c,s.observed)+(!status.isEmpty()?Store.tr(c," · Cũ"," · Cached"):""):time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
+   Double[] values=s.values(data);
+   focused=values;v.setContentDescription(R.id.visual,stateLabel(c,state)+", "+metrics(data,s));
+   stamp=time(c,s.observed)+(historical?Store.tr(c," · Đã lưu"," · Cached reading"):Store.tr(c," · Quan sát"," · Observed"))+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
+   if(tiny){stamp=strip?time(c,s.observed)+(historical?Store.tr(c," · Lưu"," · Cached"):!status.isEmpty()?Store.tr(c," · Cũ"," · Cached"):""):time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
   }else{
-   int online=0,down=0,other=0;for(Snapshot.Server s:servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
-   v.setTextViewText(R.id.headline,online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
-   v.setTextViewText(R.id.summary,down+Store.tr(c," mất kết nối · "," unreachable · ")+other+Store.tr(c," cần kiểm tra"," to review"));v.setTextColor(R.id.summary,down>0?palette.red:other>0?palette.amber:palette.muted);
-   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.state(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
+   int online=0,down=0,other=0,cached=0;for(Snapshot.Server s:servers){String state=s.displayState(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else if(state.equals("cached"))cached++;else other++;}
+   v.setTextViewText(R.id.headline,cached==servers.size()?servers.size()+Store.tr(c," VPS · Đã lưu"," servers · Cached"):online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
+   v.setTextViewText(R.id.summary,(cached>0?cached+Store.tr(c," dữ liệu lưu · "," cached · "):"")+down+Store.tr(c," mất kết nối · "," unreachable · ")+other+Store.tr(c," cần kiểm tra"," to review"));v.setTextColor(R.id.summary,down>0?palette.red:other>0?palette.amber:palette.muted);
+   fleet=true;StringBuilder description=new StringBuilder();for(Snapshot.Server s:servers)description.append(s.name).append(": ").append(stateLabel(c,s.displayState(data))).append(", ").append(metrics(data,s)).append(". ");v.setContentDescription(R.id.visual,description.toString());
   }
   v.setTextViewText(R.id.stamp,stamp);
   if(focused!=null||fleet||empty){
@@ -97,7 +99,7 @@ public class Widgets extends AppWidgetProvider {
    View measured=v.apply(c,new android.widget.FrameLayout(c));measured.measure(View.MeasureSpec.makeMeasureSpec(dp(c,width),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(dp(c,height),View.MeasureSpec.EXACTLY));measured.layout(0,0,measured.getMeasuredWidth(),measured.getMeasuredHeight());
    View visual=measured.findViewById(R.id.visual);float density=c.getResources().getDisplayMetrics().density;
    int bodyW=Math.max(1,Math.round((visual.getMeasuredWidth()-visual.getPaddingLeft()-visual.getPaddingRight())/density));int bodyH=Math.max(1,Math.round((visual.getMeasuredHeight()-visual.getPaddingTop()-visual.getPaddingBottom())/density));
-   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused,style):fleet?Visuals.fleet(c,bodyW,bodyH,servers,data,style):Visuals.placeholder(c,bodyW,bodyH,style));
+   v.setImageViewBitmap(R.id.visual,focused!=null?Visuals.metrics(c,bodyW,bodyH,focused,style,historical):fleet?Visuals.fleet(c,bodyW,bodyH,servers,data,style):Visuals.placeholder(c,bodyW,bodyH,style));
   }
   return v;
  }

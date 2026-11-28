@@ -1,4 +1,16 @@
-# Android Widget V1.0 — Phase 0 status
+# Android Widget — current status (2026-11-28, Vietnam)
+
+- **Published stable: 1.1.0 / 10100.** Existing stable package/certificate and GitHub update channel are active. The earlier backend rollout is complete per the operator checkpoint; this Android change does not redeploy it.
+- **Next candidate: 1.2.0 / 10200, QA complete, signing/publication pending.** [PR #5](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/5) merged as `f93621480493926b1711d670df79db1494266be2`. Reviewed source `13021c1659e257bc69743eb9eb7ce3b4f887a892` and the tested merge have identical tree `4e5d46272e555c59ba1f4c1ab98deb5e7519154c`.
+- New per-widget gear/editor: native live preview, 0–100% background transparency, soft light/dark/follow-app themes, four accents, auto/gauges/bars/numbers, fleet density, selection, Save/Cancel/reset. A 4×1 strip supplies a real low horizontal layout; app Settings lists each installed widget.
+- [Final CI run 46089735791](https://github.com/Milunice259/vps-assistant-for-no-code-user/actions/runs/46089735791): Android 10/API29 and Android15/API35 PASS, each 403 core + 1,748 widget-option assertions, real dialog/lifecycle/scope checks, real installer cancellation/upgrade and retained pairing/cache/widget style. JVM policies 22+23 PASS. Native screenshots reviewed; recorded AndroidRuntime crash log empty.
+- Exact stable-package **unsigned** artifact: `vps-control-v1.2.0-unsigned.apk`, 68,052 bytes, SHA-256 `67a3022bdd8100c37e6f2b8fec831efd21c26558cd79f33b889be46543bf6475`. CI artifact `15240498312`; archive SHA-256 `e7d6e66ef2bc4521fd5742489014d3d790c9c6a75e57ffd783cebcb5d891ce1d`, downloaded and checked. Sign these bytes without rebuild or QA substitution.
+- Hermes signs/publishes with the existing 1.1.0 stable key; approved certificate `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`. Feed remains 1.1.0 until the signed 1.2.0 APK is verified/public. Keep package/key and incremented versionCode so upgrades retain app data/widgets.
+- Owner Samsung acceptance of the new settings/strip is pending. Off-host signing-key recovery and previously recorded backend/dependency limitations remain open. No new backend, proxy, runtime permission, credential or sync policy change.
+
+Earlier checkpoints below are historical evidence; the current summary above takes precedence for delivery state.
+
+# Historical Phase 0 status
 
 Updated 2026-11-27. State: Phase 0 development preflight PASSED WITH CONDITIONS; Phase 1 build/signature PASS, installation/handoff pending. Production release remains BLOCKED pending QA and authorization.
 - Source baseline: f3540b92573a7c9ebf0a3717e432f30c799883d6, confirmed as PR #1 base. No open PR was returned before creation.

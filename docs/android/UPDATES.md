@@ -2,7 +2,7 @@
 
 ## App behavior
 
-The native 1.1.0 candidate checks `android/releases/stable.json` on the public repository's main branch every time the activity enters the foreground. It uses bounded HTTPS and conditional ETags, with its own worker queue. It never sends the VPS bearer/cookie to GitHub and does not block or change monitoring/authentication. Missing/unpublished feed, network/rate errors and incompatible Android builds are distinct from an actual up-to-date result.
+The native app checks `android/releases/stable.json` on the public repository's main branch every time the activity enters the foreground. It uses bounded HTTPS and conditional ETags, with its own worker queue. It never sends the VPS bearer/cookie to GitHub and does not block or change monitoring/authentication. Missing/unpublished feed, network/rate errors and incompatible Android builds are distinct from an actual up-to-date result.
 
 A newer release appears in Overview and App updates in Settings with version, notes and a Download and update button. Download is opt-in. The app limits file size/time/redirect count and GitHub/CDN hosts, checks exact size and SHA-256, package/version/minimum Android and the current installed signing certificate. It refuses downgrade, other package/key, truncated or altered downloads. Android's PackageInstaller then verifies the signed APK and requests user confirmation. Android's install-from-this-app permission is requested only after the user initiates an update. No silent/root installer or external runtime is used.
 
@@ -12,7 +12,7 @@ The new REQUEST_INSTALL_PACKAGES permission is necessary for the Android confirm
 
 ## First stable release
 
-RC1/RC2 used discarded disposable QA keys. They cannot receive an in-place stable update. The owner must install the stable package `com.vpscontrol.widget` once, pair it and add its widgets. Later releases keep that package, increase versionCode and use the same owner-controlled certificate; normal upgrades retain the app's Keystore/preferences/widgets. Do not publish `qa`, `qa2` or `qa3` APKs as stable releases. An unpublished/null feed does not activate a release.
+RC1/RC2 used discarded disposable QA keys. They cannot receive an in-place stable update. The owner must install the stable package `com.vpscontrol.widget` once, pair it and add its widgets. Later releases keep that package, increase versionCode and use the same owner-controlled certificate; normal upgrades retain the app's Keystore/preferences/widgets. Do not publish `qa`, `qa2`, `qa3` or `qa4` APKs as stable releases. An unpublished/null feed does not activate a release.
 
 1. Review the final exact source/checks and owner-controlled signing identity. Merge the reviewed Android changes into main; this does not authorize a backend deployment.
 2. Retrieve the exact tested stable-package unsigned APK and independently compare its SHA-256 from the checkpoint. On an owner-controlled signing environment, run `android/app/sign-release.sh` with the existing private key, alias/password environment variables and VPS_UNSIGNED_SHA256. Keep an encrypted key backup outside source/public CI/chat; never invent an ephemeral replacement for a stable key. Initial stable-key setup must remain under owner custody.
@@ -27,6 +27,6 @@ python3 android/app/publish-release.py --apk /absolute/signed.apk --source FULL_
 
 ## Release data
 
-The checked-in bootstrap is `{"schema":1,"release":null}`. Only the publisher should advance it after a real signed release is available. Release fields include packageName, versionCode, versionName, minSdk, exact signed size/SHA-256, GitHub release URL and bounded plain-text notes; public source/certificate fingerprints are recorded for operations. App trust is the existing installed signer plus Android verification, not the feed's certificate claim. Current strict signing policy does not accept certificate rotation; plan it as an explicit future change.
+The initial bootstrap was `{"schema":1,"release":null}`; stable 1.1.0 is now published. Only the publisher should advance the current feed after a real signed release is available. Release fields include packageName, versionCode, versionName, minSdk, exact signed size/SHA-256, GitHub release URL and bounded plain-text notes; public source/certificate fingerprints are recorded for operations. App trust is the existing installed signer plus Android verification, not the feed's certificate claim. Current strict signing policy does not accept certificate rotation; plan it as an explicit future change.
 
 Only the publisher handles GitHub write authorization. The phone reads public HTTPS; no token or paid update infrastructure is required.

@@ -17,9 +17,8 @@ dist/
 
 # ─── Environment & Secrets ───
 .env
-.env.local
-.env.*.local
-.env.example
+.env.*
+!.env.example
 .git-credentials
 
 # ─── IDE & Editor ───
@@ -44,17 +43,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# ─── Testing ───
-tests/
+# ─── Test outputs (test source stays tracked) ───
 coverage/
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
-__tests__/
-__mocks__/
-jest.config.*
-vitest.config.*
 
 # ─── Examples & Docs (non-essential) ───
 examples/
@@ -83,6 +73,12 @@ tsconfig.tsbuildinfo
 *.crt
 *.pfx
 *.p12
+*.jks
+*.keystore
+*.apk
+*.aab
+*.apks
+*.idsig
 id_rsa
 id_ed25519
 known_hosts

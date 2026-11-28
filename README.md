@@ -1,194 +1,130 @@
 <p align="center">
-  <img src="public/logo.svg" alt="VPS Control logo" width="96" />
-</p>
-
-<h1 align="center">VPS Control</h1>
-
-<p align="center">
-  <strong>A friendly self-hosted VPS assistant for people who do not want to live in SSH.</strong><br/>
-  Monitor servers, understand alerts, deploy apps, create backups, and run safe repairs from one clean web panel.
+  <img src="docs/assets/hero.svg" alt="VPS Control — quản lý trên web, theo dõi từ màn hình chính Android" width="1200" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/Traefik-auto--HTTPS-24A1C1?style=flat-square&logo=traefikproxy&logoColor=white" alt="Traefik" />
-  <img src="https://img.shields.io/badge/License-MIT-10B981?style=flat-square" alt="MIT License" />
+  <a href="https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/tag/android-v1.3.0"><img src="https://img.shields.io/badge/Android_stable-1.3.0-A99BFF?style=flat-square" alt="Android stable 1.3.0" /></a>
+  <img src="https://img.shields.io/badge/Android-10%2B-64DDB1?style=flat-square&logo=android&logoColor=white" alt="Android 10 trở lên" />
+  <img src="https://img.shields.io/badge/Self--hosted-Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Self-hosted với Docker" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-64DDB1?style=flat-square" alt="Giấy phép MIT" /></a>
+</p>
+
+<p align="center">
+  <strong>Biết VPS nào cần chú ý. Hiểu cảnh báo. Thao tác đúng máy chủ.</strong><br/>
+  Bảng điều khiển tự host cho người vận hành, cùng ứng dụng Android và widget gọn nhẹ.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/download/android-v1.3.0/VPS-Control-Widget-1.3.0.apk"><strong>Tải APK 1.3.0</strong></a> ·
+  <a href="docs/INSTALLATION.md">Cài web panel</a> ·
+  <a href="docs/android/README.md">Bắt đầu với Android</a> ·
+  <a href="docs/README.md">Tài liệu</a> ·
+  <a href="CONTRIBUTING.md">Đóng góp</a>
 </p>
 
 ---
 
-## Why VPS Control exists
+## Một nơi để nhìn toàn bộ hệ VPS
 
-Running a VPS is powerful, but most panels still assume you know Linux, Docker, logs, ports, reverse proxies, backups, and security trade-offs.
+VPS Control giúp trả lời những câu hỏi thường gặp: máy chủ còn khỏe không, ứng dụng nào đang lỗi, cảnh báo có ý nghĩa gì và bước tiếp theo nên làm gì. Web panel tập trung việc quản lý; Android đưa trạng thái và tài nguyên ra ngay màn hình chính.
 
-**VPS Control is built for no-code and non-technical operators**: it turns server management into guided screens, plain-English alerts, safe defaults, and auditable actions.
-
-Use it to answer simple questions quickly:
-
-- Is my server healthy?
-- Which app or service is failing?
-- What does this alert mean?
-- Can I fix this safely?
-- Did someone change something?
-- Do I have a backup before I touch anything?
-
-## Monitoring storage correction — verified 2026-11-12
-
-Absent discovered targets now retire only after a complete successful inventory; failed/empty-command output cannot imply removal. Stopped/offline targets remain distinct, historical aliases cannot restart collection, and replacement history stays continuous across Local/Remote runtimes. Database-confirmed App/server deletion also ends collection. No schema or stack change.
-
-Verified release: 56/56 frozen-source regressions, lint/types, constrained Docker build, isolated production-data startup, actual production registry 847 → 10 and new samples 847 → 10 per cycle. Offline allowlisted repair removed 12,278,359 repeated unavailable tail rows while preserving first outage markers, valid readings and exact protected-row fingerprints. Integrity/FK checks passed before and after compaction; production DB 4,789,686,272 → 142,909,440 bytes. Authenticated live scheduler/history and mobile 390px checks passed. A final consistent pre-repair database backup is retained; no historical code/image archive is required. Build uses native Webpack to fit the shared resource budget.
-
-## Current release — whole-app phases 1–5
-
-The verified safety, inventory, configuration, deployment and monitoring workspace phases are now deployed. Monitoring runs in a separate bounded worker, persists replacement-stable resource history, and reports Docker, HTTP and TLS readiness independently. Alert delivery supports durable retry and recovery; unavailable observations never imply recovery.
-
-Release checks: 55 offline regressions, native isolated Docker/SSH/HTTP/TLS and delivery-receiver checks, production-data clone startup, and live database integrity/readback. The existing SQLite volume, encryption/session keys and user data are preserved. Live authenticated production verification passed using the saved account: dashboard scheduler status (HTTP 200, worker online, outcome ok), independent app readiness, durable resource history and manual refresh, with rendered mobile charts and no horizontal overflow at 390px. Backup/restore and further operations phases remain separate work.
-
-## Highlights
-
-| Area | What you get |
+| Trên web | Trên điện thoại |
 | --- | --- |
-| **Fleet Dashboard** | One Fleet Risk Score for local and remote servers, with grouped Alert Center for large fleets. |
-| **Plain-English Alerts** | Alerts explain impact and next steps without forcing users into logs first. |
-| **Guided Fixes** | Safe repair actions for low-risk maintenance such as cache cleanup and old log trimming. |
-| **Apps + Services** | Discover Docker containers and important systemd services such as Traefik, nginx, n8n, Hermes, and more. |
-| **Deployments** | Analyze local Git repositories; deploy remote Git repositories, Docker images or Compose projects. Automatic rollback is unavailable. |
-| **Backups** | Save integrity-checked, SQLite-consistent panel snapshots on the persistent data volume. Live restore is locked; maintenance recovery is documented. VPS/apps/volumes and encryption keys are excluded. |
-| **Notifications** | Discord, Slack, Telegram, and Email alert channels with recommended beginner rules. |
-| **Network Map** | Read-only topology/inspection map for domains, proxy, servers, apps, ports, and Docker networks. |
-| **Audit Log** | Track who did what, when, where, and whether it succeeded. |
-| **Users + Profile** | Owner/Admin user management, role/server scope, and self-service profile/passcode settings. |
-| **Safe Mode** | Keeps dangerous controls out of the way for daily operation. |
+| Tổng quan nhiều VPS, cảnh báo và lịch sử tài nguyên | Xem nhanh CPU, RAM, ổ đĩa và thời điểm quan sát |
+| Quản lý máy chủ local/remote, Docker và systemd | Chọn một hoặc nhiều VPS riêng cho từng widget |
+| Xem log, health check, triển khai Git/Image/Compose | Chỉnh nền, độ trong suốt, màu nhấn và cách hiển thị |
+| Phân quyền, Advanced Mode, nhật ký thao tác | Ghép nối bằng mã một lần; API thiết bị chỉ đọc |
+| Backup nhất quán cho database của panel | Kiểm tra phiên bản GitHub và cập nhật trong app |
 
-## Screens inside the app
+## Xem trước ứng dụng
 
-- **Dashboard** — daily health, Fleet Risk Score, Alert Center, Safe Repair.
-- **Servers** — add remote VPS machines, view stats, Docker, services, and server actions.
-- **Apps** — inspect containers and system services, logs, env tools, health checks.
-- **Deploy** — local Git analysis, remote Git deployment, and Docker Image/Compose deployment.
-- **Network** — topology inspection and scoped UFW rule controls; external blocking is not independently verified.
-- **Backups** — consistent panel-only snapshots; online restore is locked to prevent unsafe database replacement.
-- **Audit Log** — searchable activity history.
-- **Settings** — notifications, alert rules, security settings, and app preferences.
-- **Users** — Owner/Admin account management with role and server-scope boundaries.
-- **Profile** — self-service display name, email, password, theme preference, and Quick Unlock Passcode.
-- **Docs** — built-in user manual for non-technical operators.
+<table>
+  <tr>
+    <td align="center" width="50%"><strong>Tổng quan tài nguyên</strong></td>
+    <td align="center" width="50%"><strong>Tùy chỉnh từng widget</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/assets/android-overview.png" alt="Tổng quan Android với đồng hồ CPU, RAM và ổ đĩa" width="300" /></td>
+    <td align="center"><img src="docs/assets/widget-editor.png" alt="Trình chỉnh widget với preview, giao diện và độ trong suốt" width="300" /></td>
+  </tr>
+</table>
 
-## Quick start: production deploy
+<p align="center">
+  <img src="docs/assets/widget-bar.png" alt="Widget thanh ngang với CPU, RAM, ổ đĩa và giờ quan sát" width="600" />
+</p>
 
-> Recommended target: Ubuntu/Debian VPS with root access and a domain pointed to the server.
+<p align="center"><sub>Ảnh từ bộ kiểm thử Android với số liệu minh họa. <a href="docs/assets/README.md">Nguồn ảnh và phiên bản</a>.</sub></p>
+
+## Android 1.3.0 có gì?
+
+- **Bốn mẫu widget:** tổng quan, một VPS, thanh ngang 4×1 và khung chi tiết. Bố cục thích ứng khi kéo đổi kích thước.
+- **Giao diện theo ý bạn:** sáng/tối/theo app, nền trong suốt 0–100%, bốn màu nhấn, đồng hồ/thanh/số và mật độ danh sách. Có preview, Lưu, Hủy và Khôi phục mặc định.
+- **Nhịp cập nhật linh hoạt:** 1/3/5/15/30/60 phút; app chính đang mở tự cập nhật mỗi phút. Nhiều widget dùng chung một lần lấy dữ liệu.
+- **Số liệu có ngữ cảnh:** kèm giờ quan sát. Số liệu hợp lệ đã cũ được đánh dấu **Đã lưu**, tối đa 24 giờ, và không được tính là VPS đang online hiện tại.
+- **Nhỏ gọn:** APK stable 1.3.0 có **83.494 byte**, Android 10+, không có thư viện runtime bên thứ ba.
+- **VI / EN:** chọn ngôn ngữ và giao diện trong ứng dụng.
+
+Nhịp widget 1/3/5 phút cần quyền **Báo thức và lời nhắc** trên Android 12+. Khi chưa bật quyền, app ghi rõ lịch nền dự phòng 15 phút. Máy ngủ, Doze hoặc chế độ tiết kiệm pin của hãng có thể làm trễ cập nhật; lịch nhanh không đánh thức máy mỗi phút.
+
+### Cài và ghép nối
+
+1. Cài [APK stable](https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/tag/android-v1.3.0). Khi nâng cấp stable, cài đè để giữ dữ liệu và widget.
+2. Trên panel có Mobile API, vào **Settings → Mobile Devices**, chọn VPS và tạo mã một lần, hiệu lực 5 phút.
+3. Trên Android, nhập URL HTTPS gốc của panel và mã ghép nối. Điện thoại không cần mật khẩu quản trị hay khóa SSH.
+4. Thêm widget từ **Cài đặt** hoặc màn hình chính. Chạm bánh răng để chọn VPS và tùy chỉnh; chọn nhịp cập nhật trong cài đặt app.
+
+Xem [hướng dẫn Android](docs/android/README.md), [thông tin xác minh APK](docs/android/STATUS.md) và [feed stable](android/releases/stable.json).
+
+## Web panel: từ quan sát đến xử lý
+
+| Khu vực | Công việc chính |
+| --- | --- |
+| **Dashboard & Servers** | Sức khỏe đội VPS, Fleet Risk Score, cảnh báo, chỉ số tài nguyên và lịch sử |
+| **Apps & Services** | Container, systemd, log, môi trường chạy, health check và tài nguyên ứng dụng |
+| **Deploy** | Phân tích Git local; triển khai Git remote, Docker Image hoặc Compose |
+| **Network** | Bản đồ domain/proxy/port/network và kiểm tra quy tắc mạng theo quyền |
+| **Backups** | Snapshot SQLite nhất quán của panel, có kiểm tra integrity |
+| **Notifications** | Kênh Telegram, Discord, Slack, Email và quy tắc cảnh báo |
+| **Users, Settings & Audit** | Vai trò, phạm vi VPS, cấu hình và lịch sử thao tác |
+
+Thao tác thay đổi máy chủ dùng quyền theo đối tượng, Advanced Mode tạm thời và xác nhận theo hành động. SSH kiểm tra fingerprint đã tin cậy. Thông tin đăng nhập nhạy cảm được mã hóa khi lưu; API mobile chỉ đọc snapshot theo phạm vi thiết bị.
+
+Backup panel chứa **database panel**, không thay thế backup ứng dụng, volume hay khóa mã hóa. Khôi phục database đang chạy và tự động rollback deployment chưa được cung cấp. Web panel có quyền quản trị host trong cấu hình Compose hiện tại; đọc [hướng dẫn cài đặt và vận hành](docs/INSTALLATION.md) trước khi triển khai.
+
+## Tự host và phát triển
+
+Để cài panel trên VPS Ubuntu/Debian phù hợp, bắt đầu bằng [hướng dẫn cài đặt](docs/INSTALLATION.md). Script `deploy.sh` có thể cài Docker, cấu hình Traefik và firewall; trên máy đang chạy dịch vụ khác, cần xem lại cấu hình hiện hữu trước khi chạy.
 
 ```bash
-git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git /opt/vps-panel
-cd /opt/vps-panel
-chmod +x deploy.sh
-./deploy.sh
+git clone https://github.com/Milunice259/vps-assistant-for-no-code-user.git
+cd vps-assistant-for-no-code-user
 ```
 
-The deploy script will check the server, install required runtime pieces, configure Docker/Traefik, ask for domain/admin details, generate secrets, build the app, and verify the container.
-
-Then open:
-
-```text
-https://your-domain.com
-```
-
-## Local development
+Sau khi cấu hình môi trường và tài khoản theo hướng dẫn, các lệnh phát triển chính là:
 
 ```bash
-npm install
-
-cat > .env <<'EOF'
-DATABASE_URL="file:./prisma/dev.db"
-JWT_SECRET=dev-jwt-secret-change-in-production-must-be-64-hex-chars-long-ok
-ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
-EOF
-
+npm ci
+npm run db:generate
 npm run db:push
-npm run db:seed
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-## Useful commands
-
-```bash
-npm run lint
-npm run build
-npm run db:push
-npm run db:studio
-```
-
-## Tech stack
-
-| Layer | Technology |
+| Thành phần | Công nghệ |
 | --- | --- |
-| App | Next.js App Router, React, TypeScript |
-| UI | Tailwind CSS, Lucide icons, Recharts |
-| API | Next.js route handlers, Server-Sent Events |
-| Database | SQLite via Prisma |
-| Auth | JWT cookies, bcrypt password hashing |
-| Server control | SSH, Docker, systemd, Linux tools |
-| Deployment | Docker, Docker Compose, Traefik labels |
-| Security | AES-256-GCM credential encryption, secret redaction, audit logs |
+| Web / API | Next.js 16, React 19, TypeScript |
+| Giao diện | Tailwind CSS, Lucide, Recharts |
+| Dữ liệu / collector | SQLite, Prisma, worker giám sát riêng trong cùng container |
+| Hạ tầng | Docker Compose, Traefik, SSH, systemd |
+| Android | Java, Android SDK, RemoteViews, Keystore; min API 29 |
 
-## Security model
+## Tài liệu và đóng góp
 
-- SSH credentials are encrypted before storage.
-- Sensitive values are redacted from logs and API responses where possible.
-- Server mutations require temporary session-bound Advanced Mode, explicit operation acknowledgment and target permissions. Advanced Mode expires within 15 minutes; previews remain read-only.
-- Role boundaries are enforced in middleware/API, not only hidden in UI.
-- Quick Unlock Passcode is hashed, optional, and only unlocks idle lock while the login session is still valid.
-- Audit logging is part of the core product direction.
-- This app controls servers; review code and configuration before exposing it publicly.
+- [Trung tâm tài liệu](docs/README.md) — kiến trúc và bản đồ repo.
+- [Cài đặt và vận hành](docs/INSTALLATION.md) — host mới, môi trường local, backup và cập nhật.
+- [Android](docs/android/README.md) — ghép nối, widget, nhịp cập nhật và xử lý sự cố.
+- [Phát triển](docs/DEVELOPMENT.md) · [API & database](docs/API-AND-DATABASE.md) · [Đóng góp](CONTRIBUTING.md).
+- [Trạng thái Android](docs/android/STATUS.md) · [Roadmap gốc](docs/android/ROADMAP.md) · [Lịch sử checkpoint](docs/android/archive/README.md).
 
-No public registration is exposed; Owner/Admin creates users. If you find a vulnerability, please open a private security report if GitHub Security Advisories are enabled, or contact the maintainer directly. Do not publish secrets or exploit details in public issues.
+Hướng đóng góp phù hợp: trải nghiệm dễ hiểu, bản dịch, cách trình bày cảnh báo, tích hợp giám sát và kiểm thử thao tác có rủi ro. Báo cáo lỗ hổng qua kênh riêng của maintainer hoặc GitHub Security Advisories nếu được bật; tránh đưa bí mật vào issue công khai.
 
-## Contributing
-
-This project is intended to be open source and contributor-friendly.
-
-Good first contribution areas:
-
-- clearer beginner docs and tooltips
-- safer guided repair actions
-- more server/app health checks
-- UI polish for mobile and large fleets
-- tests around risky actions and audit logging
-- translations
-
-Start here:
-
-1. Fork the repo.
-2. Create a small focused branch.
-3. Run `npm run lint` and `npm run build`.
-4. Open a pull request with screenshots for UI changes.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
-
-## Roadmap
-
-The current priority is reliable, understandable operation for non-technical users—not more controls. Existing features are not considered fully accepted until their safety, results and authenticated UI have been verified.
-
-| Lane | Status | Acceptance target |
-| --- | --- | --- |
-| **SEC-01 — Safety and permissions** | Released and verified | Validate inputs before execution; temporary server-authorized Advanced Mode; role and target scope checks; protected configuration values. |
-| **TRUST-01 — Truthful capabilities** | Released and verified | Local Git is analysis only; rollback is locked; command completion, state and readiness are distinct. |
-| **DATA-01 — Recoverable panel backups** | Released and verified | Concurrent-write SQLite snapshots and integrity checks pass; web restore stays locked; disposable maintenance recovery passes. Panel database only. |
-| **UX-01 — Simpler screens** | Released and verified | Current-state onboarding, single responsive route tree, current-input preflight and target-bound touch/keyboard canvas. |
-| **FLOW-01 — Guided operations** | Released and verified | Canonical app restart; package-cache-only cleanup; fresh Image/Compose deployment; uncertain submissions require explicit read-only inspection, never automatic retry. |
-| **QA-01 — Release gates** | Passed for this release | 21 offline/native regression scripts, lint/type/build, bounded independent safety review, authenticated isolated desktop/mobile interactions and production readback. Dangerous cases use mocks/disposable resources, not production restore/firewall/cleanup. |
-
-UI/UX review starts before implementation and repeats at every release. Dashboard owns fleet health and next steps; server/app pages own target-specific operations; Network owns inspection and network controls; Settings owns configuration; Docs owns longer help. Reuse one action flow across entry points, disclose advanced detail only when needed, and always distinguish Local from Remote.
-
-Network wires are visual paths, not traffic switches. Firewall results verify rule evidence, not effective external reachability. Restore and automatic deployment rollback remain deliberately unavailable; package-cache cleanup is not full disk cleanup. The stack stays unchanged; broad redesigns, AI automation and a full VPS backup engine are outside this reliability pass.
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).
+Mã nguồn theo giấy phép [MIT](LICENSE).

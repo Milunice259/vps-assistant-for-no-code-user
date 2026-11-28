@@ -547,10 +547,12 @@ AppStatus: RUNNING | STOPPED | RESTARTING | UNHEALTHY | UNKNOWN
 
 ## Database Commands
 
+For initial local admin creation, use the [installation guide](INSTALLATION.md). Docker entrypoint creates the initial admin from environment; there is no npm `db:seed` script.
+
+
 ```bash
 npm run db:push       # Create/update database from schema
 npm run db:studio     # GUI at localhost:5555
-npm run db:seed       # Create admin from ADMIN_USERNAME / ADMIN_PASSWORD
 npm run db:generate   # Regenerate Prisma client
 ```
 

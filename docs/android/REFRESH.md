@@ -1,6 +1,6 @@
-# Android 1.3.0 refresh correction — signing handoff (2026-11-28 Vietnam)
+# Android 1.3.0 refresh correction — published stable (2026-11-28 Vietnam)
 
-Owner reports that the widget's refresh interval is too long and data is usually not ready without a manual refresh. Current stable is 1.2.0 / 10200. This work does not alter the public feed or backend.
+Owner reports that the widget's refresh interval is too long and data is usually not ready without a manual refresh. The affected baseline was stable1.2.0/10200;1.3.0 is now published. The Android implementation leaves the backend unchanged; the separate signed1.3.0 publication advanced the stable feed.
 
 ## Root cause
 The phone only offers 15/30/60-minute JobScheduler cadence, but local freshness expires after roughly three minutes for a 60-second worker. The renderer then hides all numbers. This makes most of a normal refresh cycle unhelpful even when the cached observation was valid when fetched.
@@ -30,4 +30,4 @@ Source `42d25be78208ead526e5782199ff13158ab384ba` merged in PR #6 as `1d521efbda
 
 Final unsigned stable package/version10300/1.3.0 is72,466 bytes, SHA-256 `409bd99ae645a7ecac95ca53306479d256f30e749946eb42cf1b4d9658557428`. Artifact15246587474, archive hash `40e6e9446a05f7a0f35fcb8db959bbd615eaed69386470a8b6f1a1ca8fdb02ce`. Downloaded and checked; durable owner handoff retained. Hermes signs exact bytes with the existing stable certificate, then verifies public APK/tag/feed before announcing availability.
 
-Status: merged; ready for owner-side stable signature/publication. Public feed remains1.2.0. Physical reboot and Samsung sleep/battery acceptance remain owner gates; receiver wiring and real package replacement do not prove every OEM lifecycle case. No1.3.0 publication claimed.
+Status: published stable1.3.0/10300. Signed APK83,494 bytes, SHA-256 `2ae8c6b77aeb7373e8232b926644d3c4418ebb4c40a22890617dde7bc4c046a5`; public release/feed/tag read back. Operator [publication receipt](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/6#issuecomment-7233470276) confirms signing the exact reviewed bytes with the existing stable key. Physical reboot and Samsung sleep/battery acceptance remain owner gates; receiver wiring and real package replacement do not prove every OEM lifecycle case. Earlier unsigned handoff details above are retained as provenance.

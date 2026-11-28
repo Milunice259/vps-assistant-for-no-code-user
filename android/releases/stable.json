@@ -2,14 +2,14 @@
   "schema": 1,
   "release": {
     "packageName": "com.vpscontrol.widget",
-    "versionCode": 10200,
-    "versionName": "1.2.0",
+    "versionCode": 10300,
+    "versionName": "1.3.0",
     "minSdk": 29,
-    "size": 79398,
-    "sha256": "f7f58f8afdc0aad863e380ee9003118977bf44350c58131476d5d57b2b573415",
+    "size": 83494,
+    "sha256": "2ae8c6b77aeb7373e8232b926644d3c4418ebb4c40a22890617dde7bc4c046a5",
     "certSha256": "512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0",
-    "source": "13021c1659e257bc69743eb9eb7ce3b4f887a892",
-    "url": "https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/download/android-v1.2.0/VPS-Control-Widget-1.2.0.apk",
-    "notes": "VPS Control 1.2.0\n\nTùy chỉnh riêng từng widget: nền trong suốt, giao diện sáng/tối, màu nhấn, thanh/gauge/số và mật độ hiển thị. Preview trực tiếp; Save/Cancel/Reset; widget Wide 4×1 co giãn theo kích thước.\n\nCập nhật trực tiếp từ stable 1.1.0: giữ ghép nối, cache, lựa chọn widget và cấu hình. Không gỡ ứng dụng hoặc xóa dữ liệu. Android yêu cầu xác nhận cài đặt; nghiệm thu trên Samsung do chủ dự án thực hiện."
+    "source": "42d25be78208ead526e5782199ff13158ab384ba",
+    "url": "https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/download/android-v1.3.0/VPS-Control-Widget-1.3.0.apk",
+    "notes": "VPS Control 1.3.0\n\nThêm mốc làm mới 1/3/5 phút. Android 12+ cần bật quyền Báo thức và lời nhắc (Alarms & reminders) cho chế độ nhanh khi có widget; nếu chưa cấp quyền, lịch dự phòng là 15 phút. Khi ứng dụng đang mở, làm mới mỗi phút.\n\nDữ liệu cũ hợp lệ có nhãn Đã lưu/Cached và thời điểm quan sát; không được coi là trạng thái online mới. Điện thoại ngủ, Doze hoặc tiết kiệm pin của hãng có thể làm trễ cập nhật; không cam kết đúng từng phút khi máy ngủ.\n\nCập nhật cùng package/khóa stable để giữ ghép nối và tùy chỉnh; không gỡ app hoặc xóa dữ liệu. Nghiệm thu Samsung 1.3.0 còn chờ chủ dự án thử."
   }
 }

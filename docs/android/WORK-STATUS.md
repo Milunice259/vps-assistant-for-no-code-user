@@ -1,10 +1,10 @@
-## 2026-11-28 — 1.2.0 widget customization candidate (not published)
+## 2026-11-28 — 1.2.0 widget customization published; cleanup started
 
-- Owner requested per-widget background transparency, softer daylight appearance, horizontal bars and more display choices. Existing stable 1.1.0 remains the public release/feed until an approved signed 1.2.0 asset is available.
-- Candidate: stable package unchanged, version 1.2.0 / 10200. Separate QA4 package/key is disposable and must never replace a stable update.
+- Owner requested per-widget background transparency, softer daylight appearance, horizontal bars and more display choices. Stable 1.2.0 is now published; 1.1.0 remains the previous signed release.
+- Released app: stable package unchanged, version 1.2.0 / 10200. Separate QA4 package/key is disposable and must never replace a stable update.
 - Per-instance draft editor: live native preview, app/light/dark theme, 0–100% background transparency, four accent colors, auto/gauges/bars/numbers, comfortable/compact fleet density and independent server selection. Gear on each widget and app Settings entries open its editor; Save commits appearance/selection together, Cancel discards, Reset changes appearance only. A dedicated 4×1 strip (minimum 250×72dp, resize width ≥230dp) supplies an actual low horizontal widget; launcher resize controls the outer shape, and small sizes simplify content.
 - Old selectors migrate with defaults; text remains opaque, observation timestamps remain visible, stale/unavailable data remains unavailable. No network/permission/backend/worker change. Existing pairing/cache and style preferences must survive same-certificate updates.
-- Native Android 10/15 QA and screenshot review PASS at source `13021c1659e257bc69743eb9eb7ce3b4f887a892` (CI 46089735791). PR #5 merged as `f93621480493926b1711d670df79db1494266be2`; unsigned APK is 68,052 bytes, SHA-256 `67a3022bdd8100c37e6f2b8fec831efd21c26558cd79f33b889be46543bf6475`. Signing/publication remains pending and must use Hermes' existing stable certificate `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`; no replacement key. Owner Samsung acceptance and off-host key backup remain open.
+- Native Android 10/15 QA and screenshot review PASS at source `13021c1659e257bc69743eb9eb7ce3b4f887a892` (CI 46089735791). PR #5 merged as `f93621480493926b1711d670df79db1494266be2`; unsigned APK is 68,052 bytes, SHA-256 `67a3022bdd8100c37e6f2b8fec831efd21c26558cd79f33b889be46543bf6475`. Hermes published 1.2.0 (79,398 bytes, SHA-256 `f7f58f8afdc0aad863e380ee9003118977bf44350c58131476d5d57b2b573415`) using the existing stable certificate `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`; no replacement key. Owner reports stable phone behavior; version-specific Samsung acceptance and off-host key backup remain recorded. See CLEANUP.md for the bounded cleanup plan and completed local result.
 
 # Work implementation checkpoint — 2026-11-27
 

@@ -1,10 +1,10 @@
 # VPS Control Widget V1.0 — release and installation
 
-## 1.2.0 candidate — QA complete, signing/publication pending
+## Current stable 1.2.0 — published 2026-11-28 (Vietnam)
 
-[PR #5](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/5) is merged. Reviewed source `13021c1659e257bc69743eb9eb7ce3b4f887a892`, version 1.2.0 / 10200. Native Android 10/15 QA, actual installer/retained-settings tests and screenshot review passed in run `46089735791`. Exact unsigned APK: **68,052 bytes**, SHA-256 `67a3022bdd8100c37e6f2b8fec831efd21c26558cd79f33b889be46543bf6475`; artifact `15240498312` was downloaded and verified. Hermes must sign these bytes with the existing stable key and publish with the maintained owner-side tools. Do not rebuild, replace the key or sign QA4. Feed/public stable remains 1.1.0 until that operation is verified. See STATUS.md for the current receipt and feature summary.
+[android-v1.2.0](https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/tag/android-v1.2.0) is public: stable package `com.vpscontrol.widget`, code10200, signed APK **79,398 bytes**, SHA-256 `f7f58f8afdc0aad863e380ee9003118977bf44350c58131476d5d57b2b573415`. Exact source/tag target `13021c1659e257bc69743eb9eb7ce3b4f887a892`, merged in PR #5. Hermes [checkpoint](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/5#issuecomment-7231957063) reports signing the exact 68,052-byte reviewed unsigned APK, existing stable certificate/backup verification and publisher prepare/review/publish plus public APK readback, without rebuilding. ChatGPT read back the release asset digest, tag/source and main feed during cleanup planning; certificate pin remains the 1.1.0 identity below. Native Android10/15 QA and screenshot review passed in run46089735791. Normal same-package/certificate updates preserve pairing/cache/widgets; do not uninstall or clear stable app data. General owner stability feedback received; version-specific Samsung acceptance and same-host key recovery limitations remain recorded. [CLEANUP.md](CLEANUP.md) governs post-release disposable-file cleanup.
 
-## Current stable delivery — 2026-11-28 (Vietnam)
+## Previous stable 1.1.0 delivery — 2026-11-28 (Vietnam)
 
 Android **1.1.0 / 10100 is published** as [android-v1.1.0](https://github.com/Milunice259/vps-assistant-for-no-code-user/releases/tag/android-v1.1.0). Exact app source/tag target is `7695a4e1893624cb3eccf18e41c59276d4ea3348`; the original unsigned APK was signed without rebuilding or substituting QA. APK: **67,039 bytes**, SHA-256 `a51213c8a44b23ac389bed7d206acacf578e0abd9903e7bd2e4cdf6f7798635c`. Public certificate SHA-256: `512432e2f5bff57d2c9718ccb28b6d6f443cb34a3986940de5cbdb2d298edbc0`.
 

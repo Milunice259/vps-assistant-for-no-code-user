@@ -55,13 +55,13 @@ public class Widgets extends AppWidgetProvider {
  static PendingIntent activity(Context c,int id,boolean setup){Intent i=new Intent(c,setup?WidgetSetupActivity.class:MainActivity.class).setData(android.net.Uri.parse("vpswidget://local/"+id+(setup?"/setup":"/overview"))).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);return PendingIntent.getActivity(c,id+(setup?10000:0),i,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}
  public static RemoteViews render(Context c,int id,boolean single,int width,int height,Snapshot data){return render(c,id,single,width,height,data,WidgetStyle.load(c,id),selection(c,id,data));}
  public static RemoteViews render(Context c,int id,boolean single,int width,int height,Snapshot data,WidgetStyle style,List<Snapshot.Server> selected){
-  RemoteViews v=new RemoteViews(c.getPackageName(),height<125?R.layout.widget_tiny:R.layout.widget);Visuals palette=style.palette(c);boolean compact=height<145,small=width<180;
+  boolean strip=height<100&&width>=230;RemoteViews v=new RemoteViews(c.getPackageName(),strip?R.layout.widget_bar:height<125?R.layout.widget_tiny:R.layout.widget);Visuals palette=style.palette(c);boolean compact=height<145,small=width<180;
   int pad=compact||small?10:18;
   v.setImageViewResource(R.id.backdrop,style.dark(c)?R.drawable.card_bg:R.drawable.card_light);v.setInt(R.id.backdrop,"setImageAlpha",style.alpha());
   v.setViewPadding(R.id.body,dp(c,pad),dp(c,compact?7:12),dp(c,pad),dp(c,compact?7:12));
   v.setTextColor(R.id.title,palette.muted);v.setTextColor(R.id.headline,palette.ink);v.setTextColor(R.id.stamp,palette.muted);v.setTextColor(R.id.summary,palette.green);
-  v.setTextViewText(R.id.title,small?"VPS":"VPS CONTROL");v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,height<125?16:compact||small?18:24);
-  v.setTextViewTextSize(R.id.summary,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:12);v.setTextViewTextSize(R.id.stamp,android.util.TypedValue.COMPLEX_UNIT_SP,small?10:11);
+  v.setTextViewText(R.id.title,small?"VPS":"VPS CONTROL");v.setTextViewTextSize(R.id.headline,android.util.TypedValue.COMPLEX_UNIT_SP,strip?14:height<125?16:compact||small?18:24);
+  v.setTextViewTextSize(R.id.summary,android.util.TypedValue.COMPLEX_UNIT_SP,strip?9:small?10:12);v.setTextViewTextSize(R.id.stamp,android.util.TypedValue.COMPLEX_UNIT_SP,strip?9:small?10:11);
   v.setImageViewBitmap(R.id.refresh,Visuals.icon(c,"refresh",palette.accent));v.setImageViewBitmap(R.id.configure,Visuals.icon(c,"settings",palette.accent));v.setOnClickPendingIntent(R.id.configure,activity(c,id,true));v.setContentDescription(R.id.configure,Store.tr(c,"Tùy chỉnh widget","Customize widget"));
   v.setOnClickPendingIntent(R.id.root,activity(c,id,false));v.setOnClickPendingIntent(R.id.title,activity(c,id,true));
   Intent refresh=new Intent(c,Sync.RefreshReceiver.class).setData(android.net.Uri.parse("vpswidget://local/refresh"));v.setOnClickPendingIntent(R.id.refresh,PendingIntent.getBroadcast(c,0,refresh,PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
@@ -70,7 +70,7 @@ public class Widgets extends AppWidgetProvider {
   String status=Store.error(c),stamp=time(c,data==null?0:data.generatedAt)+Store.tr(c," · Đã cập nhật"," · Updated");
   if(!status.isEmpty())stamp=time(c,Store.received(c))+Store.tr(c," · Lưu cũ, lỗi cập nhật"," · Cached, refresh error");
   else if(Sync.busy())stamp=Store.tr(c,"Đang cập nhật…","Refreshing…");
-  boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny?View.GONE:View.VISIBLE);
+  boolean tiny=height<125;if(tiny){v.setOnClickPendingIntent(R.id.headline,activity(c,id,true));v.setContentDescription(R.id.headline,Store.tr(c,"Chọn VPS cho widget","Choose widget servers"));}v.setViewVisibility(R.id.summary,tiny&&!strip?View.GONE:View.VISIBLE);
   Double[] focused=null;boolean fleet=false,empty=false;
   v.setViewVisibility(R.id.visual,View.VISIBLE);
   if(!connected||data==null||servers.isEmpty()){

@@ -75,8 +75,8 @@ jobs:
           mkdir -p /tmp/widget-evidence
           adb shell appwidget grantbind --package com.vpscontrol.widget.qa4 --user 0
           adb shell am instrument -w com.vpscontrol.widget.tests/com.vpscontrol.widget.WidgetOptionsSmoke | tee /tmp/widget-evidence/widget-options.txt
-          grep -q 'PASS: widget options' /tmp/widget-evidence/widget-options.txt
           adb pull /sdcard/Android/data/com.vpscontrol.widget.qa4/files/qa /tmp/widget-evidence || true
+          grep -q 'PASS: widget options' /tmp/widget-evidence/widget-options.txt
           cp /tmp/widget-tests.txt /tmp/widget-evidence/
           adb logcat -d -s AndroidRuntime:E > /tmp/widget-evidence/crashes.txt
           grep -q 'PASS:' /tmp/widget-tests.txt

@@ -18,5 +18,6 @@ public final class Policy {
   if(!worker||now<generated-60000||now-observed>staleAfter(interval)) return "stale";
   return state;
  }
+ public static boolean cached(String raw,long observed,long generated,int interval,boolean worker,long now){return "online".equals(raw)&&observed>0&&observed<=generated&&observed<=now&&now>=generated-60000&&now-observed<=86400000L&&state(raw,observed,generated,interval,worker,now).equals("stale");}
  public static int rows(int width,int height,boolean single) {return single||width<230?0:Math.min(8,Math.max(0,height<230?(height-55)/34:(height-132)/46));}
 }

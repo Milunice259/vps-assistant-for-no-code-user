@@ -14,6 +14,9 @@ public final class Snapshot {
   public Integer stopped,failed,certificates;
   public Boolean backup;
   public String state(Snapshot snapshot) {return Policy.state(state,observed,snapshot.generatedAt,snapshot.interval,snapshot.worker,System.currentTimeMillis());}
+  public boolean cached(Snapshot snapshot){return Policy.cached(state,observed,snapshot.generatedAt,snapshot.interval,snapshot.worker,System.currentTimeMillis());}
+  public String displayState(Snapshot snapshot){return cached(snapshot)?"cached":state(snapshot);}
+  public Double[] values(Snapshot snapshot){String display=displayState(snapshot);boolean available=display.equals("online")||display.equals("cached");return available?new Double[]{cpu,memory,disk}:new Double[]{null,null,null};}
  }
  public Snapshot(String text) throws Exception {
   if(text==null||text.length()>131072)throw new Exception("snapshot");

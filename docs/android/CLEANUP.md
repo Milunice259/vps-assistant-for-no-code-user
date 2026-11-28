@@ -12,8 +12,8 @@ Planning began while the public feed was 1.1.0. During the check, Hermes publish
 | --- | --- | --- |
 | ChatGPT | Remove idle local QA emulator data, generated Next build cache, redundant old QA renders/archives and generated test APKs | Done; result below |
 | ChatGPT | Preserve source/tests, signing/publishing tools, current receipt/evidence and 1.2.0 release handoff; record this plan in GitHub | Done |
-| Hermes | Inventory and clean only proven disposable VPS Control QA/staging objects and temporary files, then run service checks | Pending operator execution |
-| Hermes | Inventory obsolete GitHub artifacts/merged branches; protect the current release evidence and stable releases | Pending; GitHub connector here has no artifact/ref deletion capability |
+| Hermes | Inventory and clean only proven disposable VPS Control QA/staging objects and temporary files, then run service checks | Completed per operator checkpoint 7232267401 |
+| Hermes + ChatGPT | Delete superseded GitHub artifacts and merged branch refs; protect final evidence and stable releases | Artifacts removed by Hermes and read back by ChatGPT; five merged branches removed by ChatGPT after explicit owner instruction |
 | Owner | If still installed, remove unused Demo/RC apps after distinguishing them from the stable package | Optional device action; not remotely executed |
 
 ## Completed local cleanup
@@ -31,7 +31,15 @@ Planning began while the public feed was 1.1.0. During the check, Hermes publish
 
 Tracked source stayed clean; no VPS access, running service or live database was involved. No runtime tests were rerun for cache deletion; source and protected artifact integrity were the relevant checks.
 
-## VPS execution — Hermes
+## Completed VPS and GitHub cleanup
+
+Operator [checkpoint 7232267401](https://github.com/Milunice259/vps-assistant-for-no-code-user/pull/5#issuecomment-7232267401) reports actual project-scoped VPS execution: the unused unapproved d350134 image, two detached disposable QA DB clones and three completed detached worktrees were retired after reference/open-path checks. Recovery snapshots, current/rollback images, both stable APKs, signing/recovery material and final 1.2.0 evidence were retained. A concurrent unrelated host job was excluded. Reported filesystem net reduction: **1,229,848,576 bytes (about 1.145 GiB)**; concurrent unrelated activity is possible, so this is not a sum of nominal image sizes. App HTTPS200, anonymous mobile401, natural worker heartbeat and unchanged container identities/config/mounts/restarts were reported PASS. ChatGPT did not independently access the VPS or rerun these host checks.
+
+Hermes removed superseded artifacts `15240486306`, `15240761118`, `15240691950`, totaling **15,030,804 GitHub bytes**. ChatGPT independently queried their three workflow artifact lists and found them empty; final artifact `15240498312` was still present. This storage is separate from VPS and local cleanup.
+
+The owner then explicitly instructed deletion of the five already-merged branches. ChatGPT checked exact heads against their merged PRs, no open PR use, ancestry in main, and no active workflow/script dependency on those branch names. [One-shot cleanup run 46098338166](https://github.com/Milunice259/vps-assistant-for-no-code-user/actions/runs/46098338166) PASS: an atomic push used exact expected-head leases to remove only `feature/android-widget`, `feature/android-ui-refresh`, `feature/owner-signing-wizard`, `fix/android-release-tools` and `feature/widget-customization`; main and all tag refs were checked unchanged by that operation. The first preflight attempt stopped at an incorrect repository URL before deletion; the corrected run completed. The temporary workflow was removed in `d218fc95f31d2eaf9c581118dc056b868cb7908b`; its add/remove sequence leaves the full source tree identical to the pre-cleanup tree. Only ordinary audit history remains, with no persistent cleanup workflow or signing secret. Remote branch inventory now contains **main only**; both release tag targets are unchanged. Corresponding merged local branches and the completed local docs branch were also deleted; local main is clean.
+
+## VPS execution procedure — retained for audit
 
 1. Read this plan, STATUS.md and the current PR #5 checkpoint. Recheck the actual public release/feed and production identity; the read above is a point-in-time observation. Record disk/RAM, container identity/restarts/health, worker heartbeat and app HTTPS/auth baseline without exposing secrets.
 2. Build a concrete deletion allowlist with type, exact object/path, project ownership, size, current reference/use and retention reason. Separate retained objects explicitly and coordinate with any active operator/build job; never delete its leased/open temporary objects. Use verified project labels/paths and running-container mounts; a name prefix or old timestamp alone is not proof.
@@ -46,7 +54,7 @@ Tracked source stayed clean; no VPS access, running service or live database was
 - **Published Android releases:** retain signed stable APKs, release tags/feed metadata, source/PR history and public fingerprints. They are small and form the update/recovery record. Preserve the stable package `com.vpscontrol.widget` and its phone pairing/settings.
 - **1.2.0 release evidence:** retain exact unsigned/signed provenance, receipt, handoff and full final QA evidence through the 7-day observation window and version-specific owner acceptance. CI artifact **15240498312**, run **46089735791**, keeps its existing one-day expiry; a durable owner handoff and full local final evidence are retained independently. Do not depend on the transient artifact as the sole copy. Compact release/checksum/test records remain afterward.
 
-- **Superseded QA artifacts:** candidates for object-by-object cleanup once a final receipt/evidence survives. Known superseded artifacts: `15240486306` (failed run 46088598634), `15240761118` (failed run 46088959358), `15240691950` (superseded successful run 46089310132). Hermes must re-fetch metadata/ownership/status before deleting; expired or missing means nothing to delete. Keep workflow logs, source/checkpoints and final proof.
+- **Superseded QA artifacts:** the three objects `15240486306` (failed run46088598634), `15240761118` (failed run46088959358), `15240691950` (superseded successful run46089310132) have been removed as recorded above. For future cleanup, re-fetch ownership/status first; expired or missing means nothing to delete. Keep workflow logs, source/checkpoints and final proof.
 - **After a future release is accepted:** raw QA/scratch duplicates may be retired after a 7-day observation window while retaining compact checksums, final evidence and release/recovery records. This is a documented policy, not a newly scheduled job. Delete a merged branch only when it has no open PR/workflow dependency and every commit is reachable from main or a retained tag; keep any future pending-candidate refs until its release is pinned.
 
 ## Phone distinction
@@ -55,4 +63,4 @@ Stable package: `com.vpscontrol.widget` — keep its data/widgets/pairing. Old s
 
 ## Completion receipt
 
-Hermes records: observed release/source/image; allowlist removed and retained; before/after disk and service state; protected recovery/signing checks without secret values; skipped ambiguities; and any next action. Only then mark VPS/GitHub cleanup done. This document currently claims **local cleanup complete; VPS and GitHub deletion pending**.
+Hermes records: observed release/source/image; allowlist removed and retained; before/after disk and service state; protected recovery/signing checks without secret values; skipped ambiguities; and any next action. Only then mark VPS/GitHub cleanup done. Current result: **local cleanup complete; VPS cleanup completed per operator evidence; GitHub artifact/branch cleanup independently read back, with main and release tags retained**. This does not close the previously recorded off-host key recovery or version-specific Samsung acceptance limits.

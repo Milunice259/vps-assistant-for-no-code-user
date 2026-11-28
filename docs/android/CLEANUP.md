@@ -1,5 +1,11 @@
 # Post-stable cleanup — 2026-11-28 (Vietnam)
 
+## Refresh1.3 follow-up
+
+The refresh fix in PR #6 was merged after this earlier1.2 cleanup. Its exact branch `fix/widget-refresh` at `42d25be78208ead526e5782199ff13158ab384ba` was ancestry/open-PR/head-lease checked and deleted by [one-shot46103473633](https://github.com/Milunice259/vps-assistant-for-no-code-user/actions/runs/46103473633), under the owner's existing merged-branch deletion instruction. Local/remote main only again; all tag refs unchanged and temporary workflow removed. Durable1.3 unsigned handoff and final native evidence retained; no backend cleanup/deploy.
+
+After durable handoff, Hermes may re-check/delete only the superseded failed QA artifacts15245368215/run46100814482,15246175164/run46101282890,15245427358/run46101625697,15245414602/run46101972978,15245479790/run46102444140. They are not yet claimed deleted here. Keep final1.3 artifact15246587474/run46102820099 and all current/previous signed releases, source receipts and signing/runtime recovery material. One-day CI expiration does not replace the durable handoff. Previous1.2 cleanup receipt below remains historical evidence.
+
 ## Current state and authorization
 
 The owner reports that the app appears stable on the phone and requested a cleanup plan/work shared by ChatGPT and Hermes. This authorizes scoped removal of verified disposable project files. It does not cancel pending release work or authorize deleting recovery material, changing app behavior, deploying a backend, reducing production backup retention or modifying unrelated services. Skip ambiguous items and report them; continue independently with proven disposable items.

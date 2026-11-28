@@ -18,7 +18,8 @@ public class Widgets extends AppWidgetProvider {
  private static final Class<?>[] TYPES={Fleet.class,Single.class,Wide.class,Large.class};
  public void onUpdate(Context c,AppWidgetManager m,int[] ids){for(int id:ids)update(c,m,id);Sync.schedule(c);Sync.request(c,null);}
  public void onAppWidgetOptionsChanged(Context c,AppWidgetManager m,int id,Bundle options){update(c,m,id);}
- public void onDeleted(Context c,int[] ids){for(int id:ids){Store.putSetting(c,"widget."+id,"");WidgetStyle.clear(c,id);}Sync.schedule(c);}
+ public void onDeleted(Context c,int[] ids){for(int id:ids){Store.putSetting(c,"widget."+id,"");WidgetStyle.clear(c,id);}Sync.schedule(c);boolean remaining=false;for(int id:installed(c)){boolean deleted=false;for(int removed:ids)if(id==removed)deleted=true;if(!deleted)remaining=true;}if(!remaining)FastSync.cancel(c);}
+ public void onDisabled(Context c){Sync.schedule(c);}
  public static void updateAll(Context c){AppWidgetManager m=AppWidgetManager.getInstance(c);for(Class<?> type:TYPES)for(int id:m.getAppWidgetIds(new ComponentName(c,type)))update(c,m,id);}
  public static int[] installed(Context c){AppWidgetManager m=AppWidgetManager.getInstance(c);List<Integer> ids=new ArrayList<Integer>();for(Class<?> type:TYPES)for(int id:m.getAppWidgetIds(new ComponentName(c,type)))ids.add(id);Collections.sort(ids);int[] result=new int[ids.size()];for(int i=0;i<result.length;i++)result[i]=ids.get(i);return result;}
  static void update(Context c,AppWidgetManager m,int id){

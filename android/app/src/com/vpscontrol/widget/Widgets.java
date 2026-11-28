@@ -84,7 +84,7 @@ public class Widgets extends AppWidgetProvider {
    Double[] values=online?new Double[]{s.cpu,s.memory,s.disk}:new Double[]{null,null,null};
    focused=values;v.setContentDescription(R.id.visual,metrics(data,s));
    stamp=time(c,s.observed)+Store.tr(c," · Quan sát"," · Observed")+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):Sync.busy()?Store.tr(c," · Đang cập nhật"," · Refreshing"):"");
-   if(tiny){stamp=time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
+   if(tiny){stamp=strip?time(c,s.observed)+(!status.isEmpty()?Store.tr(c," · Cũ"," · Cached"):""):time(c,s.observed)+" · "+stateLabel(c,state)+(!status.isEmpty()?Store.tr(c," · Lưu cũ"," · Cached"):"");v.setTextColor(R.id.stamp,palette.state(state));}
   }else{
    int online=0,down=0,other=0;for(Snapshot.Server s:servers){String state=s.state(data);if(state.equals("online"))online++;else if(state.equals("offline"))down++;else other++;}
    v.setTextViewText(R.id.headline,online+" / "+servers.size()+Store.tr(c," trực tuyến"," online"));
